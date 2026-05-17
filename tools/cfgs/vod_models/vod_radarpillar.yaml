@@ -15,22 +15,20 @@ DATA_CONFIG:
 
         - NAME: transform_points_to_voxels
           VOXEL_SIZE: [0.16, 0.16, 5]
-          MAX_POINTS_PER_VOXEL: 16
+          MAX_POINTS_PER_VOXEL: 32
           MAX_NUMBER_OF_VOXELS: {
             'train': 16000,
             'test': 40000
           }
 
     DATA_AUGMENTOR:
-        DISABLE_AUG_LIST: ['gt_sampling']
+        DISABLE_AUG_LIST: ['gt_sampling', 'placeholder']
         AUG_CONFIG_LIST:
-
             - NAME: random_world_flip
               ALONG_AXIS_LIST: ['x']
-            - NAME: random_world_rotation
-              WORLD_ROT_ANGLE: [-0.78539816, 0.78539816]
             - NAME: random_world_scaling
               WORLD_SCALE_RANGE: [0.95, 1.05]
+
 MODEL:
     NAME: PointPillar
 
@@ -78,7 +76,7 @@ MODEL:
         ANCHOR_GENERATOR_CONFIG: [
             {
                 'class_name': 'Car',
-                'anchor_sizes': [[4.17, 1.84, 1.57]],
+                'anchor_sizes': [[3.9, 1.6, 1.56]],
                 'anchor_rotations': [0, 1.57],
                 'anchor_bottom_heights': [-1.78],
                 'align_center': False,
@@ -88,7 +86,7 @@ MODEL:
             },
             {
                 'class_name': 'Pedestrian',
-                'anchor_sizes': [[0.65, 0.64, 1.65]],
+                'anchor_sizes': [[0.8, 0.6, 1.73]],
                 'anchor_rotations': [0, 1.57],
                 'anchor_bottom_heights': [-0.6],
                 'align_center': False,
@@ -98,9 +96,9 @@ MODEL:
             },
             {
                 'class_name': 'Cyclist',
-                'anchor_sizes': [[1.94, 0.79, 1.75]],
+                'anchor_sizes': [[1.76, 0.6, 1.73]],
                 'anchor_rotations': [0, 1.57],
-                'anchor_bottom_heights': [-0.78],
+                'anchor_bottom_heights': [-0.6],
                 'align_center': False,
                 'feature_map_stride': 2,
                 'matched_threshold': 0.5,
@@ -140,9 +138,9 @@ MODEL:
 
 
 OPTIMIZATION:
-    FIX_RANDOM_SEED: True
-    BATCH_SIZE_PER_GPU: 16
-    NUM_EPOCHS: 60
+    FIX_RANDOM_SEED: False
+    BATCH_SIZE_PER_GPU: 8
+    NUM_EPOCHS: 80
     eval_interval: 1
     early_stop:
         enabled: True
@@ -156,7 +154,7 @@ OPTIMIZATION:
         save_best: True
 
     OPTIMIZER: adam_onecycle
-    LR: 0.01
+    LR: 0.003
     WEIGHT_DECAY: 0.01
     MOMENTUM: 0.9
 

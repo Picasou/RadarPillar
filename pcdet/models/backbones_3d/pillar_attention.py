@@ -11,6 +11,9 @@ class PillarAttention(nn.Module):
         self.attn_channels = self.model_cfg.get('ATTN_CHANNELS', input_channels)
         num_heads = self.model_cfg.NUM_HEADS
         dropout = self.model_cfg.get('DROPOUT', 0.0)
+        # FFN hidden dim: config-driven via FFN_CHANNELS. Default = attn_channels * 2 (legacy).
+        # Paper Fig.3 labels FFN hidden = E (main config E=32).
+        self.ffn_hidden = self.model_cfg.get('FFN_CHANNELS', self.attn_channels * 2)
         
         # Giriş kanalı ile attention kanalı farklıysa tek bir lineer katman yeterli
         self.pre_mlp = nn.Linear(input_channels, self.attn_channels) if input_channels != self.attn_channels else nn.Identity()
@@ -25,11 +28,11 @@ class PillarAttention(nn.Module):
         
         self.norm1 = nn.LayerNorm(self.attn_channels)
         
-        # 3. DEĞİŞİKLİK: FFN yapısını makale önerisine göre (sabit genişlik) sadeleştirdik
+        # FFN hidden dim controlled by FFN_CHANNELS config; paper main uses E=hidden=32.
         self.ffn = nn.Sequential(
-            nn.Linear(self.attn_channels, self.attn_channels * 2),
+            nn.Linear(self.attn_channels, self.ffn_hidden),
             nn.GELU(),
-            nn.Linear(self.attn_channels * 2, self.attn_channels),
+            nn.Linear(self.ffn_hidden, self.attn_channels),
         )
         self.norm2 = nn.LayerNorm(self.attn_channels)
 
