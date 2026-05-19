@@ -1,373 +1,110 @@
 <div align="center">
 
-# RadarPillars: Efficient Object Detection from 4D Radar Point Clouds
+# RadarPillars: Reproduction on View-of-Delft
 
-**OpenPCDet-based implementation for View-of-Delft (VoD) & Astyx datasets**
-
-[![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
-[![PyTorch 2.4+](https://img.shields.io/badge/PyTorch-2.4%2B-ee4c2c.svg)](https://pytorch.org/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
+**Radar-only 3D object detection — OpenPCDet-based reproduction of [Gillen et al., IROS 2024](https://arxiv.org/abs/2408.05020)**
 
 </div>
 
-> **This work is currently under review.**
-> Pre-trained model weights and full reproduction details will be released upon paper acceptance.
-> Please do not use or redistribute without written permission from the authors.
-
 ---
 
-## Table of Contents
+## Headline
 
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Key Contributions](#key-contributions)
-- [Results](#results)
-  - [SOTA Comparison (VoD)](#sota-comparison-on-vod)
-  - [Ablation Studies](#ablation-studies)
-- [Installation](#installation)
-- [Dataset Preparation](#dataset-preparation)
-- [Training & Evaluation](#training--evaluation)
-- [Visualization Tools](#visualization-tools)
-- [Changelog](#changelog)
-- [Citation](#citation)
-- [Acknowledgement](#acknowledgement)
+| Method | Car | Ped | Cyc | mAP_3D (R11) |
+|---|:---:|:---:|:---:|:---:|
+| MAFF-Net (PV-RCNN, 2025) | 42.3 | 46.8 | 74.7 | 54.6 |
+| SCKD (2025) | 41.9 | 43.5 | 70.8 | 52.1 |
+| **Ours — best seed** | **41.6** | **44.8** | 71.3 | **52.56** |
+| Ours — 3-seed mean | 41.0 | 43.2 | 70.1 | 51.43 ± 0.99 |
+| SMURF (2023) | 42.3 | 39.1 | 71.5 | 51.0 |
+| **RadarPillars (paper)** | 41.1 | 38.6 | 72.6 | **50.70** |
+| CenterPoint baseline | 33.9 | 39.0 | 66.9 | 46.6 |
+| PointPillars baseline | 37.9 | 31.2 | 65.7 | 45.0 |
 
----
-
-## Overview
-
-This repository implements the **RadarPillars** architecture ([Gillen et al., IROS 2024](https://arxiv.org/abs/2408.05020)) for **radar-only 3D object detection**. Built on top of [OpenPCDet](https://github.com/open-mmlab/OpenPCDet), it removes LiDAR/image dependencies and adds radar-specific physics features including Doppler velocity decomposition and RCS normalization.
-
-**Supported Datasets:**
-| Dataset | Classes | Radar Features | Frames |
-|---|---|---|---|
-| **View-of-Delft (VoD)** | Car, Pedestrian, Cyclist | x, y, z, RCS, v_r, v_r_comp, time | 5-frame accumulation |
-| **Astyx HiRes2019** | Car, Pedestrian | x, y, z, RCS, v_r, v_x, v_y | Single frame |
+Best checkpoint: `output/cfgs/vod_models/vod_radarpillar_rot/paper_faithful_rot_s3/ckpt/checkpoint_best.pth`
+Full ablation, per-seed logs, hyperparameter tables → [`experiments/RESULTS.md`](experiments/RESULTS.md).
 
 ---
 
 ## Architecture
 
-```mermaid
-flowchart TD
-    A["<b>Radar Point Cloud</b><br/><i>(N, 7): x, y, z, RCS, v_r, v_r_comp, time</i>"]
-    B["<b>PillarVFE</b><br/><i>Voxelization + Velocity Decomposition</i><br/>vx = v_r · cos(φ), vy = v_r · sin(φ)"]
-    C["<b>PillarAttention</b><br/><i>Masked Multi-Head Self-Attention</i><br/>C=32, H=1, LayerNorm + FFN"]
-    D["<b>PointPillarScatter</b><br/><i>Sparse → Dense BEV Grid</i><br/>320 × 320 × 32"]
-    E["<b>BaseBEVBackbone</b><br/><i>3-layer 2D CNN + Multi-scale Upsample</i><br/>Filters: [32, 32, 32], Strides: [2, 2, 2]"]
-    F["<b>AnchorHeadSingle</b><br/><i>3 Classes + Direction Classifier + NMS</i><br/>Car | Pedestrian | Cyclist"]
-    G["<b>3D Bounding Boxes</b><br/><i>(x, y, z, dx, dy, dz, heading, score)</i>"]
-
-    A --> B --> C --> D --> E --> F --> G
-
-    style A fill:#2C3E50,color:#fff,stroke:#1a252f
-    style B fill:#2980B9,color:#fff,stroke:#1f6391
-    style C fill:#8E44AD,color:#fff,stroke:#6c3483
-    style D fill:#27AE60,color:#fff,stroke:#1e8449
-    style E fill:#E67E22,color:#fff,stroke:#ba6418
-    style F fill:#C0392B,color:#fff,stroke:#96281b
-    style G fill:#2C3E50,color:#fff,stroke:#1a252f
+```
+Radar pcd (N,7)
+  → PillarVFE (voxelize + Doppler decomp: vx, vy via atan2)
+  → PillarAttention (masked self-attention, C=E=32)
+  → PointPillarScatter (320×320×32 BEV)
+  → BaseBEVBackbone (3-block 2D CNN, uniform C=32)
+  → AnchorHeadSingle (Car / Pedestrian / Cyclist)
 ```
 
----
-
-## Key Contributions
-
-### 1. Doppler Velocity Decomposition
-
-Radar measures only **radial velocity** (v_r). We decompose it into Cartesian components in the VFE layer for directional awareness:
-
-```
-φ = atan2(y, x + 1e-6)
-vx = v_r_comp · cos(φ)
-vy = v_r_comp · sin(φ)
-```
-
-### 2. Physics-Consistent Augmentation
-
-Fixed a critical bug in `augmentor_utils.py` where `random_flip` and `global_rotation` were incorrectly transforming time values instead of velocity vectors. Velocity is a physical vector and must be rotated/flipped alongside point coordinates.
-
-### 3. PillarAttention for Sparse Radar
-
-Masked multi-head self-attention that handles the inherent sparsity of radar point clouds via key padding masks, preventing empty pillar regions from corrupting attention scores.
-
-### 4. Dual Cyclist Anchor Strategy
-
-VoD's Cyclist class contains diverse sub-types (bicycle, rider, motor, moped). A dual-anchor approach captures both small (bicycle) and large (motorcycle) vehicles separately.
+Key implementation details:
+- **Velocity decomposition** in VFE: `vx = v_r_comp·cos(φ)`, `vy = v_r_comp·sin(φ)`, `φ = atan2(y, x)`
+- **Physics-consistent augmentation**: velocity vectors rotated/flipped with point coordinates (fixes a bug in OpenPCDet that assumed nuScenes column layout)
+- **PillarAttention** with key-padding mask so empty pillars don't poison attention scores
+- **`FFN_CHANNELS` config-driven** in `pillar_attention.py` (was hardcoded `*2` before)
 
 ---
 
-## Results
-
-### SOTA Comparison on VoD
-
-**Entire Annotated Area (EAA)** — 3D AP (%) at IoU: Car=0.50, Ped/Cyc=0.25
-
-| Rank | Method | Year | Car | Ped | Cyc | mAP |
-|:---:|---|---|:---:|:---:|:---:|:---:|
-| 1 | MAFF-Net | 2025 RA-L | 42.3 | **46.8** | **74.7** | **54.6** |
-| 2 | SCKD | 2025 AAAI | 41.89 | 43.51 | 70.83 | 52.08 |
-| 3 | RadarGaussianDet3D | 2025 | 40.7 | 42.4 | 73.0 | 52.0 |
-| 5 | SMURF | 2023 TIV | **42.31** | 39.09 | 71.50 | 50.97 |
-| 6 | RadarPillars (paper) | 2024 IROS | 41.1 | 38.6 | 72.6 | 50.70 |
-| **10** | **Ours (default, e58)** | **--** | **36.29** | **41.09** | **68.90** | **48.76** |
-| **11** | **Ours (vel. decomp, e56)** | **--** | **35.43** | **39.96** | **70.76** | **48.72** |
-| 12 | CenterPoint (baseline) | -- | 33.87 | 39.01 | 66.85 | 46.58 |
-| 13 | PointPillars (baseline) | -- | 37.92 | 31.24 | 65.66 | 44.94 |
-
-### Our Results vs. Paper
-
-| Configuration | Car | Ped | Cyc | mAP |
-|---|:---:|:---:|:---:|:---:|
-| RadarPillars paper (5-frame) | **41.1** | 38.6 | **72.6** | **50.7** |
-| Ours — default (e58) | 36.29 | **41.09** (+2.5) | 68.90 | 48.76 |
-| Ours — vel. decomp (e56) | 35.43 | 39.96 (+1.4) | 70.76 | 48.72 |
-
-**Key observations:**
-- Pedestrian detection **exceeds** the paper by +1.4 to +2.5 AP
-- Velocity decomposition boosts Cyclist AP significantly: 68.90 → **70.76** (+1.86)
-- Overall mAP gap is **-1.9** from the original paper
-- Cyclist detection shows the largest gap (-1.8 to -3.7 AP)
-
-### 3D AP Evolution (Epoch 48-60, Default Experiment)
-
-<p align="center">
-  <img src="docs/visualizations/3d_ap_evolution_default.png" width="70%" alt="3D AP Evolution">
-  <br><em>Model converges around epoch 54: Car ~36, Pedestrian ~41, Cyclist ~68-69 AP</em>
-</p>
-
----
-
-### Ablation: Velocity Decomposition
-
-The main ablation compares the **default** pipeline (raw v_r_comp feature) against **velocity decomposition** (v_r_comp → vx, vy via azimuth angle). Both experiments use the same config, training schedule, and data augmentation.
-
-| Configuration | Car | Ped | Cyc | mAP |
-|---|:---:|:---:|:---:|:---:|
-| Default — no decomposition (e58) | **36.29** | **41.09** | 68.90 | **48.76** |
-| Velocity decomposition (e56) | 35.43 | 39.96 | **70.76** | 48.72 |
-| Delta | -0.86 | -1.13 | **+1.86** | -0.04 |
-
-**Key findings:**
-- Velocity decomposition significantly boosts **Cyclist AP** (+1.86), likely because directional velocity helps distinguish moving two-wheelers
-- Car and Pedestrian show a slight decrease, suggesting the additional features may add noise for these classes
-- Overall mAP is nearly identical (-0.04), indicating a class-level trade-off rather than a net gain
-- The original paper reports +3.8 mAP from decomposition; our smaller gain may be because we retain raw v_r, v_r_comp and time as input features alongside vx/vy, causing partial redundancy
-
-### Velocity Normalization Analysis
-
-The decomposed vx/vy components are optionally normalized via `(value - μ) / σ`. Analysis revealed that the config's std values were roughly **half** the actual data distribution:
-
-| Parameter | Config (old) | Actual Data | Ratio |
-|---|:---:|:---:|:---:|
-| vx std | 0.891 | **2.080** | 0.43x |
-| vy std | 0.453 | **1.051** | 0.43x |
-
-Since config std was too small, normalization was **amplifying** the distribution instead of compressing it:
-
-<p align="center">
-  <img src="docs/visualizations/velocity_norm_comparison.png" width="90%" alt="Velocity Normalization Comparison">
-  <br><em>Config normalization increases outliers (5.8%) compared to raw (4.4%). Correct normalization reduces them to 2.3%</em>
-</p>
-
-<p align="center">
-  <img src="docs/visualizations/velocity_norm_2d_comparison.png" width="90%" alt="2D Velocity Distribution">
-  <br><em>Top: vy histogram. Bottom: vx-vy heatmap (log-scale), cyan dashed circle = 3σ boundary</em>
-</p>
-
-| | σ (std) | Outlier ratio (\|v\|>3) |
-|---|:---:|:---:|
-| Raw | 2.075 | 4.4% |
-| Config Norm (σ=0.89) | 2.328 | **5.8% (increased)** |
-| Correct Norm (σ=2.08) | 1.000 | **2.3% (decreased)** |
-
----
-
-## Installation
-
-**Requirements:** Python 3.8+, PyTorch 2.4+, CUDA 12.x, spconv 2.3.6
+## Install
 
 ```bash
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -U pip
-
-# Install OpenPCDet with CUDA extensions
+python -m venv .venv && source .venv/bin/activate
+pip install -U pip
 python setup.py develop
-
-# Install WandB for experiment tracking (optional)
-pip install wandb
 ```
 
-See [docs/INSTALL.md](docs/INSTALL.md) for detailed instructions.
+Requirements: Python 3.8+, PyTorch 2.4+, CUDA 12.x, spconv 2.3.6.
 
 ---
 
-## Dataset Preparation
-
-### View-of-Delft (VoD)
+## Data
 
 ```
 data/VoD/view_of_delft_PUBLIC/radar_5frames/
-├── ImageSets/
-│   ├── train.txt
-│   ├── val.txt
-│   └── test.txt
-├── training/
-│   ├── velodyne/          # Radar point clouds (.bin)
-│   ├── label_2/           # 3D annotations
-│   ├── calib/             # Calibration files
-│   └── image_2/           # Camera images (optional)
-└── testing/
-    └── velodyne/
+  ├── ImageSets/{train,val,test}.txt
+  ├── training/{velodyne,label_2,calib,image_2}/
+  └── testing/velodyne/
 ```
 
+Generate info pkl + GT db:
 ```bash
-# Generate info files and GT database
 python -m pcdet.datasets.vod.vod_dataset create_vod_infos \
     tools/cfgs/dataset_configs/vod_dataset_radar.yaml
 ```
 
-### Astyx HiRes2019
+---
 
-```
-data/astyx/
-├── ImageSets/
-│   ├── train.txt
-│   ├── val.txt
-│   └── test.txt
-├── training/
-│   └── radar/             # Radar point clouds (.bin)
-└── testing/
-```
+## Train
 
 ```bash
-python -m pcdet.datasets.astyx.astyx_dataset create_astyx_infos \
-    tools/cfgs/dataset_configs/astyx_dataset_radar.yaml
+CUDA_VISIBLE_DEVICES=0 python tools/train.py \
+  --cfg_file tools/cfgs/vod_models/vod_radarpillar_rot.yaml \
+  --batch_size 8 --extra_tag <run_name> --workers 4
+```
+
+3-seed multi-run (matches the headline number):
+```bash
+bash experiments/chain_scripts/multiseed_v2.sh
 ```
 
 ---
 
-## Training & Evaluation
-
-### VoD Training
-
-```bash
-CUDA_VISIBLE_DEVICES=0 python tools/train.py \
-    --cfg_file tools/cfgs/vod_models/vod_radarpillar.yaml \
-    --batch_size 16
-
-# With WandB experiment tracking
-CUDA_VISIBLE_DEVICES=0 python tools/train.py \
-    --cfg_file tools/cfgs/vod_models/vod_radarpillar.yaml \
-    --batch_size 16 --use_wandb
-```
-
-### Astyx Training
-
-```bash
-CUDA_VISIBLE_DEVICES=0 python tools/train.py \
-    --cfg_file tools/cfgs/astyx_models/astyx_radarpillar.yaml \
-    --batch_size 4
-```
-
-### Evaluation
+## Eval
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python tools/test.py \
-    --cfg_file tools/cfgs/vod_models/vod_radarpillar.yaml \
-    --ckpt <checkpoint_path>
-```
-
-### Key Hyperparameters
-
-| Parameter | VoD | Astyx |
-|---|---|---|
-| Voxel Size | 0.16 x 0.16 x 5.0 m | 0.2 x 0.2 x 4.0 m |
-| Max Points/Voxel | 16 | 32 |
-| Epochs | 60 | 160 |
-| Learning Rate | 0.01 | 0.003 |
-| Optimizer | adam_onecycle | adam_onecycle |
-| Early Stopping | 30 epoch patience | -- |
-| NMS Threshold | 0.1 | 0.01 |
-
----
-
-## Visualization Tools
-
-### BEV (Bird's Eye View) Visualization
-
-Visualize model predictions overlaid on radar point clouds. GT boxes are solid lines, predictions are dashed. Points are colored by RCS value.
-
-```bash
-# Generate BEV from result.pkl (recommended)
-python tools/generate_readme_visuals.py
-
-# Or from KITTI-format txt predictions
-python tools/visualize_bev.py \
-    --pred_dir <path_to_kitti_txt_predictions> \
-    --samples 00315 00107 \
-    --score_thresh 0.15 \
-    --output_dir output_bev
-```
-
-<p align="center">
-  <img src="docs/visualizations/bev_00315.png" width="90%" alt="BEV Sample 00315">
-  <br><em>Sample 00315 — Dense urban scene (default experiment, epoch 58)</em>
-</p>
-
-<p align="center">
-  <img src="docs/visualizations/bev_00107.png" width="90%" alt="BEV Sample 00107">
-  <br><em>Sample 00107 — Close-range cyclist cluster (default experiment, epoch 58)</em>
-</p>
-
-### Anchor Verification
-
-Analyze dataset object size distributions and verify anchor box alignment.
-
-```bash
-python tools/visualize_anchors.py    # Dimension scatter plot with anchors
-python tools/plot_cyclist_dist.py    # Cyclist length histogram
-```
-
-<p align="center">
-  <img src="docs/visualizations/anchor_verification.png" width="80%" alt="Anchor Verification">
-  <br><em>GT size distributions with configured anchors — Car (4.17x1.84), Pedestrian (0.65x0.64), Cyclist (1.94x0.79)</em>
-</p>
-
-<p align="center">
-  <img src="docs/visualizations/cyclist_dist.png" width="50%" alt="Cyclist Distribution">
-  <br><em>Cyclist length distribution (N=6685): mean=1.94m, median=1.94m — anchor aligns with data center</em>
-</p>
-
-### AP Evolution Plots
-
-```bash
-python visualize_radar_logs.py \
-    --logs output/cfgs/vod_models/vod_radarpillar/<exp>/eval/epoch_*/val/default/log_eval_*.txt \
-    --output output_plots
-```
-
-### Velocity Normalization Analysis
-
-```bash
-python tools/generate_velocity_norm_plots.py
+  --cfg_file tools/cfgs/vod_models/vod_radarpillar_rot.yaml \
+  --ckpt output/cfgs/vod_models/vod_radarpillar_rot/paper_faithful_rot_s3/ckpt/checkpoint_best.pth
 ```
 
 ---
 
-## Changelog
+## Configs
 
-| Date | Description |
+| File | Purpose |
 |---|---|
-| 2026-02 | Velocity decomposition: vr_comp → vx, vy in VFE layer |
-| 2026-02 | Dual Cyclist anchor strategy for diverse sub-types |
-| 2026-02 | Augmentor bug fix: correct velocity index handling in flip/rotation |
-| 2026-02 | BEV visualization tool (`tools/visualize_bev.py`) |
-| 2026-02 | WandB integration with `--use_wandb` flag |
-| 2026-02 | VoD radar pipeline: dataset config, info generation |
-| 2026-01 | Astyx radar pipeline: 7-feature point loader, velocity-aware augmentations |
+| `tools/cfgs/vod_models/vod_radarpillar.yaml` | paper-faithful baseline (no rotation) |
+| `tools/cfgs/vod_models/vod_radarpillar_rot.yaml` | **rotation-augmented variant — produced the headline result** |
 
 ---
 
@@ -380,25 +117,17 @@ python tools/generate_velocity_norm_plots.py
   booktitle = {Proc. IEEE/RSJ Int. Conf. Intelligent Robots and Systems (IROS)},
   year      = {2024}
 }
-```
 
-```bibtex
 @misc{openpcdet2020,
   title  = {OpenPCDet: An Open-source Toolbox for 3D Object Detection from Point Clouds},
   author = {OpenPCDet Development Team},
   year   = {2020},
-  howpublished = {\url{https://github.com/open-mmlab/OpenPCDet}}
+  url    = {https://github.com/open-mmlab/OpenPCDet}
 }
 ```
 
 ---
 
-## Acknowledgement
-
-This project is built upon [OpenPCDet](https://github.com/open-mmlab/OpenPCDet), an open-source 3D object detection framework. We thank the OpenPCDet team for the original codebase and supported methods.
-
----
-
 ## License
 
-`OpenPCDet` is released under the [Apache 2.0 license](LICENSE).
+Released under the Apache 2.0 License — see [LICENSE](LICENSE). This project is built on top of [OpenPCDet](https://github.com/open-mmlab/OpenPCDet), which is itself Apache 2.0 licensed.

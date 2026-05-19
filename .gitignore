@@ -12,5 +12,5 @@ pcdet.egg-info/
 *.so
 .venv/
 data/VoD/
-wandb/experiments/logs/paper_faithful_rot_s*.log
-experiments/logs/multiseed_chain.log
+wandb/
+AGENTS_VOD.mdexperiments/logs/paper_faithful_rot_*.log.gz
