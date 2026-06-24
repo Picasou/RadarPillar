@@ -144,7 +144,7 @@ OPTIMIZATION:
     eval_interval: 1
     early_stop:
         enabled: True
-        metrics: ['Car_3d/moderate_R40', 'Pedestrian_3d/moderate_R40', 'Cyclist_3d/moderate_R40']
+        metrics: ['Car_3d/moderate_R40', 'Pedestrian_3d/moderate_R40', 'Cyclist_3d/moderate_R40']~
         metric_reducer: weighted_mean
         metric_weights: [0.2, 0.3, 0.5]
         mode: max
@@ -169,3 +169,4 @@ OPTIMIZATION:
     WARMUP_EPOCH: 1
 
     GRAD_NORM_CLIP: 10
+
