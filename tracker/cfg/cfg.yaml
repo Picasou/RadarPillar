@@ -1,0 +1,109 @@
+# 开关约定: 1 = on / 0 = off
+
+# ---------- 运行配置 ----------
+RUN:
+# mode: 0=display  2=regress
+  mode: 1
+# overlap: 0=不覆盖  1=覆盖
+  overlap: 0
+# align : 雷达滞后实际实际的帧数
+  delay: 1
+# static : 没有就默认，有了就降级
+  vds:
+    wheelbase_m: 4.5
+    x_pos_m: 0.0
+    y_pos_m: 0.0
+    z_pos_m: 0.0
+    cycle_s: 0.1
+
+# ---------- 数据配置 ----------
+DATA:
+  paths:
+    - /path/to/seq1
+    - /path/to/seq2
+
+# ---------- 模型配置 ----------
+MODEL:
+  cfg: ./tools/cfgs/vod_models/vod_radarpillar.yaml
+  ckpt: ./checkpoints/vod_radarpillar.pth
+  score_thresh: 0.3
+
+# ---------- 滤波配置 ----------
+FILTER:
+  # type: 1=α-β  2=KF  3=EKF  4=IMM
+  type: 2
+  para:
+    para_abf:
+      alpha: 0.85
+      beta: 0.20
+    para_kf:
+      # dim: 2=(x/y)  4=(x/y/vx/vy)
+      dim: 4
+      q: 1.0
+      r: 0.5
+    para_ekf:
+      # dim: 2=(x/y)  4=(x/y/vx/vy)
+      dim: 4
+      q: 1.0
+      r: 0.5
+    para_imm:
+      models: []
+
+# ---------- 关联配置 ----------
+MATCH:
+# 1=欧氏  2=马氏
+  gap_type: 1
+# 2=x/y  3=x/y/z  4=x/y/dpl_gnd
+  gap_dim: 2
+# weight
+  gap_weight: [1.0, 1.0, 1.0]
+  thresh: 3.0
+
+# ---------- 可视化配置 ----------
+VISUALIZE:
+  enable: 1
+  show:
+    points: 1
+    tracks: 1
+    objs: 1
+    gts: 1
+  metrics: 1
+  metrics_show:
+    tp: 1
+    fp: 1
+    fn: 1
+    ids: 1
+    frag: 1
+    mota: 1
+    motp: 1
+    idf1: 1
+    deta: 1
+    assa: 1
+    hota: 1
+    loca: 1
+    amota: 1
+    amotp: 1
+    samota: 1
+    vae: 1
+    vne: 1
+    vaie: 1
+    vir: 1
+    vse: 1
+    vde: 1
+
+# ---------- 性能评估配置 ----------
+EVALUATE:
+# type: 0=off  1=online  2=offline
+  type: 2
+  report: 1
+  template: default
+
+# ---------- 航迹管理配置 ----------
+MANAGER:
+  birth_heat: 3
+  death_heat: 3
+  dt: 0.1
+  history_horizon: 4.0
+  adapter:
+    smooth: 1
+    markov: 1
