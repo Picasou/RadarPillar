@@ -89,33 +89,33 @@ tracker.py ->
 - **可视化配置**
   1. 形式：0-on ;1-off
   2. 类别：
-      点云： 0 - enable/ 1 - disable
-      Trks： 0 - enable/ 1 - disable
-      Objs： 0 - enable/ 1 - disable
-      GTs： 0 - enable/ 1 - disable
+      点云： 0 - disable/ 1 - enable
+      Trks： 0 - disable/ 1 - enable
+      Objs： 0 - disable/ 1 - enable
+      GTs： 0 - disable/ 1 - enable
   3. 性能指标：0-on ;1-off
   4. 配置： 
-    - **TP**  :0 - enable/ 1 - disable
-    - **FP**  :0 - enable/ 1 - disable
-    - **FN**  :0 - enable/ 1 - disable
-    - **IDS** :0 - enable/ 1 - disable
-    - **FRAG**:0 - enable/ 1 - disable
-    - **MOTA**:0 - enable/ 1 - disable
-    - **MOTP**:0 - enable/ 1 - disable
-    - **IDF1**:0 - enable/ 1 - disable
-    - **DetA**:0 - enable/ 1 - disable
-    - **AssA**:0 - enable/ 1 - disable
-    - **HOTA**:0 - enable/ 1 - disable
-    - **LocA**:0 - enable/ 1 - disable
-    - **AMOTA**:0 - enable/ 1 - disable
-    - **AMOTP**:0 - enable/ 1 - disable
-    - **sAMOTA**:0 - enable/ 1 - disable
-    - **VAE** :0 - enable/ 1 - disable
-    - **VNE** :0 - enable/ 1 - disable
-    - **VAIE**:0 - enable/ 1 - disable
-    - **VIR** :0 - enable/ 1 - disable
-    - **VSE** :0 - enable/ 1 - disable
-    - **VDE** :0 - enable/ 1 - disable
+    - **TP**  :0 - disable/ 1 - enable
+    - **FP**  :0 - disable/ 1 - enable
+    - **FN**  :0 - disable/ 1 - enable
+    - **IDS** :0 - disable/ 1 - enable
+    - **FRAG**:0 - disable/ 1 - enable
+    - **MOTA**:0 - disable/ 1 - enable
+    - **MOTP**:0 - disable/ 1 - enable
+    - **IDF1**:0 - disable/ 1 - enable
+    - **DetA**:0 - disable/ 1 - enable
+    - **AssA**:0 - disable/ 1 - enable
+    - **HOTA**:0 - disable/ 1 - enable
+    - **LocA**:0 - disable/ 1 - enable
+    - **AMOTA**:0 - disable/ 1 - enable
+    - **AMOTP**:0 - disable/ 1 - enable
+    - **sAMOTA**:0 - disable/ 1 - enable
+    - **VAE** :0 - disable/ 1 - enable
+    - **VNE** :0 - disable/ 1 - enable
+    - **VAIE**:0 - disable/ 1 - enable
+    - **VIR** :0 - disable/ 1 - enable
+    - **VSE** :0 - disable/ 1 - enable
+    - **VDE** :0 - disable/ 1 - enable
 
 
 - **性能评估配置**
@@ -134,28 +134,40 @@ tracker.py ->
 
 ### tracker.py — 编排入口（新增）
 
-- **描述**：pipeline 算法执行器。
-- **输入**：无。
-- **输出**：无。
-- **内部**：算法SIL入口： 代码init设置cfg文件绝对地址。
+- **描述**：流程编排器，逐帧驱动全链路；本身不写算法。
+- **输入**：cfg 文件路径（各个配置参数在 cfg 内）。
+- **输出**：无对外返回。
+- **内部**：算法 SIL 入口——init 解析 cfg 路径并构造各模块；run() 逐帧串联
+           preprocess→detect→predict→match→update→manage→evaluate
 
 ---
 
 ### loader.py — 加载与切片
 
-- **描述**：读取连续序列，按帧切割成 `Frame`，解析 `Pts` / GT / `Vds`(静) / `Vdd`(动)。
+- **描述**：解析cfg文件，通过文件初始化各个模块；
 - **输入**：`Cfg`。
 - **输出**：迭代产出 `Frame`。
-- **类**：`FrameLoader` — 序列读取与帧切割器。
+- **pipeline**:
+  cfg = load_cfg(cfg_filepath)  # cfg 是 class Cfg:
+  if !cfg_isvaild(cfg)
+    抛出异常
+  datalist = get_datalist(cfg.DATA.paths)
+  for path in datalist:
+    data = load_data(path)
+    frames = parser(data)
+
+
 
 ---
 
-### preprocessor.py — 点云规整
+### preprocessor.py — 预处理
 
 - **描述**：单帧点云特征工程 + 体素化，对齐 `pcdet/datasets/processor`，无增强/无 batch。
 - **输入**：`Frame`。
 - **输出**：规整后的 `Frame`。
 - **类**：`Preprocessor` — 复用 `PointFeatureEncoder` + `DataProcessor`，关闭训练增强。
+- **功能** ：
+  1. 根据VFE来，做输入模型的准备工作
 
 ---
 
@@ -165,6 +177,8 @@ tracker.py ->
 - **输入**：`Frame`。
 - **输出**：`Objs` 列表。
 - **类**：`Detector` — 加载权重/建模型、逐帧推理、按 score_thresh 过滤。
+  1. 根据cfg进行模型前向传播配置 model = build_model(cfg.model)
+  2. 根据cfg对模型进行权重设置   model = set_weiget(weight_file)
 
 ---
 

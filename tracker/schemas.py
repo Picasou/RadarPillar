@@ -1,12 +1,12 @@
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass, field, fields
+from typing import Optional, get_type_hints
 
 import numpy as np
 
 
-# ============================================================
-# 静/动态参数
-# ============================================================
+# ==================================================
+# -------------------- 静/动态参数 ------------------
+# ==================================================
 @dataclass
 class VDS:
     """静态参数 - 轴距、传感器安装位置等。"""
@@ -24,11 +24,11 @@ class VDD:
     """动态参数 - 车速、档位等。"""
     speed_ms: float             # 车速
     yaw_rate: float             # 横摆角速度
-    gear: int                   # 档位
+    gear: int                   # ���位
 
-# ============================================================
-# 帧与点云
-# ============================================================
+# ==================================================
+# -------------------- 帧与点云 --------------------
+# ==================================================
 @dataclass
 class PT:
     """单点检测 - 对齐车载雷达 Det_t。"""
@@ -77,7 +77,7 @@ class GTs:
 
 @dataclass
 class FRAME:
-    gt: GTs
+    gts: GTs
     pts: PTs
     vdd: VDD
 
@@ -85,13 +85,13 @@ class FRAME:
 class FRAMEs:
     num:int
     Lst:list[FRAME]
-    
-    
-# ============================================================
-# 目标 / 航迹 / 匹配
-# ============================================================
+
+
+# ==================================================
+# ----------------- 目标 / 航迹 / 匹配 --------------
+# ==================================================
 @dataclass
-class Objs:
+class Obj:
     x: float
     y: float
     vx: float
@@ -103,9 +103,13 @@ class Objs:
     isghost: int
     ispassable: int
 
+@dataclass
+class Objs:
+    num:int
+    Lst:list[Obj]
 
 @dataclass
-class Trks:
+class Trk:
     """航迹 - 对齐车载雷达 Trk_t。"""
     # --- 运动学 ---
     x_m: int                    # x 位置 (m)
@@ -155,18 +159,21 @@ class Trks:
     cov: np.ndarray             # 4x4 协方差
     history: list               # 4s 隐藏历史
 
-
+@dataclass
+class Trks:
+    num:int
+    Lst:list[Trk]
 @dataclass
 class Matches:
     """匹配 - match 过程 + 结果。"""
     matched: list
-    unmatched_trks: list[Trks]
-    unmatched_objs: list[Objs]
+    unmatched_trks: list[Trk]
+    unmatched_objs: list[Obj]
 
 
-# ============================================================
-# 配置 (对齐 cfg.yaml，字段全大写跟 yaml 一级标题)
-# ============================================================
+# ==================================================
+# --------------- 配置 (镜像 cfg.yaml) --------------
+# ==================================================
 @dataclass
 class CfgVds:
     """静态参数 - 对齐 RUN.vds。"""
@@ -271,3 +278,149 @@ class Cfg:
     VISUALIZE: CfgVisualize
     EVALUATE: CfgEvaluate
     MANAGER: CfgManager
+
+    @classmethod
+    def get_cfg(cls, path: str) -> 'Cfg':
+        """从 yaml 文件加载配置."""
+        import yaml
+        from typing import get_type_hints
+        with open(path, 'r', encoding='utf-8') as f:
+            raw = yaml.safe_load(f)
+
+        _MAP = {
+            'RUN': CfgRun, 'DATA': CfgData, 'MODEL': CfgModel,
+            'FILTER': CfgFilter, 'MATCH': CfgMatch,
+            'VISUALIZE': CfgVisualize, 'EVALUATE': CfgEvaluate,
+            'MANAGER': CfgManager,
+            'vds': CfgVds, 'para': CfgFilterPara,
+            'para_kf': CfgFilterParaKf, 'para_abf': dict,
+            'para_ekf': dict, 'para_imm': dict,
+        }
+
+        def _build(sub_cls, data):
+            if sub_cls is dict:
+                return data
+            hints = get_type_hints(sub_cls)
+            kwargs = {}
+            for f in fields(sub_cls):
+                val = data.get(f.name)
+                if val is None:
+                    continue
+                hint_cls = hints.get(f.name)
+                if f.name in _MAP:
+                    kwargs[f.name] = _build(_MAP[f.name], val)
+                elif hint_cls and hasattr(hint_cls, '__dataclass_fields__'):
+                    kwargs[f.name] = _build(hint_cls, val)
+                else:
+                    kwargs[f.name] = val
+            return sub_cls(**kwargs)
+
+        return _build(cls, raw)
+
+    def isvalid(self) -> bool:
+        """校验所有配置字段的类型和合法性."""
+        self._check_int(self.RUN.mode, 0, 2, 'RUN.mode')
+        self._check_int(self.RUN.overlap, 0, 1, 'RUN.overlap')
+        self._check_int(self.RUN.delay, 0, None, 'RUN.delay')
+        self._check_float_gt(self.RUN.vds.wheelbase_m, 0, 'RUN.vds.wheelbase_m')
+        self._check_float(self.RUN.vds.x_pos_m, None, None, 'RUN.vds.x_pos_m')
+        self._check_float(self.RUN.vds.y_pos_m, None, None, 'RUN.vds.y_pos_m')
+        self._check_float(self.RUN.vds.z_pos_m, None, None, 'RUN.vds.z_pos_m')
+        self._check_float_gt(self.RUN.vds.cycle_s, 0, 'RUN.vds.cycle_s')
+
+        # DATA
+        if not isinstance(self.DATA.paths, list):
+            raise ValueError(f"DATA.paths must be list, got {type(self.DATA.paths).__name__}")
+        if len(self.DATA.paths) == 0:
+            raise ValueError("DATA.paths cannot be empty")
+        for i, p in enumerate(self.DATA.paths):
+            if not isinstance(p, str) or not p:
+                raise ValueError(f"DATA.paths[{i}] must be non-empty str, got {type(p).__name__}: {p}")
+
+        # MODEL
+        if not isinstance(self.MODEL.cfg, str) or not self.MODEL.cfg:
+            raise ValueError(f"MODEL.cfg must be non-empty str, got {self.MODEL.cfg}")
+        if not isinstance(self.MODEL.ckpt, str) or not self.MODEL.ckpt:
+            raise ValueError(f"MODEL.ckpt must be non-empty str, got {self.MODEL.ckpt}")
+        self._check_float(self.MODEL.score_thresh, 0, 1, 'MODEL.score_thresh')
+
+        # FILTER
+        self._check_int(self.FILTER.type, 1, 4, 'FILTER.type')
+        if 'alpha' not in self.FILTER.para.para_abf:
+            raise ValueError("FILTER.para.para_abf must contain 'alpha'")
+        if 'beta' not in self.FILTER.para.para_abf:
+            raise ValueError("FILTER.para.para_abf must contain 'beta'")
+        self._check_float_gt(self.FILTER.para.para_abf['alpha'], 0, 'FILTER.para.para_abf.alpha')
+        self._check_float_gt(self.FILTER.para.para_abf['beta'], 0, 'FILTER.para.para_abf.beta')
+        self._check_int(self.FILTER.para.para_kf.dim, 2, 4, 'FILTER.para.para_kf.dim')
+        self._check_matrix(self.FILTER.para.para_kf.q, self.FILTER.para.para_kf.dim, 'FILTER.para.para_kf.q')
+        self._check_matrix(self.FILTER.para.para_kf.r, self.FILTER.para.para_kf.dim, 'FILTER.para.para_kf.r')
+        if self.FILTER.type >= 3:
+            self._check_int(self.FILTER.para.para_ekf.get('dim', 4), 2, 4, 'FILTER.para.para_ekf.dim')
+            self._check_matrix(self.FILTER.para.para_ekf.get('q'), self.FILTER.para.para_ekf.get('dim', 4), 'FILTER.para.para_ekf.q')
+            self._check_matrix(self.FILTER.para.para_ekf.get('r'), self.FILTER.para.para_ekf.get('dim', 4), 'FILTER.para.para_ekf.r')
+
+        # MATCH
+        self._check_int(self.MATCH.gap_type, 1, 2, 'MATCH.gap_type')
+        self._check_int(self.MATCH.gap_dim, 2, 4, 'MATCH.gap_dim')
+        if not isinstance(self.MATCH.gap_weight, list):
+            raise ValueError(f"MATCH.gap_weight must be list, got {type(self.MATCH.gap_weight).__name__}")
+        if len(self.MATCH.gap_weight) < self.MATCH.gap_dim:
+            raise ValueError(f"MATCH.gap_weight length ({len(self.MATCH.gap_weight)}) < gap_dim ({self.MATCH.gap_dim})")
+        for i, w in enumerate(self.MATCH.gap_weight):
+            if not isinstance(w, (int, float)) or w < 0:
+                raise ValueError(f"MATCH.gap_weight[{i}] must be >=0 number, got {w}")
+        self._check_float(self.MATCH.thresh, 0, None, 'MATCH.thresh')
+
+        # VISUALIZE
+        self._check_int(self.VISUALIZE.enable, 0, 1, 'VISUALIZE.enable')
+        for k, v in self.VISUALIZE.show.items():
+            self._check_int(v, 0, 1, f'VISUALIZE.show.{k}')
+        self._check_int(self.VISUALIZE.metrics, 0, 1, 'VISUALIZE.metrics')
+        for k, v in self.VISUALIZE.metrics_show.items():
+            self._check_int(v, 0, 1, f'VISUALIZE.metrics_show.{k}')
+
+        # EVALUATE
+        self._check_int(self.EVALUATE.type, 0, 2, 'EVALUATE.type')
+        self._check_int(self.EVALUATE.report, 0, 1, 'EVALUATE.report')
+        if not isinstance(self.EVALUATE.template, str) or not self.EVALUATE.template:
+            raise ValueError(f"EVALUATE.template must be non-empty str, got {self.EVALUATE.template}")
+
+        # MANAGER
+        self._check_int(self.MANAGER.birth_heat, 0, None, 'MANAGER.birth_heat')
+        self._check_int(self.MANAGER.death_heat, 0, None, 'MANAGER.death_heat')
+        self._check_float_gt(self.MANAGER.dt, 0, 'MANAGER.dt')
+        self._check_float_gt(self.MANAGER.history_horizon, 0, 'MANAGER.history_horizon')
+        self._check_int(self.MANAGER.adapter.get('smooth', 0), 0, 1, 'MANAGER.adapter.smooth')
+        self._check_int(self.MANAGER.adapter.get('markov', 0), 0, 1, 'MANAGER.adapter.markov')
+
+        return True
+
+    def _check_int(self, v, min_val=None, max_val=None, name: str = ''):
+        if not isinstance(v, int):
+            raise ValueError(f"{name} must be int, got {type(v).__name__}: {v}")
+        if min_val is not None and v < min_val:
+            raise ValueError(f"{name} must be >= {min_val}, got {v}")
+        if max_val is not None and v > max_val:
+            raise ValueError(f"{name} must be <= {max_val}, got {v}")
+
+    def _check_float(self, v, min_val=None, max_val=None, name: str = ''):
+        if not isinstance(v, (int, float)):
+            raise ValueError(f"{name} must be number, got {type(v).__name__}: {v}")
+        if min_val is not None and v < min_val:
+            raise ValueError(f"{name} must be >= {min_val}, got {v}")
+        if max_val is not None and v > max_val:
+            raise ValueError(f"{name} must be <= {max_val}, got {v}")
+
+    def _check_float_gt(self, v, min_val, name: str = ''):
+        self._check_float(v, min_val, None, name)
+
+    def _check_matrix(self, m, dim, name: str = ''):
+        if not isinstance(m, list) or len(m) != dim:
+            raise ValueError(f"{name} must be {dim}x{dim} matrix, got list of length {len(m) if isinstance(m, list) else 'N/A'}")
+        for i, row in enumerate(m):
+            if not isinstance(row, list) or len(row) != dim:
+                raise ValueError(f"{name}[{i}] must be list of length {dim}, got {len(row) if isinstance(row, list) else 'N/A'}")
+            for j, v in enumerate(row):
+                if not isinstance(v, (int, float)):
+                    raise ValueError(f"{name}[{i}][{j}] must be number, got {type(v).__name__}: {v}")
