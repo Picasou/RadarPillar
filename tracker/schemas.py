@@ -24,7 +24,7 @@ class VDD:
     """动态参数 - 车速、档位等。"""
     speed_ms: float             # 车速
     yaw_rate: float             # 横摆角速度
-    gear: int                   # ���位
+    gear: int                   # 档位
 
 # ==================================================
 # -------------------- 帧与点云 --------------------
@@ -76,37 +76,54 @@ class GTs:
     Lst:list[GT]
 
 @dataclass
-class FRAME:
-    gts: GTs
-    pts: PTs
-    vdd: VDD
-
-@dataclass
-class FRAMEs:
-    num:int
-    Lst:list[FRAME]
-
-
-# ==================================================
-# ----------------- 目标 / 航迹 / 匹配 --------------
-# ==================================================
-@dataclass
 class Obj:
-    x: float
-    y: float
-    vx: float
-    vy: float
-    length: float
-    width: float
-    heading: float
-    type: int
-    isghost: int
-    ispassable: int
+    """原始目标 - loader 从 bin 加载, 只含能直接读到的字段"""
+    id: int = 0
+    x: float = 0.0
+    y: float = 0.0
+    vx: float = 0.0
+    vy: float = 0.0
+    length: float = 0.0
+    width: float = 0.0
+    heading: float = 0.0
+    type: int = 0
+    isghost: int = 0
+    ispassable: int = 0
+
 
 @dataclass
 class Objs:
-    num:int
-    Lst:list[Obj]
+    num: int = 0
+    Lst: list = field(default_factory=list)
+
+
+@dataclass
+class Matches:
+    """匹配 - match 过程 + 结果。"""
+    matched: list = field(default_factory=list)
+    unmatched_trks: list = field(default_factory=list)
+    unmatched_objs: list = field(default_factory=list)
+
+
+@dataclass
+class TrkState:
+    """单帧状态 - 用于 trk.history, 5 个并行数组对应 Trajectory_t.arr_*"""
+    x: float = 0.0
+    y: float = 0.0
+    vx: float = 0.0
+    vy: float = 0.0
+    heading: float = 0.0
+
+
+@dataclass
+class TrkHistory:
+    """轨迹历史容器 - 对齐 C Trajectory_t 结构"""
+    wt: float = 0.0
+    dx: float = 0.0
+    dy: float = 0.0
+    dist: float = 0.0
+    states: list = field(default_factory=list)
+
 
 @dataclass
 class Trk:
@@ -157,18 +174,26 @@ class Trk:
     rel_vel: int                # [0:绝对速度 | 1:相对速度]
     rel_acc: int                # [0:绝对加速度 | 1:相对加速度]
     cov: np.ndarray             # 4x4 协方差
-    history: list               # 4s 隐藏历史
+    history: TrkHistory         # 4s 隐藏历史 (含 wt/dx/dy/dist + states[Trajectory_t 5 数组])
+
 
 @dataclass
 class Trks:
     num:int
     Lst:list[Trk]
+
+
 @dataclass
-class Matches:
-    """匹配 - match 过程 + 结果。"""
-    matched: list
-    unmatched_trks: list[Trk]
-    unmatched_objs: list[Obj]
+class FRAME:
+    gts: GTs
+    pts: PTs
+    vdd: VDD
+    objs: Objs
+
+@dataclass
+class FRAMEs:
+    num:int
+    Lst:list[FRAME]
 
 
 # ==================================================

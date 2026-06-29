@@ -20,7 +20,7 @@ class Tracker:
     def __init__(self, cfg_path: str) -> None:
         self.cfg = Cfg.get_cfg(cfg_path)
         self.trks = []  # 轨迹列表
-        
+
         self.cfg.isvalid()  # 校验配置，失败抛异常
 
         # 各模块初始化
@@ -40,21 +40,21 @@ class Tracker:
         history = []
         for path in self.cfg.DATA.paths:
             frames = self.loader.getframes(path)
-            vds = self.loader.getvds(path)
-            tracks_list = []
+            vds    = self.loader.getvds(path)
 
+            tracks_list = []
             for frame in frames:
                 self.step(frame, vds)
 
                 if not is_display:
                     tracks_list.append([t.copy() for t in self.trks])
-                    if self.cfg.EVALUATE.type == 1:   
+                    if self.cfg.EVALUATE.type == 1:
                         self.evaluator.online(frame)
 
-                if self.cfg.VISUALIZE.enable == 1: 
+                if self.cfg.VISUALIZE.enable == 1:
                     self.evaluator.visualize(frame)
 
-                if is_regress and self.cfg.RUN.overlap == 1: 
+                if is_regress and self.cfg.RUN.overlap == 1:
                     self.write(frame)
 
             if not is_display:
@@ -74,7 +74,7 @@ class Tracker:
         matches = self.matcher.run(self.trks, objs)
         # 5 更新
         self.filter.update(matches)
-        # 6 航迹管理 
+        # 6 航迹管理
         self.manager.run(matches, objs, frame)
 
 
