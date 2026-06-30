@@ -1,31 +1,21 @@
-import argparse
-import yaml
-from schemas import (Cfg,
-    VDS, VDD, PT, PTs, GT, GTs, FRAME, FRAMEs,
-    Objs, Trks, Matches,
-    CfgRun, CfgVds, CfgData, CfgModel,
-    CfgFilter, CfgFilterPara, CfgFilterParaKf,
-    CfgMatch, CfgVisualize, CfgEvaluate, CfgManager)
-
-import loader       as loader
-import preprocessor as preer
-import detector     as detector
-import filter       as filter
-import matcher      as matcher
-import manager      as manager
-import evaluator    as evaluator
+from schemas import Cfg, VDS, FRAME
+import loader
+import preprocessor
+import detector
+import filter
+import matcher
+import manager
+import evaluator
 
 
 class Tracker:
     def __init__(self, cfg_path: str) -> None:
         self.cfg = Cfg.get_cfg(cfg_path)
-        self.trks = []  # 轨迹列表
+        self.cfg.isvalid()
+        self.trks = []
 
-        self.cfg.isvalid()  # 校验配置，失败抛异常
-
-        # 各模块初始化
         self.loader       = loader.Loader(self.cfg)
-        self.preprocessor = preer.Preprocessor(self.cfg)
+        self.preprocessor = preprocessor.Preprocessor(self.cfg)
         self.detector     = detector.Detector(self.cfg)
         self.filter       = filter.KalmanFilter(self.cfg)
         self.matcher      = matcher.Matcher(self.cfg)
@@ -36,6 +26,9 @@ class Tracker:
         mode = self.cfg.RUN.mode
         is_display = (mode == 0)
         is_regress = (mode == 2)
+        is_evaluate_online = (self.cfg.EVALUATE.type == 1)
+        is_evaluate_offline = (self.cfg.EVALUATE.type == 2)
+        is_visualize = (self.cfg.VISUALIZE.enable == 1)
 
         history = []
         for path in self.cfg.DATA.paths:
@@ -48,10 +41,10 @@ class Tracker:
 
                 if not is_display:
                     tracks_list.append([t.copy() for t in self.trks])
-                    if self.cfg.EVALUATE.type == 1:
+                    if is_evaluate_online:
                         self.evaluator.online(frame)
 
-                if self.cfg.VISUALIZE.enable == 1:
+                if is_visualize:
                     self.evaluator.visualize(frame)
 
                 if is_regress and self.cfg.RUN.overlap == 1:
@@ -60,10 +53,10 @@ class Tracker:
             if not is_display:
                 history.append((frame.gts, tracks_list.copy()))
 
-        if self.cfg.EVALUATE.type == 2:
+        if is_evaluate_offline:
             self.evaluator.evaluate(history)
 
-    def step(self, frame, vds):
+    def step(self, frame: FRAME, vds: VDS) -> None:
         # 1 预处理
         frame = self.preprocessor.run(frame, vds)
         # 2 检测
