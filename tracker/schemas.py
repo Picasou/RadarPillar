@@ -1,3 +1,4 @@
+from __future__ import annotations
 from dataclasses import dataclass, field, fields
 from typing import Optional, get_type_hints
 
@@ -189,6 +190,11 @@ class FRAME:
     pts: PTs
     vdd: VDD
     objs: Objs
+    voxels: Optional[np.ndarray] = None
+    voxel_coords: Optional[np.ndarray] = None
+    voxel_num_points: Optional[np.ndarray] = None
+    use_lead_xyz: bool = True
+    frame_id: str = ''
 
 @dataclass
 class FRAMEs:
