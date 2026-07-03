@@ -48,6 +48,8 @@ def parse_config():
     parser.add_argument('--start_epoch', type=int, default=0, help='')
     parser.add_argument('--save_to_file', action='store_true', default=False, help='')
     parser.add_argument('--use_wandb', action='store_true', default=False, help='whether to use wandb')
+    parser.add_argument('--skip_eval', action='store_true', default=False,
+                        help='skip the post-training evaluation (useful for tiny splits like overfit1)')
 
     args = parser.parse_args()
 
@@ -236,6 +238,11 @@ def main():
 
     logger.info('**********************End training %s/%s(%s)**********************\n\n\n'
                 % (cfg.EXP_GROUP_PATH, cfg.TAG, args.extra_tag))
+
+    if args.skip_eval:
+        logger.info('**********************Skip evaluation (--skip_eval) %s/%s(%s)**********************'
+                    % (cfg.EXP_GROUP_PATH, cfg.TAG, args.extra_tag))
+        return
 
     logger.info('**********************Start evaluation %s/%s(%s)**********************' %
                 (cfg.EXP_GROUP_PATH, cfg.TAG, args.extra_tag))
