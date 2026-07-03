@@ -10,13 +10,17 @@ RUN:
   overlap: 0
 # align : 雷达滞后实际实际的帧数
   delay: 1
+# 点云叠加帧数 (1=不叠加)
+  accum_frames: 1
 # static : 没有就默认，有了就降级
   vds:
     wheelbase_m: 4.5
     x_pos_m: 0.0
     y_pos_m: 0.0
     z_pos_m: 0.0
+    rotation_rad: 0.0
     cycle_s: 0.1
+    oritation: 0
 
 # ==================================================
 # -------------------- 数据配置 --------------------

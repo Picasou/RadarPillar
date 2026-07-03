@@ -1,3 +1,4 @@
+from __future__ import annotations
 from dataclasses import dataclass, field, fields
 from typing import Optional, get_type_hints
 
@@ -48,6 +49,10 @@ class PT:
     ang_rad: float              # 方位角 (rad)
     elv_rad: float              # 俯仰角 (rad)
     doppler_mps: float          # 多普勒速度 (m/s)
+    # --- 直角坐标 (loader 极坐标→直角后填充) ---
+    x_m: float = 0.0            # x 位置 (m)
+    y_m: float = 0.0            # y 位置 (m)
+    z_m: float = 0.0            # z 位置 (m)
 
 
 @dataclass
@@ -189,6 +194,12 @@ class FRAME:
     pts: PTs
     vdd: VDD
     objs: Objs
+    points: Optional[np.ndarray] = None   # (N, 5) 累积+裁剪后的点云 (preprocessor 填)
+    voxels: Optional[np.ndarray] = None           # (V, P, C) detector 体素化后填
+    voxel_coords: Optional[np.ndarray] = None
+    voxel_num_points: Optional[np.ndarray] = None
+    use_lead_xyz: bool = True
+    frame_id: str = ''
 
 @dataclass
 class FRAMEs:
@@ -216,6 +227,7 @@ class CfgRun:
     overlap: int                # 0=不覆盖  1=覆盖
     delay: int                  # 雷达滞后实际帧数
     vds: CfgVds
+    accum_frames: int = 1       # 点云叠加帧数 (1=不叠加)
 
 
 @dataclass
@@ -325,7 +337,10 @@ class Cfg:
         def _build(sub_cls, data):
             if sub_cls is dict:
                 return data
-            hints = get_type_hints(sub_cls)
+            try:
+                hints = get_type_hints(sub_cls)
+            except Exception:
+                hints = {}
             kwargs = {}
             for f in fields(sub_cls):
                 val = data.get(f.name)
@@ -347,6 +362,7 @@ class Cfg:
         self._check_int(self.RUN.mode, 0, 2, 'RUN.mode')
         self._check_int(self.RUN.overlap, 0, 1, 'RUN.overlap')
         self._check_int(self.RUN.delay, 0, None, 'RUN.delay')
+        self._check_int_gt(self.RUN.accum_frames, 0, 'RUN.accum_frames')
         self._check_float_gt(self.RUN.vds.wheelbase_m, 0, 'RUN.vds.wheelbase_m')
         self._check_float(self.RUN.vds.x_pos_m, None, None, 'RUN.vds.x_pos_m')
         self._check_float(self.RUN.vds.y_pos_m, None, None, 'RUN.vds.y_pos_m')
@@ -428,6 +444,9 @@ class Cfg:
             raise ValueError(f"{name} must be >= {min_val}, got {v}")
         if max_val is not None and v > max_val:
             raise ValueError(f"{name} must be <= {max_val}, got {v}")
+
+    def _check_int_gt(self, v, min_val, name: str = ''):
+        self._check_int(v, min_val, None, name)
 
     def _check_float(self, v, min_val=None, max_val=None, name: str = ''):
         if not isinstance(v, (int, float)):
