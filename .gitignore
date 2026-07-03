@@ -2,6 +2,16 @@
 build/
 output/
 **/__pycache__/
+# Agent / tooling working dirs
+.sisyphus/
+.omo/
+.opencode/
+# Personal AI tool config
+opencode.json
+# Local dataset symlinks (point to external mounts)
+data/nuscenes/
+# One-off analysis outputs
+reports/
 data/astyx/testing
 data/astyx/training
 data/kitti/gt_database/
