@@ -8,7 +8,7 @@ from schemas import VDS, VDD, FRAME, FRAMEs, Trk
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_DATA_CFG = os.path.normpath(os.path.join(
-    THIS_DIR, '..', '..', 'tools', 'cfgs', 'dataset_configs', 'astyx_dataset_radar.yaml'
+    THIS_DIR, '..', '..', 'tools', 'cfgs', 'dataset', 'astyx_dataset_radar.yaml'
 ))
 NUM_FEATURES = 5  # x, y, z, rcs, dpl
 IS_TURNING_THRESHOLD = 1e-4

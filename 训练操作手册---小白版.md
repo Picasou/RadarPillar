@@ -610,7 +610,7 @@ conda activate angle
 cd /home/dministrator1/RadarPillar
 
 python -m pcdet.datasets.nuscenes.nuscenes_radar_dataset \
-    --cfg_file tools/cfgs/dataset_configs/nuscenes_radar_dataset.yaml \
+    --cfg_file tools/cfgs/dataset/nuscenes_radar_dataset.yaml \
     --func create_nuscenes_radar_info \
     --version v1.0-mini
 ```
@@ -667,7 +667,7 @@ print('radar_channels keys:', list(infos[0]['radar_channels'].keys()))
 ### 5.7 配置 yaml 文件与 pkl 的关联
 
 ```
-tools/cfgs/dataset_configs/nuscenes_radar_dataset.yaml
+tools/cfgs/dataset/nuscenes_radar_dataset.yaml
 │
 ├── DATASET:        'NuScenesRadarDataset'   → 选 dataset 类
 ├── DATA_PATH:      'data/nuscenes'           → 根目录
@@ -837,7 +837,7 @@ bash tools/scripts/dist_train.sh 2 \
 | `MAX_SWEEPS` 建议 | 1（mini 没多少 sweep） | 1（默认） 或 2 |
 | `BALANCED_RESAMPLING` | True | True（nuScenes 类别严重不平衡） |
 
-> 想跑 trainval 时，把 `tools/cfgs/dataset_configs/nuscenes_radar_dataset.yaml` 的 `VERSION` 改成 `v1.0-trainval`，然后重新跑 5.3。
+> 想跑 trainval 时，把 `tools/cfgs/dataset/nuscenes_radar_dataset.yaml` 的 `VERSION` 改成 `v1.0-trainval`，然后重新跑 5.3。
 
 ---
 
@@ -941,8 +941,8 @@ NDS = 1/10 × [5 × mAP
         ▼ 本章目标:打开"黑盒",看模型实际预测了什么
    ┌──────────────────────────────────────────────┐
    │ 脚本 5  BEV 可视化: GT 框(绿) + 预测框(红)    │ → reports/figures/bev_pred/frame_*.png
-   │ tools/scripts/plot_loss.py                    │ → loss_curve.png
-   │ tools/visualize_anchors.py                    │ → anchor_visualization.png
+   │ tools/utils/visual_utils/visualize_loss.py          │ → loss_curve.png
+   │ tools/utils/visual_utils/anchor_analysis.py scatter │ → anchor_verification.png
    └──────────────────────────────────────────────┘
 ```
 
@@ -974,19 +974,19 @@ python tools/nuscenes_analysis/05_visualize_pred.py \
 
 ### 8.3 画 loss 曲线
 
-`tools/scripts/plot_loss.py` 已存在。直接：
+`tools/utils/visual_utils/visualize_loss.py` 已存在。直接：
 
 ```bash
-python tools/scripts/plot_loss.py \
+python tools/utils/visual_utils/visualize_loss.py \
     --log-dir output/cfgs/nuscenes_models/radarpillar_nuscenes/<your_run>
 ```
 
 ### 8.4 Anchor 可视化（确认 anchor 大小和位置匹配 GT 尺寸分布）
 
 ```bash
-python tools/visualize_anchors.py \
-    --cfg_file tools/cfgs/nuscenes_models/radarpillar_nuscenes.yaml
-# 输出 tools/cfgs/nuscenes_models/anchor_visualization.png
+python -m tools.utils.visual_utils.anchor_analysis scatter \
+    --config_path tools/cfgs/nuscenes_models/radarpillar_nuscenes.yaml
+# 输出 anchor_verification.png
 ```
 
 > 如果 anchor 看着明显比 GT 大/小，回到 yaml 调 `anchor_sizes`（参考第 4.5 步的 GT 尺寸均值）。
@@ -1668,7 +1668,7 @@ python tools/nuscenes_analysis/04_bev_heatmap.py
 
 # === 生成 infos ===
 python -m pcdet.datasets.nuscenes.nuscenes_radar_dataset \
-    --cfg_file tools/cfgs/dataset_configs/nuscenes_radar_dataset.yaml \
+    --cfg_file tools/cfgs/dataset/nuscenes_radar_dataset.yaml \
     --func create_nuscenes_radar_info \
     --version v1.0-mini
 
@@ -1698,7 +1698,7 @@ python tools/nuscenes_analysis/05_visualize_pred.py \
 | 路径 | 状态 | 说明 |
 |---|---|---|
 | `tools/cfgs/nuscenes_models/radarpillar_nuscenes.yaml` | 已存在 | 模型 + 训练配置 |
-| `tools/cfgs/dataset_configs/nuscenes_radar_dataset.yaml` | 已存在 | 数据集配置 |
+| `tools/cfgs/dataset/nuscenes_radar_dataset.yaml` | 已存在 | 数据集配置 |
 | `pcdet/datasets/nuscenes/nuscenes_radar_dataset.py` | 已存在 | 数据集类（5 通道 loader 已修复，详见 5.4） |
 | `pcdet/datasets/nuscenes/nuscenes_radar_utils.py` | 已存在 | infos 生成 |
 | `tools/nuscenes_analysis/01_basic_stats.py` | **待新建** | 基础元信息统计（代码见附录 A.1） |

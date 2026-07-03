@@ -70,7 +70,7 @@ data/VoD/view_of_delft_PUBLIC/radar_5frames/
 
 ```bash
 python -m pcdet.datasets.vod.vod_dataset create_vod_infos \
-    tools/cfgs/dataset_configs/vod_dataset_radar.yaml
+    tools/cfgs/dataset/vod_dataset_radar.yaml
 ```
 
 ---

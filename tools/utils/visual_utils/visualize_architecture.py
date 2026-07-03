@@ -121,7 +121,7 @@ def parse_config():
     parser.add_argument(
         '--cfg_file',
         type=str,
-        default='tools/cfgs/dataset_configs/vod_dataset_radar.yaml',
+        default='tools/cfgs/dataset/vod_dataset_radar.yaml',
         help='Config path for visualization run',
     )
     parser.add_argument('--output_dir', type=str, default='output/architecture_viz', help='Output directory')

@@ -1,5 +1,5 @@
 # Getting Started
-The dataset configs are located within [tools/cfgs/dataset_configs](../tools/cfgs/dataset_configs), 
+The dataset configs are located within [tools/cfgs/dataset](../tools/cfgs/dataset), 
 and the model configs are located within [tools/cfgs](../tools/cfgs) for different datasets. 
 
 
@@ -9,7 +9,7 @@ Currently we provide the dataloader of KITTI dataset and NuScenes dataset, and t
 
 ### KITTI Dataset
 * Please download the official [KITTI 3D object detection](http://www.cvlibs.net/datasets/kitti/eval_object.php?obj_benchmark=3d) dataset and organize the downloaded files as follows (the road planes could be downloaded from [[road plane]](https://drive.google.com/file/d/1d5mq0RXRnvHPVeKx6Q612z0YRO1t2wAp/view?usp=sharing), which are optional for data augmentation in the training):
-* NOTE: if you already have the data infos from `pcdet v0.1`, you can choose to use the old infos and set the DATABASE_WITH_FAKELIDAR option in tools/cfgs/dataset_configs/kitti_dataset.yaml as True. The second choice is that you can create the infos and gt database again and leave the config unchanged.
+* NOTE: if you already have the data infos from `pcdet v0.1`, you can choose to use the old infos and set the DATABASE_WITH_FAKELIDAR option in tools/cfgs/dataset/kitti_dataset.yaml as True. The second choice is that you can create the infos and gt database again and leave the config unchanged.
 
 ```
 OpenPCDet
@@ -26,7 +26,7 @@ OpenPCDet
 
 * Generate the data infos by running the following command: 
 ```python 
-python -m pcdet.datasets.kitti.kitti_dataset create_kitti_infos tools/cfgs/dataset_configs/kitti_dataset.yaml
+python -m pcdet.datasets.kitti.kitti_dataset create_kitti_infos tools/cfgs/dataset/kitti_dataset.yaml
 ```
 
 ### NuScenes Dataset
@@ -53,7 +53,7 @@ pip install nuscenes-devkit==1.0.5
 * Generate the data infos by running the following command (it may take several hours): 
 ```python 
 python -m pcdet.datasets.nuscenes.nuscenes_dataset --func create_nuscenes_infos \ 
-    --cfg_file tools/cfgs/dataset_configs/nuscenes_dataset.yaml \
+    --cfg_file tools/cfgs/dataset/nuscenes_dataset.yaml \
     --version v1.0-trainval
 ```
 

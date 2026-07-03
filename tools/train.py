@@ -4,7 +4,7 @@ import glob
 import os
 from pathlib import Path
 from test import repeat_eval_ckpt
-from eval_utils.eval_utils import eval_one_epoch
+from utils.eval_utils.eval_utils import eval_one_epoch
 
 import torch
 import torch.distributed as dist
@@ -19,8 +19,8 @@ try:
     import wandb
 except ImportError:
     wandb = None
-from train_utils.optimization import build_optimizer, build_scheduler
-from train_utils.train_utils import train_model
+from utils.train_utils.optimization import build_optimizer, build_scheduler
+from utils.train_utils.train_utils import train_model
 
 
 def parse_config():
@@ -100,8 +100,10 @@ def main():
 
     if dist_train:
         logger.info('total_batch_size: %d' % (total_gpus * args.batch_size))
+
     for key, val in vars(args).items():
         logger.info('{:16} {}'.format(key, val))
+        
     log_config_to_file(cfg, logger=logger)
     if cfg.LOCAL_RANK == 0:
         os.system('cp %s %s' % (args.cfg_file, output_dir))
@@ -119,6 +121,7 @@ def main():
         )
 
     # -----------------------create dataloader & network & optimizer---------------------------
+    # dataloader
     train_set, train_loader, train_sampler = build_dataloader(
         dataset_cfg=cfg.DATA_CONFIG,
         class_names=cfg.CLASS_NAMES,
@@ -130,12 +133,15 @@ def main():
         total_epochs=args.epochs
     )
 
+    # network
     model = build_network(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=train_set)
     if args.sync_bn:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
     model.cuda()
 
+    # optimizer
     optimizer = build_optimizer(model, cfg.OPTIMIZATION)
+    # ---------------------------------------------------------------------------------------
 
     # load checkpoint if it is possible
     start_epoch = it = 0
@@ -160,6 +166,7 @@ def main():
         model = nn.parallel.DistributedDataParallel(model, device_ids=[cfg.LOCAL_RANK % torch.cuda.device_count()])
     logger.info(model)
 
+    # scheduler
     lr_scheduler, lr_warmup_scheduler = build_scheduler(
         optimizer, total_iters_each_epoch=len(train_loader), total_epochs=args.epochs,
         last_epoch=last_epoch, optim_cfg=cfg.OPTIMIZATION
@@ -205,7 +212,7 @@ def main():
             save_to_file=False, result_dir=result_dir
         )
 
-    # -----------------------start training---------------------------
+    # start training
     logger.info('**********************Start training %s/%s(%s)**********************'
                 % (cfg.EXP_GROUP_PATH, cfg.TAG, args.extra_tag))
     train_model(
@@ -239,6 +246,8 @@ def main():
     logger.info('**********************End training %s/%s(%s)**********************\n\n\n'
                 % (cfg.EXP_GROUP_PATH, cfg.TAG, args.extra_tag))
 
+    # evaluation or not
+    
     if args.skip_eval:
         logger.info('**********************Skip evaluation (--skip_eval) %s/%s(%s)**********************'
                     % (cfg.EXP_GROUP_PATH, cfg.TAG, args.extra_tag))
