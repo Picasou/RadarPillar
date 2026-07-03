@@ -7,6 +7,7 @@ from pcdet.utils import common_utils
 from .dataset import DatasetTemplate
 from .kitti.kitti_dataset import KittiDataset
 from .nuscenes.nuscenes_dataset import NuScenesDataset
+from .nuscenes.nuscenes_radar_dataset import NuScenesRadarDataset
 from .astyx.astyx_dataset import AstyxDataset
 from .vod.vod_dataset import VodDataset
 
@@ -14,6 +15,7 @@ __all__ = {
     'DatasetTemplate': DatasetTemplate,
     'KittiDataset': KittiDataset,
     'NuScenesDataset': NuScenesDataset,
+    'NuScenesRadarDataset': NuScenesRadarDataset,
     'AstyxDataset': AstyxDataset,
     'VodDataset': VodDataset
 }
