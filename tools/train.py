@@ -247,7 +247,6 @@ def main():
                 % (cfg.EXP_GROUP_PATH, cfg.TAG, args.extra_tag))
 
     # evaluation or not
-    
     if args.skip_eval:
         logger.info('**********************Skip evaluation (--skip_eval) %s/%s(%s)**********************'
                     % (cfg.EXP_GROUP_PATH, cfg.TAG, args.extra_tag))

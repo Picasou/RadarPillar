@@ -174,12 +174,13 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
             if train_sampler is not None:
                 train_sampler.set_epoch(cur_epoch)
 
-            # train one epoch
+            # scheduler
             if lr_warmup_scheduler is not None and cur_epoch < optim_cfg.WARMUP_EPOCH:
                 cur_scheduler = lr_warmup_scheduler
             else:
                 cur_scheduler = lr_scheduler
-                
+
+            # train one epoch    
             accumulated_iter = train_one_epoch(
                 model, optimizer, train_loader, model_func,
                 lr_scheduler=cur_scheduler,
@@ -207,31 +208,31 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
                     checkpoint_state(model, optimizer, trained_epoch, accumulated_iter), filename=ckpt_name,
                 )
 
+            # evalvation & early_stop
+            # condition check
             if eval_loader is None or eval_func is None or eval_output_dir is None:
-                continue
-
+                continue                                  # 无评估配置 → 跳过
             if trained_epoch % max(eval_interval, 1) != 0:
-                continue
-
+                continue                                  # 不在评估周期
             if early_stop_cfg is None:
-                continue
-
+                continue                                  # 无早停配置
             if not _get_cfg(early_stop_cfg, 'ENABLED', False):
-                continue
-
+                continue                                  # 早停未启用
             start_es_epoch = int(_get_cfg(early_stop_cfg, 'START_EPOCH', 0))
             if trained_epoch < start_es_epoch:
-                continue
-
+                continue                                  # 未到启动 epoch
+            
+            # do evalation
             eval_model_to_use = eval_model if eval_model is not None else model
             cur_result_dir = eval_output_dir / ('epoch_%s' % trained_epoch)
             eval_ret = eval_func(
                 eval_model_to_use, eval_loader, trained_epoch, result_dir=cur_result_dir, dist_test=dist_test
             )
+
             model.train()
             if eval_model_to_use is not model:
                 eval_model_to_use.train()
-
+                
             if rank != 0:
                 continue
 

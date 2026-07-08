@@ -1,13 +1,12 @@
-# nuScenes + RadarPillar 训练操作手册（小白版 · 总分结构）
+# RadarPillar + nuScenes 训练与调试手册
 
-> 适用对象：第一次接触 OpenPCDet / RadarPillar / nuScenes 的同学。
-> 目标：在自己的机器上把 **RadarPillar（radar-only）** 在 **nuScenes v1.0-mini（或 trainval）** 上跑通训练 + 评估，并理解每一步在做什么、为什么这么做。
->
-> 文档结构：**先"总"后"分"**。第 1 章给你一张完整鸟瞰图，之后每章先给该章的"数据流小图"，再展开操作细节。
+> **适用对象**：第一次接触 OpenPCDet / RadarPillar / nuScenes 的同学。  
+> **文档定位**：**"怎么跑" + "出问题怎么想"** 一体化——从环境搭建到训练评估的操作指南，以及链路调试的方法论。  
+> **核心结论**：这类问题的本质不是"RadarPillar 模型不行"，而是 nuScenes radar 数据适配、坐标变换、训练步数、后处理阈值共同构成的工程链路问题；**修复和验证必须按 pipeline 一层层做**。  
 
 ---
 
-# 总：第 1 章 鸟瞰图
+# 第 1 章 鸟瞰图
 
 ## 1.1 一句话目标
 
@@ -109,19 +108,14 @@
 |---|---|
 | 1 小时跑通 | 第 1 → 2 → 3 → 5.3 → 6.2 → 7.2 |
 | 半天理解原理 | 加上第 4（统计）、第 5.4（历史 bug 复盘）、第 8（可视化） |
-| 1 天调优 | 再加上第 9 章 + 附录 |
+| 1 天调优 | 再加上第 9 章（调试方法论）+ 附录 |
+| 遇到问题排查 | 直接看第 9 章（逐层调试流程） |
 
 ---
 
-# 分：从第 2 章开始，每章自带数据流小图
+# 第 2 章 环境准备
 
-> **约定**：从这一章起，每章开头都先画一张"本章数据流小图"，标出本章负责的环节在整体 pipeline 里的位置，再讲操作细节。
-
----
-
-## 2. 环境准备
-
-### 2.1 本章数据流
+## 2.1 本章数据流
 
 ```
 [第 1 章:你已经看过鸟瞰图]
@@ -138,13 +132,17 @@
         ▼ 下一章:下载数据
 ```
 
-### 2.2 进入 conda 环境 `angle`
+## 2.2 进入 conda 环境 `angle`
 
 ```bash
+cd /home/dministrator1/RadarPillar
+. /home/dministrator1/miniconda3/etc/profile.d/conda.sh   # 非交互 shell 需要先 source
 conda activate angle
 python -V          # 期望 >= 3.8 且 < 3.11（devkit 限制）
 pip -V             # 期望 >= 22
 ```
+
+> ⚠️ 不要只依赖 `conda activate angle`，因为 **非交互 shell 里可能找不到 conda**。始终先 `. .../conda.sh` 再 activate。
 
 如果 `angle` 不存在：
 
@@ -153,7 +151,7 @@ conda create -n angle python=3.9 -y   # 推荐 3.9，兼容 nuscenes-devkit 1.0.
 conda activate angle
 ```
 
-### 2.3 安装 PyTorch（CUDA 12.x）
+## 2.3 安装 PyTorch（CUDA 12.x）
 
 ```bash
 # 视你的 CUDA 版本调整（CUDA 12.1 示例）
@@ -163,7 +161,7 @@ pip install torch==2.4.0 torchvision==0.19.0 --index-url https://download.pytorc
 > 如果你只有 CPU 或无 GPU：训练会非常慢（mini 数据集一个 epoch 也要数小时）。本文档主要面向有 NVIDIA GPU 的情况。
 > 如果 GPU 是 RTX 40 系（Ampere 之后），用 `cu121` 或 `cu118` 都行，关键是 PyTorch ≥ 2.1。
 
-### 2.4 安装项目 + nuscenes-devkit
+## 2.4 安装项目 + nuscenes-devkit
 
 ```bash
 # 在项目根目录
@@ -176,7 +174,7 @@ python setup.py develop
 > ❗ **nuscenes-devkit 版本必须锁死 1.0.5**。1.1.x 改了表结构（`sample_annotation` 直接带 `category_name` 不再要查表），你按本文档的脚本会读不到字段。
 > 本文档里的脚本已经按 1.0.5 写好，1.1.x 也能跑通（取字段时优先用 `category_name`），但官方训练脚本（`create_nuscenes_radar_info`）只能跑 1.0.5。
 
-### 2.5 安装 spconv（雷达点云体素化）
+## 2.5 安装 spconv（雷达点云体素化）
 
 ```bash
 # CUDA 12.x + PyTorch 2.4 对应 spconv 2.3.6+
@@ -185,7 +183,7 @@ pip install spconv-cu120==2.3.6
 
 > 如果你 PyTorch 是 `cu118`，对应 `spconv-cu118==2.3.6`。
 
-### 2.6 验证安装
+## 2.6 验证安装
 
 ```bash
 python -c "
@@ -209,7 +207,9 @@ pcdet ok
 
 > ❗ 如果 `nuscenes.__version__` 不是 `1.0.5`，立刻 `pip install nuscenes-devkit==1.0.5 --force-reinstall`，否则后面 `nuscenes.nuscenes.NuScenes` 加载会报 schema 错误。
 
-### 2.7 常见环境问题速查
+## 2.7 环境问题速查与排查原则
+
+### 常见环境问题
 
 | 现象 | 原因 | 修复 |
 |---|---|---|
@@ -218,12 +218,32 @@ pcdet ok
 | `nuscenes-devkit` 报 schema 错误 | 版本不是 1.0.5 | 2.4 节强制重装 |
 | `ImportError: No module named 'av'` | 缺 PyAV（视频解码，tracker 可能用到） | `pip install av` |
 | `numba.cuda ... segmentation fault` | numba 0.58 + WSL2 已知问题 | 详见 10 章 FAQ |
+| `ValueError: All ufuncs must have type numpy.ufunc` | numpy / scipy 版本冲突 | `pip install numpy==1.26.4 scipy==1.15.3` |
+| `pointpillar / spconv import 报 undefined symbol` | spconv 和 PyTorch / CUDA 版本不匹配 | 回到 2.5 节按 PyTorch 版本选对 `spconv-cuXXX` |
+
+### 排查原则
+
+| 报错阶段 | 优先怀疑 |
+|---|---|
+| **import 阶段** | 环境（numpy / scipy / torch / spconv / CUDA） |
+| **forward / loss / eval 阶段** | 模型或数据 |
+
+> **经验法则**：程序还没进入训练、导入 `scipy.spatial` 就崩 → 不是代码逻辑问题，而是环境版本冲突。先修环境，不要调模型。
+
+### 当前验证过的环境状态
+
+```
+conda env:    angle
+numpy:        1.26.4
+scipy:        1.15.3
+scipy.spatial: ok
+```
 
 ---
 
-## 3. 数据下载与组织
+# 第 3 章 数据下载与组织
 
-### 3.1 本章数据流
+## 3.1 本章数据流
 
 ```
 [nuScenes 官网]                          [你的硬盘]
@@ -255,7 +275,7 @@ pcdet ok
                                           └── v1.0-mini/  ──► 实际目录的软链
 ```
 
-### 3.2 数据集大小
+## 3.2 数据集大小
 
 | 版本 | 大小 | 帧数（关键帧） | 适用场景 |
 |---|---|---|---|
@@ -265,15 +285,15 @@ pcdet ok
 
 **小白建议：先用 mini 跑通。**
 
-### 3.3 下载地址
+## 3.3 下载地址
 
 到 [https://www.nuscenes.org/download](https://www.nuscenes.org/download) 注册账号 → 下载：
 - `v1.0-mini.tgz` （mini）
 - 或 `v1.0-trainval01_blobs.tgz` + `v1.0-trainval02_blobs.tgz` + `v1.0-trainval_meta.tgz`（trainval，注意是 3 个文件）
 
-下载完后用 `tar -xzf *.tgf` 解压。
+下载完后用 `tar -xzf *.tgz` 解压。
 
-### 3.4 组织目录
+## 3.4 组织目录
 
 本项目已为你把 mini 软链到 `data/nuscenes/v1.0-mini`：
 
@@ -301,7 +321,7 @@ RadarPillar/
 > ln -s /path/to/your/nuscenes/v1.0-mini data/nuscenes/v1.0-mini
 > ```
 
-### 3.5 验证目录结构
+## 3.5 验证目录结构
 
 ```bash
 ls data/nuscenes/v1.0-mini/samples/RADAR_FRONT/ | head -3
@@ -309,7 +329,7 @@ ls data/nuscenes/v1.0-mini/v1.0-mini/ | head
 # 期望：能看到 .pcd 文件 + 元数据 json
 ```
 
-### 3.6 元数据 JSON 之间的关联图
+## 3.6 元数据 JSON 之间的关联图
 
 ```
 scene.json          sample.json          sample_data.json       sample_annotation.json
@@ -332,7 +352,7 @@ scene.json          sample.json          sample_data.json       sample_annotatio
 
 > 理解这张图就够了。后面的 `fill_radar_infos` 就是按 `sample` 为主键，遍历 `data` 拿到 .pcd 路径，再去 `sample_annotation` 拿标注。
 
-### 3.7 5 个雷达通道的物理布局
+## 3.7 5 个雷达通道的物理布局
 
 ```
                 ego 车
@@ -364,9 +384,9 @@ scene.json          sample.json          sample_data.json       sample_annotatio
 
 ---
 
-## 4. 数据统计分析
+# 第 4 章 数据统计分析
 
-### 4.1 本章数据流
+## 4.1 本章数据流
 
 ```
 [第 3 章:数据已就位]
@@ -382,13 +402,13 @@ scene.json          sample.json          sample_data.json       sample_annotatio
         ▼ 下一章:用这些统计决定 anchor / 范围 / 增强
 ```
 
-### 4.2 创建脚本目录
+## 4.2 创建脚本目录
 
 ```bash
 mkdir -p tools/nuscenes_analysis reports
 ```
 
-### 4.3 脚本 1：基础元信息（场景 / 样本 / 标注）
+## 4.3 脚本 1：基础元信息（场景 / 样本 / 标注）
 
 完整代码见附录 A.1。保存为 `tools/nuscenes_analysis/01_basic_stats.py`。
 
@@ -427,7 +447,7 @@ python tools/nuscenes_analysis/01_basic_stats.py
 | `avg_anno_per_frame` | 是否 ≥ 10 | mini 上 45.89 是正常的 |
 | `category_raw_dist` | 哪些类多哪些类少 | car 占 41%、barrier+cone 占 20% → 类别严重不均衡 |
 
-### 4.4 脚本 2：雷达点云统计（点数 / 距离 / RCS / 速度）
+## 4.4 脚本 2：雷达点云统计（点数 / 距离 / RCS / 速度）
 
 完整代码见附录 A.2。保存为 `tools/nuscenes_analysis/02_radar_point_stats.py`。
 
@@ -472,7 +492,7 @@ python tools/nuscenes_analysis/02_radar_point_stats.py --max_frames 200
 - `reports/figures/radar_rcs_dbsm.png` —— RCS 直方图
 - `reports/figures/radar_vmag_ms.png` —— 速度幅值直方图
 
-### 4.5 脚本 3：GT 类别 / 距离 / 速度 分布（10 类 detection 标签）
+## 4.5 脚本 3：GT 类别 / 距离 / 速度 分布（10 类 detection 标签）
 
 完整代码见附录 A.3。保存为 `tools/nuscenes_analysis/03_gt_distribution.py`。
 
@@ -494,7 +514,7 @@ python tools/nuscenes_analysis/03_gt_distribution.py
 - `reports/figures/gt_speed_by_class.png`
 - `reports/gt_distribution.json`（含每类尺寸均值，可用来调 `anchor_sizes`）
 
-### 4.6 脚本 4：BEV 占用热力图
+## 4.6 脚本 4：BEV 占用热力图
 
 完整代码见附录 A.4。保存为 `tools/nuscenes_analysis/04_bev_heatmap.py`。
 
@@ -510,7 +530,7 @@ python tools/nuscenes_analysis/04_bev_heatmap.py
 - 如果热力图在 y 轴（侧向）也有明显分布 → 你可能需要更多朝向的 anchor
 - 如果大部分目标集中在 ±30 m 内 → 可以把 `POINT_CLOUD_RANGE` 收窄到 ±30 m 加速训练
 
-### 4.7 跑完后你会得到
+## 4.7 跑完后你会得到
 
 ```
 reports/
@@ -528,7 +548,7 @@ reports/
     └── bev_heatmap.png
 ```
 
-### 4.8 重点看（训练前的"必看图"清单）
+## 4.8 重点看（训练前的"必看图"清单）
 
 | 图 | 关键观察 | 决策 |
 |---|---|---|
@@ -539,9 +559,9 @@ reports/
 
 ---
 
-## 5. 数据集构建（生成 infos pkl）
+# 第 5 章 数据集构建（生成 infos pkl）
 
-### 5.1 本章数据流
+## 5.1 本章数据流
 
 ```
 [第 4 章:统计已做]
@@ -566,7 +586,7 @@ reports/
         ▼ 下一章:dataset 加载器会读这两个 pkl
 ```
 
-### 5.2 infos pkl 的 schema（每个 info 包含什么）
+## 5.2 infos pkl 的 schema（每个 info 包含什么）
 
 ```python
 {
@@ -600,7 +620,7 @@ reports/
 }
 ```
 
-### 5.3 已有脚本与调用
+## 5.3 已有脚本与调用
 
 `pcdet/datasets/nuscenes/nuscenes_radar_dataset.py` 已经写好了 `create_nuscenes_radar_info` 函数。直接调用即可：
 
@@ -615,11 +635,11 @@ python -m pcdet.datasets.nuscenes.nuscenes_radar_dataset \
     --version v1.0-mini
 ```
 
-> 跑命令时 `--func` 显式传 `create_nuscenes_radar_info`（单数），与代码中 `line 358` 的 default 和 `line 362` 的 dispatch 一致。
+> 跑命令时 `--func` 显式传 `create_nuscenes_radar_info`（单数），与代码中的 default 和 dispatch 一致。
 
-### 5.4 已修复的坑（早期版本遗留）
+## 5.4 已修复的坑（早期版本遗留）
 
-#### 坑：loader 只用 1 个雷达通道（RADAR_FRONT），丢 4/5 覆盖 ✅ 已修复
+### 坑：loader 只用 1 个雷达通道（RADAR_FRONT），丢 4/5 覆盖 ✅ 已修复
 
 - **症状**：`nuscenes_radar_dataset.py` 旧版 `get_radar_with_sweeps` 只读 `info['radar_path']`（RADAR_FRONT 单通道），完全忽略 `info['radar_channels']`（5 通道全路径）
 - **影响**：5 个雷达各看一个扇区，合起来才是 360° 覆盖；只用 FRONT 直接丢 4/5 点云，**mAP 显著低于论文**
@@ -633,7 +653,27 @@ python -m pcdet.datasets.nuscenes.nuscenes_radar_dataset \
 
 代码改动只在 `get_radar_with_sweeps` 的"当前帧"部分，sweep 部分保持单通道（当前 `MAX_SWEEPS=1` 走不到 sweep 逻辑，不受影响）。**无需重新生成 pkl**——`radar_channels` 字段在 `fill_radar_infos` 早就有，旧 pkl 直接兼容。
 
-### 5.5 成功标志
+## 5.5 nuScenes 数据集适配的核心易错点
+
+> 数据集层是 nuScenes radar 适配的**最大雷区**。以下任何一个错了，模型训练就会"看起来能跑"，但学不到正确目标。
+
+| # | 易错点 | 错的后果 | 排查方法 |
+|---|---|---|---|
+| 1 | radar 点云坐标系 | 点云投到错误位置 | 验证变换后 z 方向是否合理（前雷达安装高度应为正） |
+| 2 | GT box 坐标系（可能默认是 global） | 点云和 GT 不重合 | 可视化检查点云与 GT 是否对齐 |
+| 3 | ego / global / sensor 之间的变换 | 训练目标在错误空间 | 不要只信变量名，用数值验证矩阵方向 |
+| 4 | 时间 sweep 的变换 | 点云拖影、目标位置不稳 | 每个 sweep 必须单独 transform 到当前帧 |
+| 5 | velocity 的坐标变换 | 速度 head 学不到正确目标 | 检查 vx/vy 是否经过正确的坐标变换 |
+| 6 | 训练时过滤规则（range / class） | GT 被过滤光，loss 异常 | 打印 raw_gt 与 valid_gt 数量 |
+| 7 | 评估时 split 是否匹配 | 报 `Samples in split doesn't match` | 确认 eval split 与数据集版本一致 |
+
+### 关键经验
+
+- **只要点云和 GT 不重合，第一优先级不是调模型，而是查坐标系。**
+- 不要只相信变量名——`sensor -> ego` 实际可能是 `ego -> sensor`，要用数值验证。
+- radar raw point feature 是 **7 维**（x, y, z, rcs, vx, vy, time），batch 里的 points 是 **8 维**（多了 batch index），**不要把 batch index 当成 radar feature**。
+
+## 5.6 成功标志
 
 脚本跑完你会看到类似：
 
@@ -654,7 +694,7 @@ nuscenes_infos_radar_1sweeps_val.pkl
 
 > 注：本项目目前的默认版本是 mini，pkl 已存在。如果你要用 trainval，把 yaml 的 `VERSION` 改成 `v1.0-trainval` 再跑一次（耗时 1–2 小时）。
 
-### 5.6 验证 pkl
+## 5.7 验证 pkl
 
 ```python
 import pickle
@@ -664,7 +704,7 @@ print(infos[0].keys())
 print('radar_channels keys:', list(infos[0]['radar_channels'].keys()))
 ```
 
-### 5.7 配置 yaml 文件与 pkl 的关联
+## 5.8 配置 yaml 文件与 pkl 的关联
 
 ```
 tools/cfgs/dataset/nuscenes_radar_dataset.yaml
@@ -681,9 +721,9 @@ tools/cfgs/dataset/nuscenes_radar_dataset.yaml
 
 ---
 
-## 6. 训练
+# 第 6 章 训练
 
-### 6.1 本章数据流
+## 6.1 本章数据流
 
 ```
 [第 5 章:infos pkl]
@@ -716,7 +756,7 @@ tools/cfgs/dataset/nuscenes_radar_dataset.yaml
        └── epoch_*/                     # 每次评估的 json 结果
 ```
 
-### 6.2 单卡启动（最常用）
+## 6.2 单卡启动（最常用）
 
 ```bash
 cd /home/dministrator1/RadarPillar
@@ -729,7 +769,7 @@ CUDA_VISIBLE_DEVICES=0 python tools/train.py \
     --extra_tag radarpillar_nuscenes_mini_run01
 ```
 
-### 6.3 关键参数说明
+## 6.3 关键参数说明
 
 | 参数 | 含义 | 推荐值（mini） |
 |---|---|---|
@@ -741,7 +781,7 @@ CUDA_VISIBLE_DEVICES=0 python tools/train.py \
 | `--epochs` | 覆盖 yaml 里的 `NUM_EPOCHS` | 默认 20 |
 | `--eval_all` | 训练后立刻 eval 所有 ckpt | 调试时偶尔用 |
 
-### 6.4 看 tensorboard
+## 6.4 看 tensorboard
 
 ```bash
 # 新开一个终端
@@ -755,7 +795,7 @@ tensorboard --logdir output/cfgs/nuscenes_models/radarpillar_nuscenes/ --port 60
 - `val/mAP` 或 `val/NDS` → 是否稳步上升
 - `lr` → OneCycle 曲线是否正常
 
-### 6.5 训练时数据流（一个 batch 的内部旅程）
+## 6.5 训练时数据流（一个 batch 的内部旅程）
 
 ```
 DataLoader 取 batch
@@ -803,7 +843,7 @@ pred_dicts  +  ret_dict (含 loss)
     ▼  loss = cls + 2.0*box + 0.2*dir  反向传播
 ```
 
-### 6.6 断点续训
+## 6.6 断点续训
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python tools/train.py \
@@ -816,7 +856,7 @@ CUDA_VISIBLE_DEVICES=0 python tools/train.py \
 
 > `--ckpt` 加载权重 + optimizer + epoch；`--pretrained_model` 只加载权重。两者都传即可无缝续训。
 
-### 6.7 多卡训练（可选）
+## 6.7 多卡训练（可选）
 
 ```bash
 # 假设 2 卡
@@ -827,7 +867,7 @@ bash tools/scripts/dist_train.sh 2 \
 
 > 多卡时 `--batch_size` 是 **单卡** batch，全局 batch = `2 × batch_size`。
 
-### 6.8 ⚠️ mini vs trainval 的差异（必读）
+## 6.8 ⚠️ mini vs trainval 的差异（必读）
 
 | 项 | mini | trainval |
 |---|---|---|
@@ -839,11 +879,67 @@ bash tools/scripts/dist_train.sh 2 \
 
 > 想跑 trainval 时，把 `tools/cfgs/dataset/nuscenes_radar_dataset.yaml` 的 `VERSION` 改成 `v1.0-trainval`，然后重新跑 5.3。
 
+## 6.9 ⚠️ 训练中的常见陷阱
+
+### `--epochs 100` ≠ 1200 次参数更新
+
+对于 1 个样本的 overfit 场景：
+
+```
+1 epoch  ≈  1 step
+100 epochs  ≈  100 次参数更新
+```
+
+而真正跑出效果通常需要 **1200 次参数更新**。所以 `--epochs 100` 在 1 batch 场景下远远不够。
+
+> **`batch_size = 1` 不等于 1 batch overfit；`dataset_len = 1` 才是。** 这两个完全不是一回事。
+
+### 后处理阈值挡住了低分预测
+
+诊断结果示例：
+
+```
+raw_cls_prob_max = 0.0119
+SCORE_THRESH     = 0.05
+post_nms_boxes   = 0
+```
+
+**模型不是完全没有响应，而是分类分数太低，被阈值过滤掉了。**
+
+| 现象 | 不要直接说 | 先查 |
+|---|---|---|
+| 没有预测框 | "模型没学到" | raw 分类分数是否存在 |
+| 有 raw score 但低于阈值 | — | 训练不足 / 阈值设置问题 |
+| raw score 完全异常 | — | 模型 / 数据问题 |
+
+### 预测框太多（500 个）不是没 NMS
+
+真相是后处理参数太宽松：
+
+```
+SCORE_THRESH      = 很低
+NMS_POST_MAXSIZE  = 500
+```
+
+大量低质量候选框会通过阈值，NMS 最后保留到上限。
+
+| 阶段 | SCORE_THRESH | NMS_POST_MAXSIZE | OUTPUT_RAW_SCORE |
+|---|---|---|---|
+| 看有没有输出（低阈值） | 0.05 或 0.1 | 80 | True |
+| 看质量（正常调试） | 0.1 ~ 0.3 | 40 ~ 80 | False |
+| 看真实表现（评估前） | 0.3 ~ 0.5 | 20 ~ 40 | False |
+
+### 官方 eval 不适合直接判断 overfit
+
+overfit 1 batch 只预测 1 个样本，但 nuScenes 官方 eval 期望完整 split，所以可能报 `Samples in split doesn't match samples in predictions`。**这不是模型训练失败，而是 debug dataset 和 official eval split 不匹配。**
+
+overfit 阶段应该优先看：1. loss → 2. raw score → 3. `post_nms_boxes` → 4. recall → 5. 可视化。**不要优先看官方 mAP / NDS。**
+
 ---
 
-## 7. 评估与验证
+# 第 7 章 评估与验证
 
-### 7.1 本章数据流
+## 7.1 本章数据流
 
 ```
 [第 6 章:checkpoint_best.pth]
@@ -868,7 +964,7 @@ bash tools/scripts/dist_train.sh 2 \
    └── ...                         # 各类分布图、TP/FP 表
 ```
 
-### 7.2 跑官方 nuScenes 评估
+## 7.2 跑官方 nuScenes 评估
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python tools/test.py \
@@ -886,7 +982,7 @@ output/cfgs/nuscenes_models/radarpillar_nuscenes/<your_run>/eval/
 └── ...                         # 各类分布图、TP/FP 表
 ```
 
-### 7.3 关键指标解读
+## 7.3 关键指标解读
 
 nuScenes 官方指标（取自 `metrics_summary.json`）：
 
@@ -916,7 +1012,7 @@ NDS = 1/10 × [5 × mAP
 
 > 雷达的"优势指标"是 mAVE；"短板指标"是 mAOE 和 mATE。这能解释为什么 radar-only 模型 mAP 不如 lidar，但 mAVE 反而更好。
 
-### 7.4 验证训练结果"是否合理"的 sanity check 清单
+## 7.4 验证训练结果"是否合理"的 sanity check 清单
 
 | 检查项 | 怎么验证 | 期望 |
 |---|---|---|
@@ -931,9 +1027,9 @@ NDS = 1/10 × [5 × mAP
 
 ---
 
-## 8. 可视化与诊断
+# 第 8 章 可视化与诊断
 
-### 8.1 本章数据流
+## 8.1 本章数据流
 
 ```
 [第 6 章:checkpoint_best.pth]
@@ -946,7 +1042,7 @@ NDS = 1/10 × [5 × mAP
    └──────────────────────────────────────────────┘
 ```
 
-### 8.2 BEV 真值 + 预测可视化
+## 8.2 BEV 真值 + 预测可视化
 
 完整代码见附录 A.5。保存为 `tools/nuscenes_analysis/05_visualize_pred.py`。
 
@@ -972,7 +1068,31 @@ python tools/nuscenes_analysis/05_visualize_pred.py \
 - 红框比绿框大/小很多 → box 回归不准
 - 红框朝向不对 → dir head 没学好
 
-### 8.3 画 loss 曲线
+### ⚠️ 可视化必须区分 raw GT 和 train GT
+
+| 类型 | 含义 |
+|---|---|
+| **raw GT** | 未参与训练的 GT（被 range filter / class filter 过滤掉了，图上出现不算漏检） |
+| **train GT** | 实际参与 loss 的 GT |
+
+> 如果不区分，容易把"没参与训练的 GT"误判成漏检。例如某次 overfit 中 raw_gt 有 66 个，训练实际有效 gt 只有 51 个——没被训练的 15 个 GT 出现在图上不算漏检。
+
+### ⚠️ Overfit 后图上还不完美是正常的
+
+1. radar 点云非常稀疏，很多 GT box 里没足够点支撑，模型看不到目标
+2. raw GT 和 train GT 不一致（见上）
+
+1-batch overfit 的合理目标**不是"图上完全一模一样"**：
+
+| 指标 | 期望 |
+|---|---|
+| loss | 明显下降（例 9.54 → 0.075） |
+| 训练 GT recall | 接近满（如 51 / 51） |
+| 预测框主体 | 贴近 GT |
+| 预测分数 | 明显升高 |
+| 虚警 | 可通过阈值 / NMS 控制 |
+
+## 8.3 画 loss 曲线
 
 `tools/utils/visual_utils/visualize_loss.py` 已存在。直接：
 
@@ -981,7 +1101,7 @@ python tools/utils/visual_utils/visualize_loss.py \
     --log-dir output/cfgs/nuscenes_models/radarpillar_nuscenes/<your_run>
 ```
 
-### 8.4 Anchor 可视化（确认 anchor 大小和位置匹配 GT 尺寸分布）
+## 8.4 Anchor 可视化（确认 anchor 大小和位置匹配 GT 尺寸分布）
 
 ```bash
 python -m tools.utils.visual_utils.anchor_analysis scatter \
@@ -993,7 +1113,206 @@ python -m tools.utils.visual_utils.anchor_analysis scatter \
 
 ---
 
-## 9. 常见问题 FAQ
+# 第 9 章 调试方法论
+
+> **遇到"不出目标""GT 不重合""loss 不收敛"时，严格按 9.1 的顺序查。**
+> 本章是整份文档的调试核心——告诉你"出问题怎么想"。
+
+## 9.1 逐层调试流程（8 步）
+
+```
+Step 1  环境           ← import 错就先修环境
+Step 2  数据长度       ← 区分 batch_size=1 和 dataset_len=1
+Step 3  GT 数量        ← GT=0 不可能学到
+Step 4  点云和 GT 重合  ← nuScenes radar 最关键
+Step 5  单 step loss   ← loss 正常但梯度=0 查训练图
+Step 6  长一点 overfit  ← 至少 800 ~ 1200 step
+Step 7  后处理         ← 没预测框看 raw score;预测太多收紧阈值
+Step 8  可视化         ← 区分 raw GT / train GT
+```
+
+### Step 1：环境
+
+确认：
+- `conda angle` 是否激活
+- `torch` / `spconv` 是否能导入
+- `numpy` / `scipy` 是否正常
+- CUDA 是否可用
+
+> import 就报错 → 先修环境，不要调模型。
+
+### Step 2：数据长度
+
+确认：
+- `dataset_len` 是否符合预期
+- overfit 是否真的是 1（普通训练是否不是 1）
+
+**重点区分**：
+
+| 看起来像 | 实际是 |
+|---|---|
+| `batch_size = 1` | dataset 仍有 N 个样本，每个 epoch 跑 N 个 step |
+| `dataset_len = 1` | 真的只 1 个样本，每个 epoch = 1 step |
+
+> **这两个完全不是一回事。**
+
+### Step 3：GT 数量
+
+确认：
+- `raw_gt` 有多少
+- 训练后 `valid_gt` 有多少
+- 是否被 range filter 过滤光
+- 类别 id 是否正确
+
+> **GT = 0，模型不可能学到目标。**
+
+### Step 4：点云和 GT 是否重合（★ nuScenes radar 最关键）
+
+确认：
+- 点云是否在合理范围
+- GT 是否在点云附近
+- x / y / z 方向是否合理
+- 坐标系是否 ego 对齐
+
+> 不重合 → 先修 dataset，不要调模型。
+
+### Step 5：单 step loss 和梯度
+
+确认：
+- loss 是否为正常正数
+- 梯度是否非零
+- 参数是否更新
+
+| 现象 | 优先查 |
+|---|---|
+| loss 有但梯度没有 | 训练图（是否 `no_grad` / DDP wrap 错） |
+| loss 异常大或 NaN | 数据和 label |
+
+### Step 6：长一点 overfit
+
+不要只跑 100 step。建议：
+
+| 场景 | 建议 iters |
+|---|---|
+| 最小验证 | 800 ~ 1200 |
+| 标准 overfit | 1200 ~ 2000 |
+| 充分 overfit | 3000 |
+
+观察：
+- loss 是否下降
+- cls loss 是否下降
+- loc loss 是否下降
+- raw score 是否升高
+
+### Step 7：后处理
+
+确认：
+- `SCORE_THRESH`
+- `OUTPUT_RAW_SCORE`
+- `NMS_THRESH`
+- `NMS_POST_MAXSIZE`
+
+| 现象 | 调法 |
+|---|---|
+| 没预测框 | 先看 raw score，降低阈值 |
+| 预测框太多 | 提高 score threshold，降低 `post max size` |
+
+### Step 8：可视化
+
+> 最终才看图。图要区分：
+
+| 颜色 / 类型 | 含义 |
+|---|---|
+| **raw GT** | 未参与训练的 GT（图上出现不算漏检） |
+| **train GT** | 实际参与 loss 的 GT |
+| **pred before NMS** | 网络输出原始预测 |
+| **pred after NMS** | 后处理后最终输出 |
+
+> 否则容易把"没参与训练的 GT"误判成漏检。
+
+## 9.2 1-batch overfit 的意义
+
+### 它不是"测泛化"
+
+**1 batch overfit 不是为了得到好泛化结果，而是为了验证工程链路是否闭环。**
+
+### 它要证明
+
+| # | 验证项 | 失败说明 |
+|---|---|---|
+| 1 | 这个样本能被读到 | dataset 路径/读取错 |
+| 2 | GT 没有被过滤光 | range filter / class 错 |
+| 3 | 模型能收到梯度 | 训练图(如 ddp / no_grad) 错 |
+| 4 | loss 能下降 | 数据 / label 错 |
+| 5 | 分类分数能升高 | loss 设计错 |
+| 6 | NMS 后能输出预测框 | 后处理 / anchor 错 |
+| 7 | 预测框能靠近 GT | 回归头没学到 |
+
+> **结论**：它是深度学习工程里的**"最小闭环测试"**，通过 ≠ 模型好，不通过 = 工程链路有断点。
+
+## 9.3 推荐的 overfit 调试命令
+
+### 1-batch overfit 专用脚本
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python /mnt/c/Users/Administrator/Documents/openDet/train_and_plot_overfit_one_batch.py \
+  --cfg_file tools/cfgs/nuscenes_models/radarpillar_nuscenes_overfit1.yaml \
+  --iters 1200 \
+  --lr 0.003 \
+  --score_thresh 0.1 \
+  --nms_post_maxsize 80 \
+  --out_dir output/overfit1_plot
+```
+
+### 更严格可视化版本
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python /mnt/c/Users/Administrator/Documents/openDet/train_and_plot_overfit_one_batch.py \
+  --cfg_file tools/cfgs/nuscenes_models/radarpillar_nuscenes_overfit1.yaml \
+  --iters 3000 \
+  --lr 0.002 \
+  --score_thresh 0.3 \
+  --nms_post_maxsize 40 \
+  --out_dir output/overfit1_plot_tighter
+```
+
+### 如果坚持用 tools/train.py
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python tools/train.py \
+  --cfg_file tools/cfgs/nuscenes_models/radarpillar_nuscenes_overfit1.yaml \
+  --batch_size 1 \
+  --workers 0 \
+  --epochs 1200 \
+  --extra_tag overfit1_1200
+```
+
+> **不推荐**用它做 overfit 判断，**官方 eval 会受 split mismatch 干扰**。
+
+### 命令选择建议
+
+| 目的 | 推荐命令 |
+|---|---|
+| 验证工程链路闭环 | 1-batch overfit 专用脚本（看 loss / raw score / 框数） |
+| 收紧后处理看质量 | 更严格可视化版本（高阈值 + 少框） |
+| 与他人对比或回归 | tools/train.py（走标准流程） |
+
+## 9.4 核心经验（10 条）
+
+1. **不要一上来调模型**，先确认数据和坐标。
+2. nuScenes 的 **global / ego / sensor 坐标是最容易错的地方**。
+3. `batch_size = 1` **不等于** 1 batch overfit；`dataset_len = 1` 才是。
+4. 1 epoch **不等于**充分训练；1 样本下 100 epoch 只有约 100 step。
+5. 没有预测框时，先看 **raw score**，再看阈值。
+6. 预测框很多时，**不是没 NMS**，而是阈值和 post max size 太宽。
+7. **官方 eval 不适合直接判断** debug overfit。
+8. 可视化必须区分 **raw GT** 和 **train GT**。
+9. 1-batch overfit 是 **验证工程闭环**，**不是评价泛化性能**。
+10. 工程调试要 **按链路逐层验证**，**不要凭最终结果猜原因**。
+
+---
+
+# 第 10 章 FAQ
 
 ### Q1：`pip install nuscenes-devkit==1.0.5` 装不上
 
@@ -1021,7 +1340,7 @@ A：常见原因：
 
 ### Q5：训练 1 epoch 比 mini 还慢
 
-A：检查 `Workers` 参数；mini 数据集小，worker 不要开太多（4 足够）。还有 `BALANCED_RESAMPLING` 会让 mini 训练集放大 ~10x，batch_size 不够时会卡 IO。
+A：检查 `workers` 参数；mini 数据集小，worker 不要开太多（4 足够）。还有 `BALANCED_RESAMPLING` 会让 mini 训练集放大 ~10x，batch_size 不够时会卡 IO。
 
 ### Q6：mAP 一直是 0
 
@@ -1067,9 +1386,31 @@ from eval_utils.eval_utils import eval_one_epoch
 
 A：spconv 和 PyTorch / CUDA 版本不匹配。回到 2.5 节按 PyTorch 版本选对 `spconv-cuXXX`。
 
+### Q11：`ValueError: All ufuncs must have type numpy.ufunc`
+
+A：numpy / scipy 版本冲突。这不是代码逻辑问题，而是环境问题。修复：
+
+```bash
+pip install numpy==1.26.4 scipy==1.15.3
+```
+
+### Q12：`Samples in split doesn't match samples in predictions`
+
+A：overfit 1 batch 时只预测 1 个样本，但官方 eval 期望完整 split。**这不是模型训练失败**，而是 debug dataset 和 official eval split 不匹配。overfit 阶段看 loss / raw score / 框数即可。
+
+### Q13：没有预测框输出
+
+A：先看 raw score（设 `OUTPUT_RAW_SCORE: True`）。常见情况：
+- raw score 存在但低于阈值 → 训练不足，降低 `SCORE_THRESH` 或多训几步
+- raw score 完全异常 → 模型 / 数据问题，回到 Step 4 查坐标系
+
+### Q14：预测框太多（500 个）
+
+A：不是没有 NMS，而是后处理参数太宽松。提高 `SCORE_THRESH`，降低 `NMS_POST_MAXSIZE`。详见 6.9 节的后处理阈值表。
+
 ---
 
-## 附录 A：所有脚本的完整代码
+# 附录 A：所有脚本的完整代码
 
 > 所有脚本独立成文件、自己负责 import，不依赖项目里其他 pcdet 代码的间接修改。
 
@@ -1644,10 +1985,12 @@ if __name__ == '__main__':
 
 ---
 
-## 附录 B：完整命令速查
+# 附录 B：完整命令速查
 
 ```bash
 # === 一次性准备 ===
+cd /home/dministrator1/RadarPillar
+. /home/dministrator1/miniconda3/etc/profile.d/conda.sh
 conda activate angle
 pip install -r requirements.txt
 pip install nuscenes-devkit==1.0.5 spconv-cu120==2.3.6
@@ -1689,16 +2032,23 @@ CUDA_VISIBLE_DEVICES=0 python tools/test.py \
 python tools/nuscenes_analysis/05_visualize_pred.py \
     --ckpt output/cfgs/nuscenes_models/radarpillar_nuscenes/run01/ckpt/checkpoint_best.pth \
     --num 8
+
+# === 1-batch overfit 调试 ===
+CUDA_VISIBLE_DEVICES=0 python /mnt/c/Users/Administrator/Documents/openDet/train_and_plot_overfit_one_batch.py \
+  --cfg_file tools/cfgs/nuscenes_models/radarpillar_nuscenes_overfit1.yaml \
+  --iters 1200 --lr 0.003 --score_thresh 0.1 --nms_post_maxsize 80 \
+  --out_dir output/overfit1_plot
 ```
 
 ---
 
-## 附录 C：文件清单（这次操作涉及/新增的文件）
+# 附录 C：文件清单
 
 | 路径 | 状态 | 说明 |
 |---|---|---|
 | `tools/cfgs/nuscenes_models/radarpillar_nuscenes.yaml` | 已存在 | 模型 + 训练配置 |
 | `tools/cfgs/dataset/nuscenes_radar_dataset.yaml` | 已存在 | 数据集配置 |
+| `tools/cfgs/nuscenes_models/radarpillar_nuscenes_overfit1.yaml` | 已存在 | 1-batch overfit 配置 |
 | `pcdet/datasets/nuscenes/nuscenes_radar_dataset.py` | 已存在 | 数据集类（5 通道 loader 已修复，详见 5.4） |
 | `pcdet/datasets/nuscenes/nuscenes_radar_utils.py` | 已存在 | infos 生成 |
 | `tools/nuscenes_analysis/01_basic_stats.py` | **待新建** | 基础元信息统计（代码见附录 A.1） |
@@ -1710,13 +2060,14 @@ python tools/nuscenes_analysis/05_visualize_pred.py \
 
 ---
 
-## 附录 D：接下来要做什么（建议你按这个顺序推进）
+# 附录 D：接下来要做什么
 
 1. **跑通 mini**（半天）：第 2 → 5.3 → 6.2 → 7.2，跑通即胜利
 2. **做数据统计分析**（半天）：第 4 节，画图、看分布
 3. ~~**修 bug + 5 通道**（半天）：第 5.4 节~~（已修复，可跳过）
-4. **调 anchor / 数据增强**（1 天）：参考 `experiments/RESULTS.md`
-5. **上 trainval**（2 天）：改 yaml 的 VERSION 即可
-6. **接 tracker**（之后）：用 `tracker/` 接检测结果做完整 pipeline
+4. **1-batch overfit 验证工程闭环**（半天）：第 9 章，确认链路无断点
+5. **调 anchor / 数据增强**（1 天）：参考 `experiments/RESULTS.md`
+6. **上 trainval**（2 天）：改 yaml 的 VERSION 即可
+7. **接 tracker**（之后）：用 `tracker/` 接检测结果做完整 pipeline
 
 祝训练顺利 🚀
