@@ -1,6 +1,7 @@
 import argparse
 import datetime
 import glob
+import json
 import os
 import re
 import time
@@ -58,10 +59,21 @@ def eval_single_ckpt(model, test_loader, args, eval_output_dir, logger, epoch_id
     model.cuda()
 
     # start evaluation
-    eval_utils.eval_one_epoch(
+    ret_dict = eval_utils.eval_one_epoch(
         cfg, model, test_loader, epoch_id, logger, dist_test=dist_test,
         result_dir=eval_output_dir, save_to_file=args.save_to_file
     )
+
+    # 落盘结构化结果 (供 tools/visualize_eval.py 消费)
+    try:
+        log_eval = sorted(eval_output_dir.glob('log_eval_*.txt'))
+        summary_str = log_eval[-1].read_text(errors='ignore') if log_eval else ''
+        results = {'ret_dict': {k: float(v) for k, v in (ret_dict or {}).items()},
+                   'summary_str': summary_str, 'epoch_id': str(epoch_id)}
+        (eval_output_dir / 'results.json').write_text(
+            json.dumps(results, indent=2, ensure_ascii=False))
+    except Exception as e:
+        logger.warning('Failed to dump results.json: %s' % e)
 
 
 def get_no_evaluated_ckpt(ckpt_dir, ckpt_record_file, args):
@@ -126,6 +138,17 @@ def repeat_eval_ckpt(model, test_loader, args, eval_output_dir, logger, ckpt_dir
             cfg, model, test_loader, cur_epoch_id, logger, dist_test=dist_test,
             result_dir=cur_result_dir, save_to_file=args.save_to_file
             )
+
+        # 落盘结构化结果 (供 tools/visualize_eval.py 消费)
+        try:
+            log_eval = sorted(cur_result_dir.glob('log_eval_*.txt'))
+            summary_str = log_eval[-1].read_text(errors='ignore') if log_eval else ''
+            results = {'ret_dict': {k: float(v) for k, v in (tb_dict or {}).items()},
+                       'summary_str': summary_str, 'epoch_id': str(cur_epoch_id)}
+            (cur_result_dir / 'results.json').write_text(
+                json.dumps(results, indent=2, ensure_ascii=False))
+        except Exception as e:
+            logger.warning('Failed to dump results.json for epoch %s: %s' % (cur_epoch_id, e))
 
         if cfg.LOCAL_RANK == 0:
             for key, val in tb_dict.items():

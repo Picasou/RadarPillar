@@ -3,7 +3,7 @@ import datetime
 import glob
 import os
 from pathlib import Path
-from test import repeat_eval_ckpt
+# from test_eval import repeat_eval_ckpt  # disabled: triggers numba segfault via kitti eval
 from utils.eval_utils.eval_utils import eval_one_epoch
 
 import torch

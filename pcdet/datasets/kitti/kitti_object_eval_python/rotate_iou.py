@@ -16,7 +16,75 @@ from numba import cuda
 # 在 WSL2 + NUMBA_DISABLE_CUDA=1 时会 CudaSupportError。
 # 这里加一层 lazy 包装：CUDA 不可用时退化为原函数，import 不崩。
 # -------------------------------------------------------------
-_CUDA_OK = os.environ.get("NUMBA_DISABLE_CUDA") != "1" and cuda.is_available()
+# 强制使用 CPU 版本，避免 numba cuda jit 编译时 segfault
+_CUDA_OK = False
+
+
+# -------------------------------------------------------------
+# CPU fallback IOU functions (shapely-based, exact as GPU version)
+# -------------------------------------------------------------
+def rbbox_to_corners_np(corners, rbbox):
+    """numpy version of rbbox_to_corners"""
+    angle = rbbox[4]
+    a_cos = math.cos(angle)
+    a_sin = math.sin(angle)
+    center_x = rbbox[0]
+    center_y = rbbox[1]
+    x_d = rbbox[2]
+    y_d = rbbox[3]
+
+    corners_x = np.array([x_d, x_d, -x_d, -x_d], dtype=np.float32) / 2.0
+    corners_y = np.array([y_d, -y_d, -y_d, y_d], dtype=np.float32) / 2.0
+
+    for i in range(4):
+        corners[2 * i] = a_cos * corners_x[i] - a_sin * corners_y[i] + center_x
+        corners[2 * i + 1] = a_sin * corners_x[i] + a_cos * corners_y[i] + center_y
+
+
+def _build_polygon(rbbox):
+    """Build a shapely polygon from a rotated bbox (cx, cy, dx, dy, angle)"""
+    from shapely.geometry import Polygon
+    corners = np.zeros(8, dtype=np.float32)
+    rbbox_to_corners_np(corners, rbbox)
+    pts = [(corners[2 * i], corners[2 * i + 1]) for i in range(4)]
+    return Polygon(pts)
+
+
+def _devRotateIoUEval_cpu_inner(rbox1, rbox2, criterion=-1):
+    """CPU version of devRotateIoUEval using shapely for exact intersection"""
+    poly1 = _build_polygon(rbox1)
+    poly2 = _build_polygon(rbox2)
+    area1 = rbox1[2] * rbox1[3]
+    area2 = rbox2[2] * rbox2[3]
+    if not poly1.is_valid:
+        poly1 = poly1.buffer(0)
+    if not poly2.is_valid:
+        poly2 = poly2.buffer(0)
+    area_inter = poly1.intersection(poly2).area
+    if criterion == -1:
+        denom = area1 + area2 - area_inter
+        return area_inter / denom if denom > 0 else 0.0
+    elif criterion == 0:
+        return area_inter / area1 if area1 > 0 else 0.0
+    elif criterion == 1:
+        return area_inter / area2 if area2 > 0 else 0.0
+    else:
+        return area_inter
+
+
+def rotate_iou_cpu_eval(boxes, query_boxes, criterion=-1):
+    """Exact CPU fallback using shapely (matches GPU version precision)"""
+    boxes = boxes.astype(np.float32)
+    query_boxes = query_boxes.astype(np.float32)
+    N = boxes.shape[0]
+    K = query_boxes.shape[0]
+    iou = np.zeros((N, K), dtype=np.float32)
+    if N == 0 or K == 0:
+        return iou
+    for i in range(N):
+        for j in range(K):
+            iou[i, j] = _devRotateIoUEval_cpu_inner(boxes[i], query_boxes[j], criterion)
+    return iou
 
 
 def _jit_safe(*jit_args, **jit_kwargs):
@@ -315,16 +383,20 @@ def rotate_iou_gpu_eval(boxes, query_boxes, criterion=-1, device_id=0):
     (take 5ms in one example with numba.cuda code).
     convert from [this project](
         https://github.com/hongzhenwang/RRPN-revise/tree/master/pcdet/rotation).
-    
+
     Args:
-        boxes (float tensor: [N, 5]): rbboxes. format: centers, dims, 
+        boxes (float tensor: [N, 5]): rbboxes. format: centers, dims,
             angles(clockwise when positive)
         query_boxes (float tensor: [K, 5]): [description]
         device_id (int, optional): Defaults to 0. [description]
-    
+
     Returns:
         [type]: [description]
     """
+    # CPU fallback when CUDA is disabled
+    if not _CUDA_OK:
+        return rotate_iou_cpu_eval(boxes, query_boxes, criterion)
+
     box_dtype = boxes.dtype
     boxes = boxes.astype(np.float32)
     query_boxes = query_boxes.astype(np.float32)

@@ -132,19 +132,19 @@ MODEL:
         NMS_CONFIG:
             MULTI_CLASSES_NMS: True
             NMS_TYPE: nms_gpu
-            NMS_THRESH: 0.1
+            NMS_THRESH: 0.15
             NMS_PRE_MAXSIZE: 4096
             NMS_POST_MAXSIZE: 500
 
 
 OPTIMIZATION:
     FIX_RANDOM_SEED: False
-    BATCH_SIZE_PER_GPU: 8
+    BATCH_SIZE_PER_GPU: 16
     NUM_EPOCHS: 80
     eval_interval: 1
     early_stop:
         enabled: True
-        metrics: ['Car_3d/moderate_R40', 'Pedestrian_3d/moderate_R40', 'Cyclist_3d/moderate_R40']~
+        metrics: ['Car_3d/moderate_R40', 'Pedestrian_3d/moderate_R40', 'Cyclist_3d/moderate_R40']
         metric_reducer: weighted_mean
         metric_weights: [0.2, 0.3, 0.5]
         mode: max
@@ -165,7 +165,7 @@ OPTIMIZATION:
     LR_DECAY: 0.1
     LR_CLIP: 0.0000001
 
-    LR_WARMUP: False
+    LR_WARMUP: True
     WARMUP_EPOCH: 1
 
     GRAD_NORM_CLIP: 10

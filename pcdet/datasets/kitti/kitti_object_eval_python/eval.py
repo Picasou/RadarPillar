@@ -118,9 +118,10 @@ def bev_box_overlap(boxes, qboxes, criterion=-1):
     return riou
 
 
-@numba.jit(nopython=True, parallel=True)
+@numba.jit(nopython=True)
 def d3_box_overlap_kernel(boxes, qboxes, rinc, criterion=-1):
     # ONLY support overlap in CAMERA, not lider.
+    # parallel=True removed to fix SIGSEGV crash on epoch 10 eval (val 1296 samples x 36 pred)
     N, K = boxes.shape[0], qboxes.shape[0]
     for i in range(N):
         for j in range(K):

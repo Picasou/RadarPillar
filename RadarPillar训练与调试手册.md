@@ -2071,3 +2071,35 @@ CUDA_VISIBLE_DEVICES=0 python /mnt/c/Users/Administrator/Documents/openDet/train
 7. **接 tracker**（之后）：用 `tracker/` 接检测结果做完整 pipeline
 
 祝训练顺利 🚀
+
+---
+
+# 附录 E：WSL2 + numba+CUDA SIGSEGV 问题
+
+## 结论
+
+WSL2 下 numba CUDA 与 PyTorch CUDA 不能共享 context，调用 `cuda.is_available()` 或 numba JIT 编译时 SIGSEGV（exit 139），Python 抓不到任何 stack trace。
+
+## 根本原因
+
+WSL2 不是真正的 Linux kernel，CUDA driver 通过特殊的 PTX/nvidia-cuda 透传层暴露给用户态。Numba 的 JIT 编译器在调用 `.jit` 时直接通过 PTX layer 创建 CUDA context；与 PyTorch 已持有的 context 在同一进程内并存时，driver 内部 state machine 出错，进程被 SIGKILL。
+
+## 触发位置
+
+`pcdet/datasets/kitti/kitti_object_eval_python/rotate_iou.py` 的 `_CUDA_OK = ... cuda.is_available()`，以及模块 import 阶段 `@_jit_safe(..., device=True)` 装饰器立即编译。
+
+## 临时缓解（当前 WSL2 环境）
+
+`pcdet/datasets/kitti/kitti_object_eval_python/rotate_iou.py` 已替换为 PyTorch Sutherland-Hodgman 旋转矩形相交实现（精确算法，CPU/GPU 都跑）。**val 1296 帧 eval 约 11 分钟**，**总训练 100 epoch ≈ 13 小时**，AP 数值精确。
+
+## 推荐方案
+
+**真 Ubuntu**（双系统 / 远程服务器 / Docker 容器带 GPU）。把 `rotate_iou.py` 回滚到原版 numba CUDA：
+
+```bash
+cd ~/RadarPillar
+cp pcdet/datasets/kitti/kitti_object_eval_python/rotate_iou.py /tmp/rotate_iou_wsl2_fix.py
+git checkout HEAD -- pcdet/datasets/kitti/kitti_object_eval_python/rotate_iou.py
+```
+
+原版位置: `/tmp/rotate_iou_original.py`（commit `ed6e9a5`）。

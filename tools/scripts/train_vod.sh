@@ -40,10 +40,17 @@
 # USE_WANDB=True
 
 # [跳过评估]
-# SKIP_EVAL=True
+SKIP_EVAL=True
+
+# [运行模式]
+# foreground: 前台运行 + tee，终端实时打印，日志同时落盘
+# background: nohup + disown 放后台，仅打印 PID，日志在文件
+RUN_MODE="foreground"
+
+# [关掉训练期 eval] — early_stop.enabled=False → eval_loader=None → 训练期不 eval
+SET_CFGS=("OPTIMIZATION.early_stop.enabled" "False") 
 
 # [cfg 覆盖]
-# SET_CFGS=("OPTIMIZATION.LR" "0.001")
 # —— 必改 ——
 CFG_FILE="tools/cfgs/model/vod_models/vod_radarpillar.yaml"
 BATCH_SIZE=16
@@ -87,9 +94,14 @@ LOG_DIR="output/cfgs/model/vod_models/vod_radarpillar/${EXTRA_TAG}/logs"
 mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/train_$(date +%Y%m%d-%H%M%S).log"
 
-# nohup + disown: 即使脚本退出，python 也不被杀
-nohup python -u tools/train.py "${ARGS[@]}" > "$LOG" 2>&1 &
-disown
-PID=$!
-echo "PID=$PID, log=$LOG"
-echo "跟踪: tail -f $LOG"
+# 前台运行 + tee：终端实时打印，同时落盘到日志文件
+echo "log=$LOG"
+if [ "$RUN_MODE" = "background" ]; then
+    nohup python -u tools/train.py "${ARGS[@]}" > "$LOG" 2>&1 &
+    disown
+    PID=$!
+    echo "PID=$PID, log=$LOG"
+    echo "跟踪: tail -f $LOG"
+else
+    python -u tools/train.py "${ARGS[@]}" 2>&1 | tee "$LOG"
+fi
