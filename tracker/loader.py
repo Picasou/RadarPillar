@@ -3,18 +3,21 @@ import os
 import warnings
 import numpy as np
 
-from schemas import (Cfg, VDS, VDD, PT, PTs, GT, GTs,
-                     Obj, Objs, FRAME, FRAMEs)
-from utils.rw_struct import (struct_read,
-                             Raw_DetHead, Raw_Det,
-                             Raw_TrkHead, Raw_Trk,
-                             Raw_Vdd, Raw_Vds)
-from utils.common import compute_cycle_s, compensate_state
+from .schemas import (Cfg, VDS, VDD, PT, PTs, GT, GTs,
+                      Obj, Objs, FRAME, FRAMEs)
+from .utils.rw_struct import (struct_read,
+                              Raw_DetHead, Raw_Det,
+                              Raw_TrkHead, Raw_Trk,
+                              Raw_Vdd, Raw_Vds)
+from .utils.common import compute_cycle_s, compensate_state
 
 
 
 class Loader:
-    """加载与切片 — 解析数据路径,产出 FRAME 序列与 VDS。"""
+    """
+    in : 数据目录 path (含 radar.default/0100|0101|0200|0201|2021|2031 bin)
+    out: FRAMEs (逐帧 gts/pts/vdd/objs), VDS (静态参数)
+    """
 
     def __init__(self, cfg: Cfg) -> None:
         self.cfg = cfg

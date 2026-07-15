@@ -3,7 +3,10 @@ from pathlib import Path
 
 
 class Evaluator:
-    """跟踪结果评估."""
+    """
+    in : online→FRAME / evaluate→history[(gts, tracks_list)]
+    out: MOT 指标 (MOTA / ID 切换 / 碎片率) 报告或可视化
+    """
 
     def __init__(self, gt_dir='data/tracker_gt', trk_dir='output/tracks'):
         self.gt_dir = Path(gt_dir)

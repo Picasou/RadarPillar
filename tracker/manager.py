@@ -3,7 +3,10 @@ import configparser
 
 
 class TrackerManager:
-    """维护活跃轨迹集合."""
+    """
+    in : Matches, objs (当前检测), FRAME
+    out: 原地维护 self.trackers (创建/更新/删除活跃轨迹)
+    """
 
     def __init__(self, cfg: configparser.ConfigParser):
         self.match_thresh = cfg.getfloat('tracker', 'match_thresh', fallback=3.0)

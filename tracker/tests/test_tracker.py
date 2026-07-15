@@ -4,8 +4,8 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from schemas import VDD, FRAME, Trk, TrkState, TrkHistory, PTs, GTs, Objs
-from utils.common import compensate_trks, compensate_frame_forward
+from tracker.schemas import VDD, FRAME, Trk, TrkHistory, PTs, GTs, Objs
+from tracker.utils.common import compensate_trks, compensate_frame_forward
 
 
 def make_vdd(speed_ms=10.0, yaw_rate=0.0, gear=0):
@@ -14,8 +14,15 @@ def make_vdd(speed_ms=10.0, yaw_rate=0.0, gear=0):
 
 def make_trk(x, y, vx, vy, h=0, history_states=None):
     h_obj = TrkHistory()
-    if history_states:
-        h_obj.states = history_states
+    if history_states is not None:
+        # history_states: (N,5) ndarray, 列=[x,y,vx,vy,heading] → 5 个并行数组
+        n = len(history_states)
+        h_obj.x_history[:n]      = history_states[:, 0]
+        h_obj.y_history[:n]      = history_states[:, 1]
+        h_obj.vx_history[:n]     = history_states[:, 2]
+        h_obj.vy_history[:n]     = history_states[:, 3]
+        h_obj.heading_history[:n] = history_states[:, 4]
+        h_obj.tail_idx = n
     return Trk(
         x_m=x, y_m=y, z_m=0,
         vx_mps=vx, vy_mps=vy,
@@ -138,12 +145,12 @@ def test_history_cumulative_turning():
 
 
 def test_history_states_compensation():
-    from dataclasses import replace
-    original = [
-        TrkState(x=20.0, y=3.0, vx=8.0, vy=2.0, heading=85.0),
-        TrkState(x=15.0, y=1.0, vx=7.0, vy=1.5, heading=88.0),
-    ]
-    snapshot = [replace(s) for s in original]
+    # 列 = [x, y, vx, vy, heading]
+    original = np.array([
+        [20.0, 3.0, 8.0, 2.0, 85.0],
+        [15.0, 1.0, 7.0, 1.5, 88.0],
+    ], dtype=float)
+    snapshot = original.copy()
     trk = make_trk(x=100, y=50, vx=10, vy=5, h=90, history_states=original)
     speed, yr, cycle_s = 10.0, 0.1, 0.1
     compensate_trks([trk], make_vdd(speed_ms=speed, yaw_rate=yr), cycle_s)
@@ -151,19 +158,20 @@ def test_history_states_compensation():
     dx, wt = speed * cycle_s, yr * cycle_s
     cos_wt, sin_wt = np.cos(wt), np.sin(wt)
     heading_delta = int(round(np.degrees(wt)))
+    n = trk.history.tail_idx  # 已写入帧数
 
-    for orig, s in zip(snapshot, trk.history.states):
-        ex  = (orig.x - dx) * cos_wt + orig.y * sin_wt
-        ey  = -(orig.x - dx) * sin_wt + orig.y * cos_wt
-        evx = orig.vx * cos_wt + orig.vy * sin_wt
-        evy = -orig.vx * sin_wt + orig.vy * cos_wt
-        eh  = (orig.heading + heading_delta) % 360
-        assert abs(s.x - ex) < 1e-4, f"state x: {s.x} vs {ex}"
-        assert abs(s.y - ey) < 1e-4, f"state y: {s.y} vs {ey}"
-        assert abs(s.vx - evx) < 1e-4, f"state vx: {s.vx} vs {evx}"
-        assert abs(s.vy - evy) < 1e-4, f"state vy: {s.vy} vs {evy}"
-        assert abs(s.heading - eh) < 1e-4, f"state h: {s.heading} vs {eh}"
-    print(f"  [PASS] history.states 5D compensated ({len(snapshot)} states)")
+    for i, orig in enumerate(snapshot):
+        ex  = (orig[0] - dx) * cos_wt + orig[1] * sin_wt
+        ey  = -(orig[0] - dx) * sin_wt + orig[1] * cos_wt
+        evx = orig[2] * cos_wt + orig[3] * sin_wt
+        evy = -orig[2] * sin_wt + orig[3] * cos_wt
+        eh  = (orig[4] + heading_delta) % 360
+        assert abs(trk.history.x_history[i]  - ex)  < 1e-4, f"state x: {trk.history.x_history[i]} vs {ex}"
+        assert abs(trk.history.y_history[i]  - ey)  < 1e-4, f"state y: {trk.history.y_history[i]} vs {ey}"
+        assert abs(trk.history.vx_history[i] - evx) < 1e-4, f"state vx: {trk.history.vx_history[i]} vs {evx}"
+        assert abs(trk.history.vy_history[i] - evy) < 1e-4, f"state vy: {trk.history.vy_history[i]} vs {evy}"
+        assert abs(trk.history.heading_history[i] - eh) < 1e-4, f"state h: {trk.history.heading_history[i]} vs {eh}"
+    print(f"  [PASS] history 5D compensated ({n} states)")
 
 
 if __name__ == '__main__':

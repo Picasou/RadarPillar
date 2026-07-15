@@ -88,12 +88,14 @@ class Obj:
     y: float = 0.0
     vx: float = 0.0
     vy: float = 0.0
+    doppler: float = 0.0          # 多普勒(径向速度) m/s (loader/detector 填)
     length: float = 0.0
     width: float = 0.0
     heading: float = 0.0
     type: int = 0
     isghost: int = 0
     ispassable: int = 0
+    score: float = 0.0            # 检测置信度 (detector 填, loader 路径默认 0)
 
 
 @dataclass
@@ -120,6 +122,7 @@ class TrkState:
     heading: float = 0.0
 
 
+HISTORY_LEN = 20
 @dataclass
 class TrkHistory:
     """轨迹历史容器 - 对齐 C Trajectory_t 结构"""
@@ -127,57 +130,66 @@ class TrkHistory:
     dx: float = 0.0
     dy: float = 0.0
     dist: float = 0.0
-    states: list = field(default_factory=list)
+    head_idx: int = 0
+    tail_idx: int = 0
+    # 5 个并行数组 - 对齐 C Trajectory_t.arr_*[HISTORY_LEN] 布局
+    x_history:      np.ndarray = field(default_factory=lambda: np.zeros(HISTORY_LEN))
+    y_history:      np.ndarray = field(default_factory=lambda: np.zeros(HISTORY_LEN))
+    vx_history:     np.ndarray = field(default_factory=lambda: np.zeros(HISTORY_LEN))
+    vy_history:     np.ndarray = field(default_factory=lambda: np.zeros(HISTORY_LEN))
+    heading_history: np.ndarray = field(default_factory=lambda: np.zeros(HISTORY_LEN))
+                                 
 
 
 @dataclass
 class Trk:
     """航迹 - 对齐车载雷达 Trk_t。"""
-    # --- 运动学 ---
-    x_m: int                    # x 位置 (m)
-    y_m: int                    # y 位置 (m)
-    z_m: int                    # z 位置 (m)
-    vx_mps: int                 # x 速度 (m/s)
-    vy_mps: int                 # y 速度 (m/s)
-    ax_mps2: int                # x 加速度 (m/s²)
-    ay_mps2: int                # y 加速度 (m/s²)
-    heading_deg: int            # 航向 (deg)
-    yaw_rate_degs: int          # 横摆角速度 (deg/s)
+    # --- 运动学 (float: 物理量需全精度) ---
+    x_m: float                  # x 位置 (m)
+    y_m: float                  # y 位置 (m)
+    z_m: float                  # z 位置 (m)
+    vx_mps: float               # x 速度 (m/s)
+    vy_mps: float               # y 速度 (m/s)
+    doppler_mps: float          # 多普勒(径向速度) m/s
+    ax_mps2: float              # x 加速度 (m/s²)
+    ay_mps2: float              # y 加速度 (m/s²)
+    heading_deg: float          # 航向 (deg)
+    yaw_rate_degs: float        # 横摆角速度 (deg/s)
 
     # --- ID / 尺寸 / 生命 ---
-    id: int                     # 航迹 ID
-    width_m: int                # 宽 (m)
-    height_m: int               # 高 (m)
-    length_m: int               # 长 (m)
-    lifetime_s: int             # 生命周期 (s)
+    id: int                     # 航迹 ID (枚举整数)
+    width_m: float              # 宽 (m)
+    height_m: float             # 高 (m)
+    length_m: float             # 长 (m)
+    lifetime_s: float           # 生命周期 (s)
 
-    # --- 标准差 ---
-    x_std_m: int
-    y_std_m: int
-    z_std_m: int
-    vx_std_mps: int
-    vy_std_mps: int
-    ax_std_mps2: int
-    ay_std_mps2: int
-    xy_pos_cov: int             # 位置协方差
-    xy_vel_cov: int             # 速度协方差
-    xy_acc_cov: int             # 加速度协方差
-    width_std_m: int
-    height_std_m: int
-    length_std_m: int
-    heading_std_deg: int
-    yaw_rate_std_degs: int
+    # --- 标准差 (float) ---
+    x_std_m: float
+    y_std_m: float
+    z_std_m: float
+    vx_std_mps: float
+    vy_std_mps: float
+    ax_std_mps2: float
+    ay_std_mps2: float
+    xy_pos_cov: float           # 位置协方差
+    xy_vel_cov: float           # 速度协方差
+    xy_acc_cov: float           # 加速度协方差
+    width_std_m: float
+    height_std_m: float
+    length_std_m: float
+    heading_std_deg: float
+    yaw_rate_std_degs: float
 
     # --- 分类 / 概率 / 状态 ---
-    type: int                   # 目标类型
-    type_confi: int             # 类型置信度 [0-100]
-    obstacle_prob: int          # 障碍概率 [0-100]
-    existence_prob: int         # 存在概率 [0-100]
-    motion_status: int          # [0:静止 | 1:运动 | 2:慢速]
-    measurement_status: int     # [0:coasting | 1:normal]
-    passable_status: int        # [0:不可通行 | 1:可通行]
-    rel_vel: int                # [0:绝对速度 | 1:相对速度]
-    rel_acc: int                # [0:绝对加速度 | 1:相对加速度]
+    type: int                   # 目标类型 (枚举整数)
+    type_confi: int           # 类型置信度 [0-100]
+    obstacle_prob: int        # 障碍概率 [0-100]
+    existence_prob: int       # 存在概率 [0-100]
+    motion_status: int          # [0:静止 | 1:运动 | 2:慢速] (枚举)
+    measurement_status: int     # [0:coasting | 1:normal] (枚举)
+    passable_status: int        # [0:不可通行 | 1:可通行] (枚举)
+    rel_vel: int                # [0:绝对速度 | 1:相对速度] (标志)
+    rel_acc: int                # [0:绝对加速度 | 1:相对加速度] (标志)
     cov: np.ndarray             # 4x4 协方差
     history: TrkHistory         # 4s 隐藏历史 (含 wt/dx/dy/dist + states[Trajectory_t 5 数组])
 
@@ -189,17 +201,25 @@ class Trks:
 
 
 @dataclass
+class FrameProc:
+    """处理层产物 - 各模块按需写入的中间结果, 与原始数据物理隔离。"""
+    points: Optional[np.ndarray] = None   # (N, 7) [x,y,z,rcs,v_r,v_r_comp,time] 累积+裁剪后 (preprocessor 填)
+    voxels: Optional[np.ndarray] = None   # (V, P, C) detector 体素化后填
+    voxel_coords: Optional[np.ndarray] = None
+    voxel_num_points: Optional[np.ndarray] = None
+    use_lead_xyz: bool = True
+
+
+@dataclass
 class FRAME:
+    """数据层 - loader 产出的原始帧, 只含输入契约。"""
     gts: GTs
     pts: PTs
     vdd: VDD
     objs: Objs
-    points: Optional[np.ndarray] = None   # (N, 5) 累积+裁剪后的点云 (preprocessor 填)
-    voxels: Optional[np.ndarray] = None           # (V, P, C) detector 体素化后填
-    voxel_coords: Optional[np.ndarray] = None
-    voxel_num_points: Optional[np.ndarray] = None
-    use_lead_xyz: bool = True
     frame_id: str = ''
+    proc: FrameProc = field(default_factory=FrameProc)
+
 
 @dataclass
 class FRAMEs:

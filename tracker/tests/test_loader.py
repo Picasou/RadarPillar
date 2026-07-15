@@ -9,14 +9,14 @@ from types import SimpleNamespace
 
 ROOT = r'C:\Users\Yangf\Desktop\RadarPillar'
 sys.path.insert(0, ROOT)
-sys.path.insert(0, os.path.join(ROOT, 'tracker'))
+sys.path.insert(0, ROOT)
 sys.path.insert(0, r'C:\Users\Yangf\Desktop\S4\warden-swa-S4')
 
 import numpy as np
 
 from lib.file_rpk import get_a1_bin_path, load_data_from_bin_a1
-from loader import Loader
-from schemas import Cfg
+from tracker.loader import Loader
+from tracker.schemas import Cfg
 
 DATA_PARENT = (sys.argv[1] if len(sys.argv) > 1
                else r'C:\Users\Yangf\Desktop\IF_DATA\20260423_140057_562')
