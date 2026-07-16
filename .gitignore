@@ -24,3 +24,5 @@ pcdet.egg-info/
 data/VoD/
 wandb/
 AGENTS_VOD.mdexperiments/logs/paper_faithful_rot_*.log.gz
+.superpowers/
+doc/

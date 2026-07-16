@@ -1,0 +1,196 @@
+CLASS_NAMES: ['Car', 'Pedestrian', 'Cyclist']
+
+DATA_CONFIG:
+    _BASE_CONFIG_: tools/cfgs/dataset/vod_dataset_radar.yaml
+    POINT_CLOUD_RANGE: [0, -25.6, -3, 51.2, 25.6, 2]
+    DATA_PROCESSOR:
+        - NAME: mask_points_and_boxes_outside_range
+          REMOVE_OUTSIDE_BOXES: True
+
+        - NAME: shuffle_points
+          SHUFFLE_ENABLED: {
+              'train': True,
+              'test': False
+          }
+
+        - NAME: transform_points_to_voxels
+          VOXEL_SIZE: [0.16, 0.16, 5]
+          MAX_POINTS_PER_VOXEL: 10
+          MAX_NUMBER_OF_VOXELS: {
+              'train': 16000,
+              'test': 40000
+          }
+
+    # Audit K: RadarNeXt does NOT use copy-paste (gt_sampling) for sparse radar.
+    # Override the base dataset yaml's DATA_AUGMENTOR to drop gt_sampling and
+    # keep ONLY random_world_flip[x] + random_world_scaling[0.95,1.05] (the
+    # augmentations the RadarNeXt FPN-variant config actually uses).
+    DATA_AUGMENTOR:
+        DISABLE_AUG_LIST: ['gt_sampling', 'placeholder']
+        AUG_CONFIG_LIST:
+            - NAME: random_world_flip
+              ALONG_AXIS_LIST: ['x']
+            - NAME: random_world_scaling
+              WORLD_SCALE_RANGE: [0.95, 1.05]
+
+MODEL:
+    # Audit B: new anchor-free CenterPoint detector (NOT PointPillar).
+    NAME: CenterPoint
+
+    VFE:
+        NAME: PillarVFE
+        WITH_DISTANCE: False
+        # Audit F: 7-dim input (x,y,z,rcs,v_r,v_r_comp,time) — do NOT decompose
+        # v_r into vx/vy (which would yield 9-dim).
+        USE_VELOCITY_DECOMPOSITION: False
+        USE_REL_VELOCITY_DECOMPOSITION: False
+        USE_VELOCITY_OFFSET: False
+        USE_REL_VELOCITY_OFFSET: False
+        USE_ABSOLUTE_XYZ: True
+        USE_NORM: True
+        NUM_FILTERS: [32]
+
+    # Audit M5: BACKBONE_3D intentionally EMPTY (null). Do NOT keep
+    # PillarAttention. Setting the whole block to null makes
+    # Detector3DTemplate.build_backbone_3d short-circuit (its guard is
+    # ``if self.model_cfg.get('BACKBONE_3D', None) is None``).
+    BACKBONE_3D:
+
+    MAP_TO_BEV:
+        NAME: PointPillarScatter
+        NUM_BEV_FEATURES: 32
+
+    BACKBONE_2D:
+        # Task 3 wrapper: holds RepDWC backbone + SECONDFPN neck as ONE BACKBONE_2D
+        # module (OpenPCDet module_topology has no separate "neck" slot).
+        NAME: RadarNeXtFPNBackbone
+
+        REP_DWC:
+            # Mirrors projects/RadarNeXt/.../radarnext_fpn_variant.py 'backbone' block.
+            # INFERENCE_MODE=False here so we BUILD the multi-branch training-mode
+            # graph (the reparam_tool will fuse it to inference-mode for the
+            # param-count check — audit E).
+            OUT_CHANNELS: [64, 128, 256]
+            LAYER_NUMS: [3, 5, 5]
+            LAYER_STRIDES: [2, 2, 2]
+            NUM_OUTPUTS: 3
+            INFERENCE_MODE: False
+            USE_SE: False
+            NUM_CONV_BRANCHES: 1
+            USE_NORMCONV: False
+            USE_DWCONV: True
+
+        SECOND_FPN:
+            # Mirrors radarnext_fpn_variant.py 'neck' block.
+            IN_CHANNELS: [64, 128, 256]
+            OUT_CHANNELS: [128, 128, 128]
+            UPSAMPLE_STRIDES: [0.5, 1, 2]
+            USE_CONV_FOR_NO_STRIDE: True
+            NORM_CFG: {EPS: 0.001, MOMENTUM: 0.01}
+            UPSAMPLE_CFG: {BIAS: False}
+            CONV_CFG: {BIAS: False}
+
+    DENSE_HEAD:
+        NAME: RadarNeXtCenterHead
+        # Audit M6: per-class head (NOT class-agnostic).
+        CLASS_AGNOSTIC: False
+
+        # Mirrors radarnext_fpn_variant.py 'bbox_head' block.
+        TASKS: [
+            {
+                num_class: 3,
+                class_names: ['Car', 'Pedestrian', 'Cyclist']
+            }
+        ]
+        COMMON_HEADS: {
+            'reg': [2, 2],
+            'height': [1, 2],
+            'dim': [3, 2],
+            'rot': [2, 2],
+            'iou': [1, 2]
+        }
+        # Audit #7: code_weights length 8 (reg2 + height1 + dim3 + rot2). bbox_code_size is 7.
+        CODE_WEIGHTS: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+        BBOX_CODE_SIZE: 7
+
+        # FPN variant: SepHead stride=2 (ConvTranspose 80 -> 160 to match the
+        # target feature_map_size = grid_size[:2] // out_size_factor = 160).
+        STRIDES: [2]
+
+        SHARE_CONV_CHANNEL: 64
+        NUM_HM_CONV: 2
+        NUM_CORNER_HM_CONV: 2
+        INIT_BIAS: -2.19
+        FINAL_KERNEL: 3
+
+        OUT_SIZE_FACTOR: 2
+        MAX_OBJS: 500
+        DENSE_REG: 1
+        GAUSSIAN_OVERLAP: 0.1
+        MIN_RADIUS: 2
+
+        # Loss weights & auxiliary heads (audit D).
+        WEIGHT: 1.0
+        CORNER_WEIGHT: 1.0
+        IOU_WEIGHT: 1.0
+        IOU_REG_WEIGHT: 0.5
+        WITH_CORNER: True
+        WITH_REG_IOU: True
+
+        RECTIFIER: [[0.5, 0.5, 0.5]]
+
+        POST_CENTER_LIMIT_RANGE: [0, -25.6, -3, 51.2, 25.6, 2]
+        SCORE_THRESHOLD: 0.1
+        NMS_CONFIG:
+            NMS_TYPE: nms_gpu
+            NMS_THRESH: 0.2
+            NMS_PRE_MAXSIZE: 1000
+            NMS_POST_MAXSIZE: 83
+
+    POST_PROCESSING:
+        RECALL_THRESH_LIST: [0.3, 0.5, 0.7]
+        SCORE_THRESH: 0.1
+        OUTPUT_RAW_SCORE: False
+
+        EVAL_METRIC: vod
+
+        NMS_CONFIG:
+            MULTI_CLASSES_NMS: True
+            NMS_TYPE: nms_gpu
+            NMS_THRESH: 0.15
+            NMS_PRE_MAXSIZE: 4096
+            NMS_POST_MAXSIZE: 500
+
+
+OPTIMIZATION:
+    FIX_RANDOM_SEED: False
+    BATCH_SIZE_PER_GPU: 8
+    NUM_EPOCHS: 80
+    eval_interval: 1
+    early_stop:
+        enabled: True
+        metrics: ['Car_3d/moderate_R40', 'Pedestrian_3d/moderate_R40', 'Cyclist_3d/moderate_R40']
+        metric_reducer: weighted_mean
+        metric_weights: [0.2, 0.3, 0.5]
+        mode: max
+        patience: 30
+        min_delta: 0.0
+        start_epoch: 10
+        save_best: True
+
+    OPTIMIZER: adam_onecycle
+    LR: 0.003
+    WEIGHT_DECAY: 0.01
+    MOMENTUM: 0.9
+
+    MOMS: [0.95, 0.85]
+    PCT_START: 0.4
+    DIV_FACTOR: 10
+    DECAY_STEP_LIST: [35, 45]
+    LR_DECAY: 0.1
+    LR_CLIP: 0.0000001
+
+    LR_WARMUP: True
+    WARMUP_EPOCH: 1
+
+    GRAD_NORM_CLIP: 10

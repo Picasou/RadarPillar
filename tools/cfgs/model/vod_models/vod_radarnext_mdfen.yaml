@@ -1,0 +1,209 @@
+CLASS_NAMES: ['Car', 'Pedestrian', 'Cyclist']
+
+DATA_CONFIG:
+    _BASE_CONFIG_: tools/cfgs/dataset/vod_dataset_radar.yaml
+    POINT_CLOUD_RANGE: [0, -25.6, -3, 51.2, 25.6, 2]
+    DATA_PROCESSOR:
+        - NAME: mask_points_and_boxes_outside_range
+          REMOVE_OUTSIDE_BOXES: True
+
+        - NAME: shuffle_points
+          SHUFFLE_ENABLED: {
+              'train': True,
+              'test': False
+          }
+
+        - NAME: transform_points_to_voxels
+          VOXEL_SIZE: [0.16, 0.16, 5]
+          MAX_POINTS_PER_VOXEL: 10
+          MAX_NUMBER_OF_VOXELS: {
+              'train': 16000,
+              'test': 40000
+          }
+
+    # Audit K: RadarNeXt does NOT use copy-paste (gt_sampling) for sparse radar.
+    # Same augmentation set as the FPN variant.
+    DATA_AUGMENTOR:
+        DISABLE_AUG_LIST: ['gt_sampling', 'placeholder']
+        AUG_CONFIG_LIST:
+            - NAME: random_world_flip
+              ALONG_AXIS_LIST: ['x']
+            - NAME: random_world_scaling
+              WORLD_SCALE_RANGE: [0.95, 1.05]
+
+MODEL:
+    # Audit B: anchor-free CenterPoint detector (NOT PointPillar).
+    NAME: CenterPoint
+
+    VFE:
+        NAME: PillarVFE
+        WITH_DISTANCE: False
+        # Audit F: 7-dim input (x,y,z,rcs,v_r,v_r_comp,time).
+        USE_VELOCITY_DECOMPOSITION: False
+        USE_REL_VELOCITY_DECOMPOSITION: False
+        USE_VELOCITY_OFFSET: False
+        USE_REL_VELOCITY_OFFSET: False
+        USE_ABSOLUTE_XYZ: True
+        USE_NORM: True
+        NUM_FILTERS: [32]
+
+    BACKBONE_3D:
+
+    MAP_TO_BEV:
+        NAME: PointPillarScatter
+        NUM_BEV_FEATURES: 32
+
+    BACKBONE_2D:
+        # Task 7 wrapper: RepDWC backbone + MDFENNeck (PAN bidirectional +
+        # former_deform2 DCN + MultiMAPFusion) folded into ONE BACKBONE_2D.
+        # Output spatial: 160x160 (MultiMAPFusion fusion_strides=[1,2]).
+        NAME: RadarNeXtMDFENBackbone
+
+        REP_DWC:
+            # Mirrors projects/RadarNeXt/.../radarnext.py 'backbone' block.
+            OUT_CHANNELS: [64, 128, 256]
+            LAYER_NUMS: [3, 5, 5]
+            LAYER_STRIDES: [2, 2, 2]
+            NUM_OUTPUTS: 3
+            INFERENCE_MODE: False
+            USE_SE: False
+            NUM_CONV_BRANCHES: 1
+            USE_NORMCONV: False
+            USE_DWCONV: True
+
+        MDFEN_NECK:
+            # Mirrors radarnext.py 'neck' block (MDFENNeck config).
+            # Translation points (Task 7 brief):
+            #   dcn_layer=False  -> DCN goes through former_deform2
+            #                       (PAN top-down 3rd branch, after concat,
+            #                        before RepBlock); input channel = 128.
+            #   former=True, latter=False, dcn_ids=[2]
+            #   use_ffn=False   -> DeformLayer holds a BARE DCNv3_pytorch.
+            #   num_repeats=[1,1,1,1] -> RepBlock.block is None.
+            #   multi_fusion=True + fusion_strides=[1,2] -> 3 PAN outputs
+            #                       fused into (B, 384, 160, 160).
+            CHANNELS_LIST: [64, 128, 256, 128, 64, 128, 256]
+            NUM_REPEATS: [1, 1, 1, 1]
+            DCN_LAYER: False
+            DCN_INDEX: [1]
+            DCN_IDS: [2]
+            FORMER: True
+            LATTER: False
+            GROUP: 4
+            USE_FFN: False
+            USE_NORM: False
+            INFERENCE_MODE: False
+            USE_SE: False
+            NUM_CONV_BRANCHES: 1
+            USE_DWCONV: True
+            USE_NORMCONV: False
+            MULTI_FUSION: True
+            FUSED_CHANNELS: [128, 128, 128]
+            FUSION_STRIDES: [1, 2]
+
+    DENSE_HEAD:
+        NAME: RadarNeXtCenterHead
+        CLASS_AGNOSTIC: False
+
+        TASKS: [
+            {
+                num_class: 3,
+                class_names: ['Car', 'Pedestrian', 'Cyclist']
+            }
+        ]
+        COMMON_HEADS: {
+            'reg': [2, 2],
+            'height': [1, 2],
+            'dim': [3, 2],
+            'rot': [2, 2],
+            'iou': [1, 2]
+        }
+        CODE_WEIGHTS: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+        BBOX_CODE_SIZE: 7
+
+        # MDFEN variant: MDFENNeck fused output is 80x80 (MultiMAPFusion
+        # fuses the 3 PAN scales [160,80,40] to the mid scale 80x80 via
+        # fusion_strides=[1,2]). The per-task SepHead then upsamples 80->160
+        # via stride=2 (ConvTranspose) to reach the target feature_map_size
+        # = grid_size // out_size_factor = 320 // 2 = 160. This matches the
+        # original RadarNeXt radarnext.py config (bbox_head strides=[2,2,2]).
+        # (The Task 7 brief's "stride=1" claim is superseded by the original
+        # config; verified by spatial tracing through MultiMAPFusion.)
+        STRIDES: [2]
+
+        SHARE_CONV_CHANNEL: 64
+        NUM_HM_CONV: 2
+        NUM_CORNER_HM_CONV: 2
+        INIT_BIAS: -2.19
+        FINAL_KERNEL: 3
+
+        OUT_SIZE_FACTOR: 2
+        MAX_OBJS: 500
+        DENSE_REG: 1
+        GAUSSIAN_OVERLAP: 0.1
+        MIN_RADIUS: 2
+
+        WEIGHT: 1.0
+        CORNER_WEIGHT: 1.0
+        IOU_WEIGHT: 1.0
+        IOU_REG_WEIGHT: 0.5
+        WITH_CORNER: True
+        WITH_REG_IOU: True
+
+        RECTIFIER: [[0.5, 0.5, 0.5]]
+
+        POST_CENTER_LIMIT_RANGE: [0, -25.6, -3, 51.2, 25.6, 2]
+        SCORE_THRESHOLD: 0.1
+        NMS_CONFIG:
+            NMS_TYPE: nms_gpu
+            NMS_THRESH: 0.2
+            NMS_PRE_MAXSIZE: 1000
+            NMS_POST_MAXSIZE: 83
+
+    POST_PROCESSING:
+        RECALL_THRESH_LIST: [0.3, 0.5, 0.7]
+        SCORE_THRESH: 0.1
+        OUTPUT_RAW_SCORE: False
+
+        EVAL_METRIC: vod
+
+        NMS_CONFIG:
+            MULTI_CLASSES_NMS: True
+            NMS_TYPE: nms_gpu
+            NMS_THRESH: 0.15
+            NMS_PRE_MAXSIZE: 4096
+            NMS_POST_MAXSIZE: 500
+
+
+OPTIMIZATION:
+    FIX_RANDOM_SEED: False
+    BATCH_SIZE_PER_GPU: 8
+    NUM_EPOCHS: 80
+    eval_interval: 1
+    early_stop:
+        enabled: True
+        metrics: ['Car_3d/moderate_R40', 'Pedestrian_3d/moderate_R40', 'Cyclist_3d/moderate_R40']
+        metric_reducer: weighted_mean
+        metric_weights: [0.2, 0.3, 0.5]
+        mode: max
+        patience: 30
+        min_delta: 0.0
+        start_epoch: 10
+        save_best: True
+
+    OPTIMIZER: adam_onecycle
+    LR: 0.003
+    WEIGHT_DECAY: 0.01
+    MOMENTUM: 0.9
+
+    MOMS: [0.95, 0.85]
+    PCT_START: 0.4
+    DIV_FACTOR: 10
+    DECAY_STEP_LIST: [35, 45]
+    LR_DECAY: 0.1
+    LR_CLIP: 0.0000001
+
+    LR_WARMUP: True
+    WARMUP_EPOCH: 1
+
+    GRAD_NORM_CLIP: 10

@@ -1,0 +1,831 @@
+{
+  "module": "centerhead",
+  "summary": {
+    "total": 76,
+    "matched": 76,
+    "missing_in_orig": 0,
+    "shape_mismatch": 0
+  },
+  "map": {
+    "shared_conv.0.weight": {
+      "orig_key": "shared_conv.0.weight",
+      "shape_match": true,
+      "port_shape": [
+        64,
+        384,
+        3,
+        3
+      ],
+      "orig_shape": [
+        64,
+        384,
+        3,
+        3
+      ]
+    },
+    "shared_conv.0.bias": {
+      "orig_key": "shared_conv.0.bias",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "shared_conv.1.weight": {
+      "orig_key": "shared_conv.1.weight",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "shared_conv.1.bias": {
+      "orig_key": "shared_conv.1.bias",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "shared_conv.1.running_mean": {
+      "orig_key": "shared_conv.1.running_mean",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "shared_conv.1.running_var": {
+      "orig_key": "shared_conv.1.running_var",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "shared_conv.1.num_batches_tracked": {
+      "orig_key": "shared_conv.1.num_batches_tracked",
+      "shape_match": true,
+      "port_shape": [],
+      "orig_shape": []
+    },
+    "tasks.0.deblock.conv.conv.weight": {
+      "orig_key": "tasks.0.deblock.conv.conv.weight",
+      "shape_match": true,
+      "port_shape": [
+        64,
+        64,
+        2,
+        2
+      ],
+      "orig_shape": [
+        64,
+        64,
+        2,
+        2
+      ]
+    },
+    "tasks.0.deblock.norm.weight": {
+      "orig_key": "tasks.0.deblock.norm.weight",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.deblock.norm.bias": {
+      "orig_key": "tasks.0.deblock.norm.bias",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.deblock.norm.running_mean": {
+      "orig_key": "tasks.0.deblock.norm.running_mean",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.deblock.norm.running_var": {
+      "orig_key": "tasks.0.deblock.norm.running_var",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.deblock.norm.num_batches_tracked": {
+      "orig_key": "tasks.0.deblock.norm.num_batches_tracked",
+      "shape_match": true,
+      "port_shape": [],
+      "orig_shape": []
+    },
+    "tasks.0.reg.0.weight": {
+      "orig_key": "tasks.0.reg.0.weight",
+      "shape_match": true,
+      "port_shape": [
+        64,
+        64,
+        3,
+        3
+      ],
+      "orig_shape": [
+        64,
+        64,
+        3,
+        3
+      ]
+    },
+    "tasks.0.reg.0.bias": {
+      "orig_key": "tasks.0.reg.0.bias",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.reg.1.weight": {
+      "orig_key": "tasks.0.reg.1.weight",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.reg.1.bias": {
+      "orig_key": "tasks.0.reg.1.bias",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.reg.1.running_mean": {
+      "orig_key": "tasks.0.reg.1.running_mean",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.reg.1.running_var": {
+      "orig_key": "tasks.0.reg.1.running_var",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.reg.1.num_batches_tracked": {
+      "orig_key": "tasks.0.reg.1.num_batches_tracked",
+      "shape_match": true,
+      "port_shape": [],
+      "orig_shape": []
+    },
+    "tasks.0.reg.3.weight": {
+      "orig_key": "tasks.0.reg.3.weight",
+      "shape_match": true,
+      "port_shape": [
+        2,
+        64,
+        3,
+        3
+      ],
+      "orig_shape": [
+        2,
+        64,
+        3,
+        3
+      ]
+    },
+    "tasks.0.reg.3.bias": {
+      "orig_key": "tasks.0.reg.3.bias",
+      "shape_match": true,
+      "port_shape": [
+        2
+      ],
+      "orig_shape": [
+        2
+      ]
+    },
+    "tasks.0.height.0.weight": {
+      "orig_key": "tasks.0.height.0.weight",
+      "shape_match": true,
+      "port_shape": [
+        64,
+        64,
+        3,
+        3
+      ],
+      "orig_shape": [
+        64,
+        64,
+        3,
+        3
+      ]
+    },
+    "tasks.0.height.0.bias": {
+      "orig_key": "tasks.0.height.0.bias",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.height.1.weight": {
+      "orig_key": "tasks.0.height.1.weight",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.height.1.bias": {
+      "orig_key": "tasks.0.height.1.bias",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.height.1.running_mean": {
+      "orig_key": "tasks.0.height.1.running_mean",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.height.1.running_var": {
+      "orig_key": "tasks.0.height.1.running_var",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.height.1.num_batches_tracked": {
+      "orig_key": "tasks.0.height.1.num_batches_tracked",
+      "shape_match": true,
+      "port_shape": [],
+      "orig_shape": []
+    },
+    "tasks.0.height.3.weight": {
+      "orig_key": "tasks.0.height.3.weight",
+      "shape_match": true,
+      "port_shape": [
+        1,
+        64,
+        3,
+        3
+      ],
+      "orig_shape": [
+        1,
+        64,
+        3,
+        3
+      ]
+    },
+    "tasks.0.height.3.bias": {
+      "orig_key": "tasks.0.height.3.bias",
+      "shape_match": true,
+      "port_shape": [
+        1
+      ],
+      "orig_shape": [
+        1
+      ]
+    },
+    "tasks.0.dim.0.weight": {
+      "orig_key": "tasks.0.dim.0.weight",
+      "shape_match": true,
+      "port_shape": [
+        64,
+        64,
+        3,
+        3
+      ],
+      "orig_shape": [
+        64,
+        64,
+        3,
+        3
+      ]
+    },
+    "tasks.0.dim.0.bias": {
+      "orig_key": "tasks.0.dim.0.bias",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.dim.1.weight": {
+      "orig_key": "tasks.0.dim.1.weight",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.dim.1.bias": {
+      "orig_key": "tasks.0.dim.1.bias",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.dim.1.running_mean": {
+      "orig_key": "tasks.0.dim.1.running_mean",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.dim.1.running_var": {
+      "orig_key": "tasks.0.dim.1.running_var",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.dim.1.num_batches_tracked": {
+      "orig_key": "tasks.0.dim.1.num_batches_tracked",
+      "shape_match": true,
+      "port_shape": [],
+      "orig_shape": []
+    },
+    "tasks.0.dim.3.weight": {
+      "orig_key": "tasks.0.dim.3.weight",
+      "shape_match": true,
+      "port_shape": [
+        3,
+        64,
+        3,
+        3
+      ],
+      "orig_shape": [
+        3,
+        64,
+        3,
+        3
+      ]
+    },
+    "tasks.0.dim.3.bias": {
+      "orig_key": "tasks.0.dim.3.bias",
+      "shape_match": true,
+      "port_shape": [
+        3
+      ],
+      "orig_shape": [
+        3
+      ]
+    },
+    "tasks.0.rot.0.weight": {
+      "orig_key": "tasks.0.rot.0.weight",
+      "shape_match": true,
+      "port_shape": [
+        64,
+        64,
+        3,
+        3
+      ],
+      "orig_shape": [
+        64,
+        64,
+        3,
+        3
+      ]
+    },
+    "tasks.0.rot.0.bias": {
+      "orig_key": "tasks.0.rot.0.bias",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.rot.1.weight": {
+      "orig_key": "tasks.0.rot.1.weight",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.rot.1.bias": {
+      "orig_key": "tasks.0.rot.1.bias",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.rot.1.running_mean": {
+      "orig_key": "tasks.0.rot.1.running_mean",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.rot.1.running_var": {
+      "orig_key": "tasks.0.rot.1.running_var",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.rot.1.num_batches_tracked": {
+      "orig_key": "tasks.0.rot.1.num_batches_tracked",
+      "shape_match": true,
+      "port_shape": [],
+      "orig_shape": []
+    },
+    "tasks.0.rot.3.weight": {
+      "orig_key": "tasks.0.rot.3.weight",
+      "shape_match": true,
+      "port_shape": [
+        2,
+        64,
+        3,
+        3
+      ],
+      "orig_shape": [
+        2,
+        64,
+        3,
+        3
+      ]
+    },
+    "tasks.0.rot.3.bias": {
+      "orig_key": "tasks.0.rot.3.bias",
+      "shape_match": true,
+      "port_shape": [
+        2
+      ],
+      "orig_shape": [
+        2
+      ]
+    },
+    "tasks.0.iou.0.weight": {
+      "orig_key": "tasks.0.iou.0.weight",
+      "shape_match": true,
+      "port_shape": [
+        64,
+        64,
+        3,
+        3
+      ],
+      "orig_shape": [
+        64,
+        64,
+        3,
+        3
+      ]
+    },
+    "tasks.0.iou.0.bias": {
+      "orig_key": "tasks.0.iou.0.bias",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.iou.1.weight": {
+      "orig_key": "tasks.0.iou.1.weight",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.iou.1.bias": {
+      "orig_key": "tasks.0.iou.1.bias",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.iou.1.running_mean": {
+      "orig_key": "tasks.0.iou.1.running_mean",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.iou.1.running_var": {
+      "orig_key": "tasks.0.iou.1.running_var",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.iou.1.num_batches_tracked": {
+      "orig_key": "tasks.0.iou.1.num_batches_tracked",
+      "shape_match": true,
+      "port_shape": [],
+      "orig_shape": []
+    },
+    "tasks.0.iou.3.weight": {
+      "orig_key": "tasks.0.iou.3.weight",
+      "shape_match": true,
+      "port_shape": [
+        1,
+        64,
+        3,
+        3
+      ],
+      "orig_shape": [
+        1,
+        64,
+        3,
+        3
+      ]
+    },
+    "tasks.0.iou.3.bias": {
+      "orig_key": "tasks.0.iou.3.bias",
+      "shape_match": true,
+      "port_shape": [
+        1
+      ],
+      "orig_shape": [
+        1
+      ]
+    },
+    "tasks.0.hm.0.weight": {
+      "orig_key": "tasks.0.hm.0.weight",
+      "shape_match": true,
+      "port_shape": [
+        64,
+        64,
+        3,
+        3
+      ],
+      "orig_shape": [
+        64,
+        64,
+        3,
+        3
+      ]
+    },
+    "tasks.0.hm.0.bias": {
+      "orig_key": "tasks.0.hm.0.bias",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.hm.1.weight": {
+      "orig_key": "tasks.0.hm.1.weight",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.hm.1.bias": {
+      "orig_key": "tasks.0.hm.1.bias",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.hm.1.running_mean": {
+      "orig_key": "tasks.0.hm.1.running_mean",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.hm.1.running_var": {
+      "orig_key": "tasks.0.hm.1.running_var",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.hm.1.num_batches_tracked": {
+      "orig_key": "tasks.0.hm.1.num_batches_tracked",
+      "shape_match": true,
+      "port_shape": [],
+      "orig_shape": []
+    },
+    "tasks.0.hm.3.weight": {
+      "orig_key": "tasks.0.hm.3.weight",
+      "shape_match": true,
+      "port_shape": [
+        3,
+        64,
+        3,
+        3
+      ],
+      "orig_shape": [
+        3,
+        64,
+        3,
+        3
+      ]
+    },
+    "tasks.0.hm.3.bias": {
+      "orig_key": "tasks.0.hm.3.bias",
+      "shape_match": true,
+      "port_shape": [
+        3
+      ],
+      "orig_shape": [
+        3
+      ]
+    },
+    "tasks.0.corner_hm.0.weight": {
+      "orig_key": "tasks.0.corner_hm.0.weight",
+      "shape_match": true,
+      "port_shape": [
+        64,
+        64,
+        3,
+        3
+      ],
+      "orig_shape": [
+        64,
+        64,
+        3,
+        3
+      ]
+    },
+    "tasks.0.corner_hm.0.bias": {
+      "orig_key": "tasks.0.corner_hm.0.bias",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.corner_hm.1.weight": {
+      "orig_key": "tasks.0.corner_hm.1.weight",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.corner_hm.1.bias": {
+      "orig_key": "tasks.0.corner_hm.1.bias",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.corner_hm.1.running_mean": {
+      "orig_key": "tasks.0.corner_hm.1.running_mean",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.corner_hm.1.running_var": {
+      "orig_key": "tasks.0.corner_hm.1.running_var",
+      "shape_match": true,
+      "port_shape": [
+        64
+      ],
+      "orig_shape": [
+        64
+      ]
+    },
+    "tasks.0.corner_hm.1.num_batches_tracked": {
+      "orig_key": "tasks.0.corner_hm.1.num_batches_tracked",
+      "shape_match": true,
+      "port_shape": [],
+      "orig_shape": []
+    },
+    "tasks.0.corner_hm.3.weight": {
+      "orig_key": "tasks.0.corner_hm.3.weight",
+      "shape_match": true,
+      "port_shape": [
+        1,
+        64,
+        3,
+        3
+      ],
+      "orig_shape": [
+        1,
+        64,
+        3,
+        3
+      ]
+    },
+    "tasks.0.corner_hm.3.bias": {
+      "orig_key": "tasks.0.corner_hm.3.bias",
+      "shape_match": true,
+      "port_shape": [
+        1
+      ],
+      "orig_shape": [
+        1
+      ]
+    }
+  }
+}

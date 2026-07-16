@@ -8,7 +8,7 @@ from .roi_head_template import RoIHeadTemplate
 
 
 class PointRCNNHead(RoIHeadTemplate):
-    def __init__(self, input_channels, model_cfg, num_class=1):
+    def __init__(self, input_channels, model_cfg, num_class=1, **kwargs):
         super().__init__(num_class=num_class, model_cfg=model_cfg)
         self.model_cfg = model_cfg
         use_bn = self.model_cfg.USE_BN
@@ -147,7 +147,7 @@ class PointRCNNHead(RoIHeadTemplate):
 
         pooled_features = self.roipool3d_gpu(batch_dict)  # (total_rois, num_sampled_points, 3 + C)
 
-        xyz_input = pooled_features[..., 0:self.num_prefix_channels].transpose(1, 2).unsqueeze(dim=3)
+        xyz_input = pooled_features[..., 0:self.num_prefix_channels].transpose(1, 2).unsqueeze(dim=3).contiguous()
         xyz_features = self.xyz_up_layer(xyz_input)
         point_features = pooled_features[..., self.num_prefix_channels:].transpose(1, 2).unsqueeze(dim=3)
         merged_features = torch.cat((xyz_features, point_features), dim=1)

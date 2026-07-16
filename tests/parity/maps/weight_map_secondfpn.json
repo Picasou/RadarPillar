@@ -1,0 +1,197 @@
+{
+  "module": "secondfpn",
+  "summary": {
+    "total": 18,
+    "matched": 18,
+    "missing_in_orig": 0,
+    "shape_mismatch": 0
+  },
+  "map": {
+    "deblocks.0.0.weight": {
+      "orig_key": "deblocks.0.0.weight",
+      "shape_match": true,
+      "port_shape": [
+        128,
+        64,
+        2,
+        2
+      ],
+      "orig_shape": [
+        128,
+        64,
+        2,
+        2
+      ]
+    },
+    "deblocks.0.1.weight": {
+      "orig_key": "deblocks.0.1.weight",
+      "shape_match": true,
+      "port_shape": [
+        128
+      ],
+      "orig_shape": [
+        128
+      ]
+    },
+    "deblocks.0.1.bias": {
+      "orig_key": "deblocks.0.1.bias",
+      "shape_match": true,
+      "port_shape": [
+        128
+      ],
+      "orig_shape": [
+        128
+      ]
+    },
+    "deblocks.0.1.running_mean": {
+      "orig_key": "deblocks.0.1.running_mean",
+      "shape_match": true,
+      "port_shape": [
+        128
+      ],
+      "orig_shape": [
+        128
+      ]
+    },
+    "deblocks.0.1.running_var": {
+      "orig_key": "deblocks.0.1.running_var",
+      "shape_match": true,
+      "port_shape": [
+        128
+      ],
+      "orig_shape": [
+        128
+      ]
+    },
+    "deblocks.0.1.num_batches_tracked": {
+      "orig_key": "deblocks.0.1.num_batches_tracked",
+      "shape_match": true,
+      "port_shape": [],
+      "orig_shape": []
+    },
+    "deblocks.1.0.weight": {
+      "orig_key": "deblocks.1.0.weight",
+      "shape_match": true,
+      "port_shape": [
+        128,
+        128,
+        1,
+        1
+      ],
+      "orig_shape": [
+        128,
+        128,
+        1,
+        1
+      ]
+    },
+    "deblocks.1.1.weight": {
+      "orig_key": "deblocks.1.1.weight",
+      "shape_match": true,
+      "port_shape": [
+        128
+      ],
+      "orig_shape": [
+        128
+      ]
+    },
+    "deblocks.1.1.bias": {
+      "orig_key": "deblocks.1.1.bias",
+      "shape_match": true,
+      "port_shape": [
+        128
+      ],
+      "orig_shape": [
+        128
+      ]
+    },
+    "deblocks.1.1.running_mean": {
+      "orig_key": "deblocks.1.1.running_mean",
+      "shape_match": true,
+      "port_shape": [
+        128
+      ],
+      "orig_shape": [
+        128
+      ]
+    },
+    "deblocks.1.1.running_var": {
+      "orig_key": "deblocks.1.1.running_var",
+      "shape_match": true,
+      "port_shape": [
+        128
+      ],
+      "orig_shape": [
+        128
+      ]
+    },
+    "deblocks.1.1.num_batches_tracked": {
+      "orig_key": "deblocks.1.1.num_batches_tracked",
+      "shape_match": true,
+      "port_shape": [],
+      "orig_shape": []
+    },
+    "deblocks.2.0.weight": {
+      "orig_key": "deblocks.2.0.weight",
+      "shape_match": true,
+      "port_shape": [
+        256,
+        128,
+        2,
+        2
+      ],
+      "orig_shape": [
+        256,
+        128,
+        2,
+        2
+      ]
+    },
+    "deblocks.2.1.weight": {
+      "orig_key": "deblocks.2.1.weight",
+      "shape_match": true,
+      "port_shape": [
+        128
+      ],
+      "orig_shape": [
+        128
+      ]
+    },
+    "deblocks.2.1.bias": {
+      "orig_key": "deblocks.2.1.bias",
+      "shape_match": true,
+      "port_shape": [
+        128
+      ],
+      "orig_shape": [
+        128
+      ]
+    },
+    "deblocks.2.1.running_mean": {
+      "orig_key": "deblocks.2.1.running_mean",
+      "shape_match": true,
+      "port_shape": [
+        128
+      ],
+      "orig_shape": [
+        128
+      ]
+    },
+    "deblocks.2.1.running_var": {
+      "orig_key": "deblocks.2.1.running_var",
+      "shape_match": true,
+      "port_shape": [
+        128
+      ],
+      "orig_shape": [
+        128
+      ]
+    },
+    "deblocks.2.1.num_batches_tracked": {
+      "orig_key": "deblocks.2.1.num_batches_tracked",
+      "shape_match": true,
+      "port_shape": [],
+      "orig_shape": []
+    }
+  }
+}
