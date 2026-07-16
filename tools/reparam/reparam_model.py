@@ -6,9 +6,9 @@ multi-branch blocks into the single-path inference graph, and reports
 ``sum(p.numel())`` for both. The INFERENCE-mode count is the figure the
 RadarNeXt paper reports (target ≈ 0.899M, tolerance [0.854, 0.944]M).
 
-Usage:
-    python tools/reparam_model.py --cfg_file \
-        tools/cfgs/model/vod_models/vod_radarnext_fpn.yaml
+Usage (run from tools/):
+    python reparam/reparam_model.py --cfg_file \
+        cfgs/model/vod_models/vod_radarnext_fpn.yaml
 
 The cfg is loaded the same way ``tools/train.py`` loads it
 (``cfg_from_yaml_file`` over the module-level ``cfg``), and the model is

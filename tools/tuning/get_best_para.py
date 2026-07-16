@@ -335,5 +335,6 @@ def main():
 
 if __name__ == '__main__':
     main()
-# python tools/get_best_para.py --cfg_file tools/cfgs/model/vod_models/vod_radarpillar.yaml
+# Run from tools/:
+# python tuning/get_best_para.py --cfg_file cfgs/model/vod_models/vod_radarpillar.yaml
 #  --batch_sizes 4 8 16 32 --worker_list 4 8 12 16 --timed_iters 100 --warmup_iters 20

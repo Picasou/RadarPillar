@@ -1,6 +1,6 @@
 """Task 9 — Reparam inference-optimization benchmark (param count + FPS).
 
-Extends Task 5's ``tools/reparam_model.py`` (param-count check) with a
+Extends Task 5's ``reparam/reparam_model.py`` (param-count check) with a
 forward-latency benchmark comparing the TRAINING-mode (multi-branch
 MobileOneBlock) graph against the INFERENCE-mode (``reparameterize_model``
 fused single-branch) graph on the SAME input, batch size, and device.
@@ -10,7 +10,10 @@ Methodology
 * Build the model in TRAINING mode (multi-branch RepDWC), load a real
   trained checkpoint via ``load_params_from_file`` (keys match because the
   ckpt was saved from a training-mode model), then call
-  ``reparameterize_model(model)`` to obtain the fused inference graph. The
+  ``reparameterize_model(model)`` to obtain the fused inference graph.
+
+  Companion to ``reparam/reparam_model.py`` (param-count only); this script
+  adds the forward-latency (FPS) + output-parity comparison. The
   fused module's ``reparam_conv`` weights are derived from the LOADED
   BN/conv stats, so both graphs compute the same function (Task 2 round-trip
   diff was 3.8e-6).
@@ -25,14 +28,14 @@ Methodology
   depend on the dataloader (fast, deterministic, no /mnt/d I/O). Voxel
   count and point count are drawn from typical VoD val-frame magnitudes.
 
-Usage:
-    python tools/benchmark_reparam.py \
-        --cfg_file tools/cfgs/model/vod_models/vod_radarnext_fpn.yaml \
+Usage (run from tools/):
+    python reparam/benchmark_reparam.py \
+        --cfg_file cfgs/model/vod_models/vod_radarnext_fpn.yaml \
         --ckpt output/cfgs/model/vod_models/vod_radarnext_fpn/default/ckpt/checkpoint_epoch_15.pth
 
     # MDFEN (pure-pytorch DCNv3 path, runs in base env):
-    python tools/benchmark_reparam.py \
-        --cfg_file tools/cfgs/model/vod_models/vod_radarnext_mdfen.yaml \
+    python reparam/benchmark_reparam.py \
+        --cfg_file cfgs/model/vod_models/vod_radarnext_mdfen.yaml \
         --ckpt output/cfgs/model/vod_models/vod_radarnext_mdfen/task7_mdfen_short/ckpt/checkpoint_epoch_15.pth
 
 Options:
