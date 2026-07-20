@@ -45,26 +45,37 @@ SKIP_EVAL=True
 # [运行模式]
 # foreground: 前台运行 + tee，终端实时打印，日志同时落盘
 # background: nohup + disown 放后台，仅打印 PID，日志在文件
-RUN_MODE="foreground"
+RUN_MODE="background"
 
 # [关掉训练期 eval] — early_stop.enabled=False → eval_loader=None → 训练期不 eval
-SET_CFGS=("OPTIMIZATION.early_stop.enabled" "False") 
+# [no warmup] — 对齐 0709 reference (LR_WARMUP=False)
+SET_CFGS=("OPTIMIZATION.early_stop.enabled" "False" "OPTIMIZATION.LR_WARMUP" "False")
 
 # [cfg 覆盖]
 # —— 必改 ——
-CFG_FILE="tools/cfgs/model/vod_models/vod_radarpillar.yaml"
+CFG_FILE="tools/cfgs/model/vod_models/radarpillar/vod_radarpillar.yaml"
 BATCH_SIZE=16
 WORKERS=2
-EPOCHS=100
+EPOCHS=80
 GPU=0
-EXTRA_TAG="radarpiller_0709"
+EXTRA_TAG="rp_base_0716"
+
+# [output 覆写: 让 train/test 直接写到 output/train_log/vod/<datetime>_rp_base_0716_paper-bs8/]
+OUTPUT_ROOT="output/train_log/vod/$(date +%Y%m%d%H%M)_radarpiller_bs8"
 
 
 # ============================================================
 # train.py 自适应脚本
 # ============================================================
 cd "$(dirname "$0")/../.."
-source /home/dministrator1/miniconda3/etc/profile.d/conda.sh
+# conda 自探测（不写死 /home/xxx），env=angle
+if command -v conda >/dev/null 2>&1; then
+    source "$(conda info --base)/etc/profile.d/conda.sh"
+else
+    for _c in "$HOME/anaconda3" "$HOME/miniconda3" /opt/conda; do
+        [ -f "$_c/etc/profile.d/conda.sh" ] && { source "$_c/etc/profile.d/conda.sh"; break; }
+    done
+fi
 conda activate angle
 export CUDA_VISIBLE_DEVICES="$GPU"
 
@@ -74,6 +85,7 @@ ARGS=(
     --workers "$WORKERS"
     --epochs "$EPOCHS"
     --extra_tag "$EXTRA_TAG"
+    --output_root "$OUTPUT_ROOT"
 )
 [ -n "$CKPT" ]                    && ARGS+=(--ckpt "$CKPT")
 [ -n "$PRETRAINED_MODEL" ]        && ARGS+=(--pretrained_model "$PRETRAINED_MODEL")
@@ -90,7 +102,7 @@ ARGS=(
 [ "$SKIP_EVAL" = True ]           && ARGS+=(--skip_eval)
 [ ${#SET_CFGS[@]} -gt 0 ]         && ARGS+=(--set "${SET_CFGS[@]}")
 
-LOG_DIR="output/cfgs/model/vod_models/vod_radarpillar/${EXTRA_TAG}/logs"
+LOG_DIR="${OUTPUT_ROOT}/logs"
 mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/train_$(date +%Y%m%d-%H%M%S).log"
 

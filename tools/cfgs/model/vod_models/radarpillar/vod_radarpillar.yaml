@@ -96,9 +96,9 @@ MODEL:
             },
             {
                 'class_name': 'Cyclist',
-                'anchor_sizes': [[1.76, 0.6, 1.73]],
+                'anchor_sizes': [[1.76, 0.6, 1.40], [1.76, 0.6, 1.78]],
                 'anchor_rotations': [0, 1.57],
-                'anchor_bottom_heights': [-0.6],
+                'anchor_bottom_heights': [-0.72],
                 'align_center': False,
                 'feature_map_stride': 2,
                 'matched_threshold': 0.5,
@@ -124,7 +124,7 @@ MODEL:
 
     POST_PROCESSING:
         RECALL_THRESH_LIST: [0.3, 0.5, 0.7]
-        SCORE_THRESH: 0.1
+        SCORE_THRESH: 0.2
         OUTPUT_RAW_SCORE: False
 
         EVAL_METRIC: vod
@@ -132,7 +132,7 @@ MODEL:
         NMS_CONFIG:
             MULTI_CLASSES_NMS: True
             NMS_TYPE: nms_gpu
-            NMS_THRESH: 0.15
+            NMS_THRESH: 0.1
             NMS_PRE_MAXSIZE: 4096
             NMS_POST_MAXSIZE: 500
 
@@ -141,7 +141,7 @@ OPTIMIZATION:
     FIX_RANDOM_SEED: False
     BATCH_SIZE_PER_GPU: 16
     NUM_EPOCHS: 80
-    eval_interval: 1
+    eval_interval: 80
     early_stop:
         enabled: True
         metrics: ['Car_3d/moderate_R40', 'Pedestrian_3d/moderate_R40', 'Cyclist_3d/moderate_R40']

@@ -27,3 +27,7 @@ AGENTS_VOD.mdexperiments/logs/paper_faithful_rot_*.log.gz
 .superpowers/
 .superpowers
 doc/
+
+# 临时训练状态
+.tmp/
+.vscode/

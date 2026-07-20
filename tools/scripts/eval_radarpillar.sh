@@ -7,15 +7,23 @@ set -e
 # ════════════════════════════════════════════════════════════════
 #  必改
 # ════════════════════════════════════════════════════════════════
-CFG_FILE="tools/cfgs/model/vod_models/vod_radarpillar.yaml"
+CFG_FILE="tools/cfgs/model/vod_models/radarpillar/vod_radarpillar.yaml"
 BATCH_SIZE=4
 WORKERS=2
 GPU=0
-EXTRA_TAG="radarpiller_0709"
-DATAROOT="/mnt/d/DATASET/VoD/view_of_delft_PUBLIC/view_of_delft_PUBLIC/radar_5frames"
+EXTRA_TAG="rp_base_0716"
+DATAROOT="data/VoD/view_of_delft_PUBLIC/radar_5frames"
 
-# 输出根目录 (train.py:58 拼接 EXP_GROUP_PATH = cfg_file 去首尾 = "cfgs/model/vod_models")
-OUTPUT_ROOT="output/cfgs/model/vod_models/vod_radarpillar/${EXTRA_TAG}"
+# 输出根目录 (train.py:57-58 派生 EXP_GROUP_PATH + TAG)
+# [output 覆写: 与 train 一致的 OUTPUT_ROOT]
+OUTPUT_ROOT="output/train_log/vod/202607171624_radarpiller_bs8"
+
+# ════════════════════════════════════════════════════════════════
+#  CPU eval 开关 (val 阶段强制 CPU)
+#   - 设为 True: 使用 tools/test_cpu.py (CPU-only test, 跳过 .cuda())
+#   - 设为 False: 使用 tools/test.py (GPU 模式)
+# ════════════════════════════════════════════════════════════════
+CPU_EVAL=True
 
 # ════════════════════════════════════════════════════════════════
 #  评估模式
@@ -25,7 +33,7 @@ OUTPUT_ROOT="output/cfgs/model/vod_models/vod_radarpillar/${EXTRA_TAG}"
 EVAL_MODE="single"
 
 # ---- single 模式 ----
-CKPT="${OUTPUT_ROOT}/ckpt/checkpoint_epoch_100.pth"
+CKPT="${OUTPUT_ROOT}/ckpt/checkpoint_epoch_80.pth"
 EVAL_TAG="default"          # 与 tools/test.py 默认 eval_tag 一致
 # SAVE_TO_FILE=True            # 导出 KITTI 格式预测文件
 
@@ -54,7 +62,14 @@ TRAIN_LOG_DIR="${OUTPUT_ROOT}"  # 含 logs/ 与 tensorboard/ 的目录
 #  执行
 # ════════════════════════════════════════════════════════════════
 cd "$(dirname "$0")/../.."
-source /home/dministrator1/miniconda3/etc/profile.d/conda.sh
+# conda 自探测（不写死 /home/xxx），env=angle
+if command -v conda >/dev/null 2>&1; then
+    source "$(conda info --base)/etc/profile.d/conda.sh"
+else
+    for _c in "$HOME/anaconda3" "$HOME/miniconda3" /opt/conda; do
+        [ -f "$_c/etc/profile.d/conda.sh" ] && { source "$_c/etc/profile.d/conda.sh"; break; }
+    done
+fi
 conda activate angle
 export CUDA_VISIBLE_DEVICES="$GPU"
 
@@ -82,9 +97,19 @@ else
         --workers "$WORKERS"
         --ckpt "$CKPT"
         --extra_tag "$EXTRA_TAG"
+        --output_root "${OUTPUT_ROOT}"
     )
     [ -n "$EVAL_TAG" ]          && ARGS+=(--eval_tag "$EVAL_TAG")
     [ "$SAVE_TO_FILE" = True ]  && ARGS+=(--save_to_file)
+fi
+
+# 选择 test 脚本 (CPU or GPU)
+if [ "$CPU_EVAL" = True ]; then
+    TEST_SCRIPT="tools/test_cpu.py"
+    unset CUDA_VISIBLE_DEVICES
+    export NUMBA_DISABLE_CUDA=1
+else
+    TEST_SCRIPT="tools/test.py"
 fi
 
 LOG_DIR="${OUTPUT_ROOT}/eval_logs"
@@ -94,14 +119,14 @@ echo "log=$LOG"
 
 # 跑 eval
 if [ "$RUN_MODE" = "background" ]; then
-    nohup python -u tools/test.py "${ARGS[@]}" > "$LOG" 2>&1 &
+    nohup python -u "$TEST_SCRIPT" "${ARGS[@]}" > "$LOG" 2>&1 &
     disown
     PID=$!
     echo "PID=$PID, log=$LOG"
     echo "跟踪: tail -f $LOG"
     wait $PID
 else
-    python -u tools/test.py "${ARGS[@]}" 2>&1 | tee "$LOG"
+    python -u "$TEST_SCRIPT" "${ARGS[@]}" 2>&1 | tee "$LOG"
 fi
 EVAL_EXIT=${PIPESTATUS[0]}
 

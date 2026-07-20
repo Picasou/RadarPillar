@@ -143,7 +143,7 @@ MODEL:
 OPTIMIZATION:
     FIX_RANDOM_SEED: True
     BATCH_SIZE_PER_GPU: 16
-    NUM_EPOCHS: 40
+    NUM_EPOCHS: 80
     eval_interval: 1
     early_stop:
         enabled: True
