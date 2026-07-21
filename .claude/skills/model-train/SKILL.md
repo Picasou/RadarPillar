@@ -137,8 +137,8 @@ wsl bash -lc '(crontab -l 2>/dev/null; echo "0 * * * * cd <工程根> && python 
 ```
 autofinish 子命令自动：
 1. 判定训练结束（目标 ckpt `checkpoint_epoch_<EPOCHS>.pth` 已生成）→ 未结束则跳过
-2. 末 20 epoch val（复用 eval_radarpillar.sh 的 `all` 模式，`START_EPOCH=EPOCHS-20`）
-3. pickbest：按 Car 3D AP 挑 best.pth 落到 `<OUTPUT_ROOT>/best.pth`
+2. **末 20 epoch 必须 val，不省**（复用 eval_radarpillar.sh 的 `all` 模式，`START_EPOCH=EPOCHS-20`）——无论 budget 多紧，val 区间不可缩
+3. **pickbest 必跑，必须筛出 best.pth**（按 Car 3D AP 挑 best ckpt，落到 `<OUTPUT_ROOT>/best.pth`）——best 不留空、未挑出则 autofinish 视为失败
 4. record：聚合配置/metric/best.pth/简报历史，生成 `experiments/<YYYYMMDDHH>_<模型>_<备注>.md`（参考 RPiN.md 风格）
 
 > 这三步串跑是确定性的编排，不该靠会话内 LLM poll 触发。脚本判定训练结束即自动收尾。
@@ -155,9 +155,10 @@ autofinish 子命令自动：
 - 建议位置：`note/<模型名>/<YYYYMMDD>_<模型>_<tag>_报告.md`
 - 示例参照：`note/radarpillar复现结论.md`（已按这约定写好）
 
-**图片引用约定**（**不拷贝**）：
+**图片引用约定**（**不拷贝，必须放 note/asset**）：
 
-- 用 markdown 相对链接，**源图留在原地**——LLM 写报告时把路径抄进 `![alt](asset/<模型>/xxx.png)`
+- **图一律放 `note/asset/<模型>/`**——LLM 写报告时直接渲染/绘制的图（如 loss 曲线、BEV 帧采样、debug 对比图）都落在此目录，不放别处
+- 用 markdown 相对链接，**源图留在原地**——报告位于 `note/<模型>/`，相对路径须是 `![alt](../asset/<模型>/xxx.png)`（不是 `asset/<模型>/...`）
 - 资产目录约定 `note/asset/<模型>/` 下放：
   - `loss_curve.png`（训练 loss 曲线）
   - `tb_loss_curves.png`（tensorboard 截屏）
