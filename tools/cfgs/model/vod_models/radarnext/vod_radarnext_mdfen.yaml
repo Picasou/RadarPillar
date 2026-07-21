@@ -45,13 +45,16 @@ MODEL:
         USE_REL_VELOCITY_OFFSET: False
         USE_ABSOLUTE_XYZ: True
         USE_NORM: True
-        NUM_FILTERS: [32]
+        # VFE 通道严格对齐论文：RadarNeXt 原工程 radarnext.py feat_channels=[64]。
+        # 移植时误用 OpenPCDet 默认 32，本次改回 64 并重训（用户要求网络严格按论文）。
+        NUM_FILTERS: [64]
 
     BACKBONE_3D:
 
     MAP_TO_BEV:
         NAME: PointPillarScatter
-        NUM_BEV_FEATURES: 32
+        # 严格对齐论文 scatter in_channels=64（与 VFE NUM_FILTERS=64 配套）
+        NUM_BEV_FEATURES: 64
 
     BACKBONE_2D:
         # Task 7 wrapper: RepDWC backbone + MDFENNeck (PAN bidirectional +
@@ -118,6 +121,8 @@ MODEL:
             'rot': [2, 2],
             'iou': [1, 2]
         }
+        # D 撤回: code_weights 是按维度索引加权, 非按类加权, 对 Cyc 无效且扰动 Car dim
+        # 保持论文原值 (全类等权 loss)
         CODE_WEIGHTS: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
         BBOX_CODE_SIZE: 7
 
@@ -191,10 +196,12 @@ OPTIMIZATION:
         start_epoch: 10
         save_best: True
 
-    OPTIMIZER: adam_onecycle
+    OPTIMIZER: adamw
     LR: 0.003
     WEIGHT_DECAY: 0.01
     MOMENTUM: 0.9
+    # 严格对齐论文 bs=8: 8G 显存 64 通道装不下 bs=8, 用 bs=4 + accum_steps=2 等价梯度效果
+    ACCUM_STEPS: 2
 
     MOMS: [0.95, 0.85]
     PCT_START: 0.4
@@ -203,7 +210,7 @@ OPTIMIZATION:
     LR_DECAY: 0.1
     LR_CLIP: 0.0000001
 
-    LR_WARMUP: True
+    LR_WARMUP: False   # 原 True；切 adamw 后关闭，对齐论文纯 step decay（见 §8）
     WARMUP_EPOCH: 1
 
     GRAD_NORM_CLIP: 10

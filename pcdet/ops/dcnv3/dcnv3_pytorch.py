@@ -246,7 +246,8 @@ class DCNv3_pytorch(nn.Module):
             pad=1,
             dilation=1,
             group=4,
-            offset_scale=1.0,
+            # 严格对齐论文原工程(DeformLayer 显式 offset_scale=2.0, DCNv3.py:94,168)
+            offset_scale=2.0,
             act_layer='GELU',
             norm_layer='LN',
             center_feature_scale=False):

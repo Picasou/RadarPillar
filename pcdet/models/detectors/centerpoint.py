@@ -40,12 +40,12 @@ class CenterPoint(Detector3DTemplate):
         (audit #10). Mirrors RadarNeXt ``init_weights``; the dense head already
         initializes itself, but we re-apply the scheme network-wide for any
         backbone/neck BN tensors."""
+        # 严格对齐论文(原工程 radarnext.py:77-80): detector 顶层只对 BN weight 做 uniform_, **不动 Conv**
+        # 避免覆盖 backbone/neck (RepDWC/DCNv3/MDFEN) 自身的 Kaiming init, 也避免覆盖
+        # dense_head 填的 init_bias=-2.19 (SepHead 末层 Conv2d.bias)。原工程 mmengine 默认 init_cfg
+        # 也只动 BN, Conv bias 由子模块自己负责(这里是关键 paper-spec 偏离)。
         for m in self.modules():
-            if isinstance(m, torch.nn.Conv2d):
-                torch.nn.init.kaiming_normal_(m.weight)
-                if m.bias is not None:
-                    torch.nn.init.constant_(m.bias, 0)
-            elif isinstance(m, torch.nn.BatchNorm2d):
+            if isinstance(m, torch.nn.BatchNorm2d):
                 if m.weight is not None:
                     torch.nn.init.uniform_(m.weight)
 

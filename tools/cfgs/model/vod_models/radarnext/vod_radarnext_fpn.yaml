@@ -48,7 +48,8 @@ MODEL:
         USE_REL_VELOCITY_OFFSET: False
         USE_ABSOLUTE_XYZ: True
         USE_NORM: True
-        NUM_FILTERS: [32]
+        # c1: VFE/Scatter 32→64 对齐论文原工程 radarnext.py feat_channels=[64] (修后与 MDFEN 一致)
+        NUM_FILTERS: [64]
 
     # Audit M5: BACKBONE_3D intentionally EMPTY (null). Do NOT keep
     # PillarAttention. Setting the whole block to null makes
@@ -58,7 +59,8 @@ MODEL:
 
     MAP_TO_BEV:
         NAME: PointPillarScatter
-        NUM_BEV_FEATURES: 32
+        # 与 VFE NUM_FILTERS=64 配套
+        NUM_BEV_FEATURES: 64
 
     BACKBONE_2D:
         # Task 3 wrapper: holds RepDWC backbone + SECONDFPN neck as ONE BACKBONE_2D
@@ -109,7 +111,8 @@ MODEL:
             'rot': [2, 2],
             'iou': [1, 2]
         }
-        # Audit #7: code_weights length 8 (reg2 + height1 + dim3 + rot2). bbox_code_size is 7.
+        # D 撤回: code_weights 是按维度索引加权, 非按类加权, 对 Cyc 无效且扰动 Car dim
+        # 保持论文原值 (全类等权 loss)
         CODE_WEIGHTS: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
         BBOX_CODE_SIZE: 7
 
@@ -178,7 +181,7 @@ OPTIMIZATION:
         start_epoch: 10
         save_best: True
 
-    OPTIMIZER: adam_onecycle
+    OPTIMIZER: adamw
     LR: 0.003
     WEIGHT_DECAY: 0.01
     MOMENTUM: 0.9
@@ -190,7 +193,7 @@ OPTIMIZATION:
     LR_DECAY: 0.1
     LR_CLIP: 0.0000001
 
-    LR_WARMUP: True
+    LR_WARMUP: False   # 原 True；切 adamw 后关闭，对齐论文纯 step decay（见 §8）
     WARMUP_EPOCH: 1
 
     GRAD_NORM_CLIP: 10

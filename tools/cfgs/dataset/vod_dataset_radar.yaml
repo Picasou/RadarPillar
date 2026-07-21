@@ -17,6 +17,10 @@ FOV_POINTS_ONLY: True
 
 CLASS_MAPPINGS: {
     'Cyclist': 'Cyclist',
+    'bicycle': 'Cyclist',
+    'rider': 'Cyclist',
+    'moped_scooter': 'Cyclist',
+    'motor': 'Cyclist',
 }
 
 POINT_FEATURE_NORMALIZATION: {
