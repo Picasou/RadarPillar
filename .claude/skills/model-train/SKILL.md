@@ -13,6 +13,19 @@ RadarPillar 模型训练的**端到端 0 介入流水线**：一次性入参 →
 
 本 skill 是 long-term-task-plan 的**领域层**：训练场景下覆盖 long-term 的通用规则（10min 周期一致；嵌套时两份简报合并）。
 
+### 0 介入硬规则（除非明确歧义，否则不准停下来问）
+
+skill 一旦被触发（用户说"训练 X"），**全程不允许停下来询问用户**——包括训练中、出错时、调参时、写报告时。
+
+**唯一允许询问的场景**（以下全不满足 → 直接拍板默认值继续跑）：
+1. **`.sh` 模板不存在且无法自动造壳**——`make_shell` 找不到模板、CFG_FILE 替换失败、壳路径冲突等
+2. **`.yaml` cfg 关键字段缺失或冲突**——`OPTIMIZATION.LR / BATCH_SIZE_PER_GPU / NUM_EPOCHS` 不在合理范围、或多个 cfg 同时匹配且互斥
+3. **模型名无法推断**——同时存在多个候选 detector 类（e.g. RN MDFEN / RN FPN），用户没指明
+
+**其它一切问题（NaN / OOM / 路径错误 / 显存不足 / 依赖缺失 / 数据加载失败 / val 跑不通 / pickbest 出错）必须由 skill 内部 loop + fanout 自动调查 + debug + 续跑，直至训练完成或本机资源硬性失败。**
+
+> 严禁的"我先问一下"借口见底部 Rationalization 表。
+
 ## 何时使用
 
 用户要求训练 RadarPillar 模型时（"训练 X"、"跑 X"、"开始训练 X"）。
@@ -175,11 +188,24 @@ autofinish 子命令自动：
 
 > 报告含主观判断（gap 归因、后续 debug 优先级），**LLM 写，脚本不替写**——脚本替写会把判断偷渡成代码。
 
-## 自愈（对齐 long-term 0 介入）
+## 自愈（对齐 long-term 0 介入，**skill 内部 loop + fanout 自闭环**）
 
-- **NaN/OOM**：brief 检测到 → 记 `.tmp/` 阻塞段 → 降 batch / 续 ckpt 自愈；自愈失败才升级人工。
-- **进程中断**：依赖 ckpt 续跑，`.tmp/` 记中断点。
-- **cron 未触发**：`.tmp/` + LOG 仍是 ground truth，可手动恢复。
+skill 检测到任何异常，**禁止停下来问用户**——必须触发内部 loop（重跑/降配/续 ckpt）和 fanout（并行探查根因），直至训练恢复或资源硬性失败。
+
+| 异常 | 检测点 | 自愈动作（loop） | 调查动作（fanout） |
+|---|---|---|---|
+| **NaN loss** | brief 解析 LOG 发现 `NaN` | 1) 降 LR 50% 续最近 ckpt；2) 失败再降 batch；3) 失败再冻结 BN；4) 失败再切 AMP off | 并行探查：loss 曲线 / 梯度范数 / 异常 batch（用 task6_overfit_1batch.py 复现）|
+| **OOM** | brief 解析发现 `CUDA OOM` 或 exit 137 | 1) bs 减半续跑；2) 失败清 `torch.cuda.empty_cache`；3) 失败降 workers；4) 失败切 `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` | 并行探查：nvidia-smi 实测 / 显存峰值日志 / voxel 数分布 |
+| **Loss 不收敛** | brief 检测 loss 平台/反弹 | 1) 续 ckpt 跑多 5 ep；2) 失败切 AdamW→SGD；3) 失败加载预训练 | 并行探查：lr schedule / data augmentation 强度 / label 噪声 |
+| **ckpt 损坏 / 加载失败** | autofinish / record 触发时 | 跳过损坏 ckpt，从次新 ckpt 续 val | 并行探查：磁盘空间 / 文件系统 / 写入完整性 |
+| **val 跑不通** | autofinish 触发 val | 1) 改 `shapely` 缺失路径；2) 切 `--eval_tag default`；3) 手动跑 test.py 单 epoch | 并行探查：NMS 配置 / score_thresh / ckpt 与 cfg 一致性 |
+| **pickbest 无 best.pth** | autofinish 第 3 步 | 1) 放宽 SCORE_THRESH；2) 兜底取最近 ckpt 作 best；3) 失败标记训练失败 | 并行探查：eval 结果目录是否完整 / metric 文件是否写出 |
+| **进程中断** | brief 检测 ckpt 不再更新 | 依赖 ckpt 续跑（`--ckpt`），`.tmp/` 记中断点 | 并行探查：OOM 痕迹 / 磁盘满 / 父进程退出 |
+| **cron 未触发** | 简报连续 30min 无更新 | 重写 crontab 条目 + 立即跑一次 manual brief | 并行探查：crontab -l / cron daemon 状态 |
+| **依赖缺失（pkg / .pyc / .so）** | preflight 失败 | 1) 走 skill 自带 `bootstrap.sh`（若存在）；2) pip install --user；3) 切 conda env | 并行探查：conda env / PYTHONPATH / LD_LIBRARY_PATH |
+| **数据路径 / 软链断开** | VodDataset 加载 0 样本 | 1) 重建 symlink；2) 重跑 `create_vod_data.py`；3) 走备份数据目录 | 并行探查：ls -la / data/VoD/ 完整性 |
+
+**升级人工（唯一例外）**：本机硬件级失败（GPU 烧了 / 磁盘写满 / conda env 物理损坏）——这种情况记 `.tmp/` CRITICAL 段，cron brief 标注，等用户修机器。**所有训练代码层面的问题，skill 必须自己闭环。**
 
 ## Rationalization 表（堵漏洞，源自 baseline 实测）
 
@@ -200,6 +226,12 @@ autofinish 子命令自动：
 | 「图片我复制一份到 note」 | 用 markdown 相对链接，**不拷贝**。源图在 `note/asset/<模型>/`，删源图才需要重引。 |
 | 「换模型我自己复制 `.sh` 就行」 | skill 现已支持自动造壳（`make_shell` + `gen --auto_make_shell`），用户不该手工复制。 |
 | 「壳内部 cfg 默认值我自己改」 | `make_shell` 自动替换 CFG_FILE 默认值行；改其它壳内部行（conda / SKIP_EVAL 等）属于改规约，应当改 skill 模板而非手工改壳。 |
+| 「NaN/OOM 我先停下来问用户怎么办」 | skill 必须自愈（降 batch / 降 LR / 续 ckpt），不允许问。问用户 = 违反 0 介入。 |
+| 「loss 不收敛是不是我哪里搞错了，先确认下」 | skill 内部 fanout 探查 lr/aug/label；不是用户问题，不许问。 |
+| 「这个超参我拿不准，问下用户」 | 用默认值（bs=8 / w=2 / ep=80 / GPU=0，sweep 结果）；拿不准 ≠ 不能跑。 |
+| 「路径错了，先停下来问用户在哪」 | 走 preflight 自动重定位 / ls 自动列候选 / 自带 fallback。 |
+| 「val 跑不出 best，我问下用户怎么办」 | autofinish 兜底取最近 ckpt 作 best，再 fanout 探查根因；不许问。 |
+| 「训练中出错了，我描述给用户让他决定」 | skill 自己 loop + fanout 调；只有本机硬件级失败才升级人工。 |
 
 ## Red Flags — 停下重来
 
@@ -211,6 +243,8 @@ autofinish 子命令自动：
 - 跳过末 20 epoch val
 - 简报或收尾由 Claude 会话内驱动而非训练机 cron
 - 训练中途反问用户超参/可视化
+- **训练中遇到 NaN / OOM / 路径错 / val 失败时停下问用户怎么办** —— 必须走 skill 自愈（loop + fanout），只有本机硬件级失败才升级人工
+- **任何"我先确认一下 / 我先问下 / 我描述给您看"之类的话术**——除 3 个明确歧义场景（.sh / .yaml / 模型名）外一律禁止
 - 未生成实验记录 md 就宣告完成
 
 **以上任一 = 违反训练规范，立即修正。**
