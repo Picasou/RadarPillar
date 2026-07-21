@@ -53,8 +53,8 @@ SET_CFGS=("OPTIMIZATION.early_stop.enabled" "False")
 # [cfg 覆盖]
 # —— 必改 ——
 CFG_FILE="tools/cfgs/model/vod_models/radarnext/vod_radarnext_mdfen.yaml"
-BATCH_SIZE=8                 # Task 2.5 sweep: RN_MDFEN_BS
-WORKERS=2                    # Task 2.5 sweep: RN_MDFEN_W
+BATCH_SIZE=8                 # sweep (sweep_bs_workers_radarnext.sh) 推荐: peak 14.95 sps @ bs=8 w=2
+WORKERS=2                    # sweep 推荐: workers≥2 已足，w=2 在 bs=8 上为最优
 EPOCHS=80
 GPU=0
 EXTRA_TAG="rn_mdfen_0716"
@@ -64,8 +64,9 @@ EXTRA_TAG="rn_mdfen_0716"
 # train.py 自适应脚本
 # ============================================================
 cd "$(dirname "$0")/../.."
-source /home/admin/anaconda3/etc/profile.d/conda.sh
-conda activate base
+# conda/env 参考 .claude/projects/.../memory/conda-and-tools-env.md
+source /home/dministrator1/miniconda3/etc/profile.d/conda.sh
+conda activate angle
 export CUDA_VISIBLE_DEVICES="$GPU"
 
 ARGS=(

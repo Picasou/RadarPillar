@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
 # 按论文重训：网络严格对齐 RadarNeXt 原工程（VFE/scatter 通道 64，原 OpenPCDet 默认 32 是移植偏离）。
-# bs=4 适应 8G 显存（64+bs4 实测峰值 4822MiB）。用户要求网络严格按论文。
+# bs / workers 由 bs×workers sweep 测定：bs=8 / w=2 在 16GB 卡上 peak 14.95 sps。
 set -uo pipefail
 CFG_FILE="tools/cfgs/model/vod_models/radarnext/vod_radarnext_mdfen.yaml"
-BATCH_SIZE=4
+BATCH_SIZE=8
 WORKERS=2
 EPOCHS=80
 GPU=0
 EXTRA_TAG="rn_mdfen_0717_paper"
 
 cd "$(dirname "$0")/../.."
-source /home/admin/anaconda3/etc/profile.d/conda.sh
-conda activate base
+# conda/env 参考 .claude/projects/.../memory/conda-and-tools-env.md
+source /home/dministrator1/miniconda3/etc/profile.d/conda.sh
+conda activate angle
 export CUDA_VISIBLE_DEVICES="$GPU"
 
 ARGS=(
