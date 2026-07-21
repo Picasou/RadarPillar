@@ -6,28 +6,41 @@ multi-branch blocks into the single-path inference graph, and reports
 ``sum(p.numel())`` for both. The INFERENCE-mode count is the figure the
 RadarNeXt paper reports (target ≈ 0.899M, tolerance [0.854, 0.944]M).
 
-Usage (run from tools/):
-    python reparam/reparam_model.py --cfg_file \
-        cfgs/model/vod_models/vod_radarnext_fpn.yaml
+Usage (PYTHONPATH=tools):
+    python tools/param_check/reparam/model.py --cfg_file \
+        tools/cfgs/model/vod_models/vod_radarnext_fpn.yaml
 
 The cfg is loaded the same way ``tools/train.py`` loads it
 (``cfg_from_yaml_file`` over the module-level ``cfg``), and the model is
 built via ``build_network`` mirroring ``train.py``'s call site. The
 dataset is constructed only because ``build_network`` requires it for
 ``module_topology`` assembly (grid_size / point_cloud_range / num_rawpoint_features).
+
+共享工具 (count_params / per_module_breakdown / build_model_from_cfg) 见
+tools/param_check/core.py。
 """
 
 import argparse
-import os
+import sys
 from pathlib import Path
 
 import torch
 
-from pcdet.config import cfg, cfg_from_yaml_file, log_config_to_file
-from pcdet.datasets import build_dataloader
-from pcdet.models import build_network
+# 仓库根加入 sys.path 前部（幂等）
+# model.py 在 tools/param_check/reparam/，回退三级到仓库根
+_HERE = Path(__file__).resolve().parent
+_REPO_ROOT = _HERE.parent.parent.parent
+sys.path.insert(0, str(_REPO_ROOT))
+
 from pcdet.models.backbones_2d.mobileone_blocks import reparameterize_model
 from pcdet.utils import common_utils
+
+from param_check.core import (  # noqa: E402
+    build_model_from_cfg,
+    count_params,
+    per_module_breakdown,
+    verdict_pct,
+)
 
 
 def parse_args():
@@ -41,53 +54,17 @@ def parse_args():
     return parser.parse_args()
 
 
-def count_params(model):
-    return sum(p.numel() for p in model.parameters())
-
-
-def per_module_breakdown(model, prefix=''):
-    """Yield (name, numel) for every submodule that owns parameters directly."""
-    rows = []
-    own = sum(p.numel() for p in model.parameters(recurse=False))
-    if own > 0:
-        rows.append((prefix if prefix else '<root>', own))
-    for name, child in model.named_children():
-        child_prefix = f'{prefix}.{name}' if prefix else name
-        rows.extend(per_module_breakdown(child, child_prefix))
-    return rows
-
-
 def main():
     args = parse_args()
 
     logger = common_utils.create_logger(log_file=None, rank=0)
     logger.info('Loading cfg: %s' % args.cfg_file)
-    cfg_from_yaml_file(args.cfg_file, cfg)
-    cfg.TAG = Path(args.cfg_file).stem
-    cfg.EXP_GROUP_PATH = '/'.join(args.cfg_file.split('/')[1:-1])
-    log_config_to_file(cfg, logger=logger)
 
-    # Build the dataset (training=True just to get a valid dataset object;
-    # we never iterate it). build_network needs dataset.point_feature_encoder,
-    # grid_size, point_cloud_range, voxel_size.
-    logger.info('Building dataset (training split) for module_topology inputs...')
-    train_set, _, _ = build_dataloader(
-        dataset_cfg=cfg.DATA_CONFIG,
-        class_names=cfg.CLASS_NAMES,
-        batch_size=args.batch_size,
-        dist=False,
-        workers=args.workers,
+    _dataset, model, _cfg = build_model_from_cfg(
+        args.cfg_file, training=True, batch_size=args.batch_size, workers=args.workers,
         logger=logger,
-        training=True,
-        total_epochs=0,
     )
 
-    logger.info('Building TRAINING-mode model (multi-branch RepDWC)...')
-    model = build_network(
-        model_cfg=cfg.MODEL,
-        num_class=len(cfg.CLASS_NAMES),
-        dataset=train_set,
-    )
     # Keep on CPU — we are only counting parameters, no forward pass needed.
     model.train()
 

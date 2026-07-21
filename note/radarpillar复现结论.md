@@ -26,7 +26,7 @@
 | 训练目录 | `output/train_log/vod/radarpillar_base` |
 | eval | **仅 ep56 单点 eval**（`eval/epoch_56/val/default/`，eval_tag=default, NMS_THRESH=0.15） |
 | 评估指标 | 3D AP@ (R11) + 3D AP_R40@ (R40) 双口径 |
-| fused 参数量 | **0.18650 M (186,496 params)**（来自 [tools/count_params.py](tools/count_params.py) 实测；vs 论文 RadarPillars base 0.27M，**−30.93 %**，**🔴 红区**） |
+| fused 参数量 | **0.18650 M (186,496 params)**（来自 [tools/param_check/radarpillar.py](tools/param_check/radarpillar.py) 实测；vs 论文 RadarPillars base 0.27M，**−30.93 %**，**🔴 红区**） |
 
 **结构对齐结论**：
 - 整体 backbone（VFE/PillarAttention/PointPillarScatter/BaseBEVBackbone/AnchorHeadSingle）层数与论文一致
@@ -173,7 +173,7 @@
 - 训练脚本：[`tools/scripts/train_radarpillar.sh`](tools/scripts/train_radarpillar.sh)
 - 模型 CFG：[`tools/cfgs/model/vod_models/radarpillar/vod_radarpillar.yaml`](tools/cfgs/model/vod_models/radarpillar/vod_radarpillar.yaml)
 - 数据 CFG：[`tools/cfgs/dataset/vod_dataset_radar.yaml`](tools/cfgs/dataset/vod_dataset_radar.yaml)
-- 参数量自检：[`tools/count_params.py`](tools/count_params.py)
+- 参数量自检：[`tools/param_check/radarpillar.py`](tools/param_check/radarpillar.py)
 
 ---
 

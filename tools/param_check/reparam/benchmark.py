@@ -28,14 +28,14 @@ Methodology
   depend on the dataloader (fast, deterministic, no /mnt/d I/O). Voxel
   count and point count are drawn from typical VoD val-frame magnitudes.
 
-Usage (run from tools/):
-    python reparam/benchmark_reparam.py \
-        --cfg_file cfgs/model/vod_models/vod_radarnext_fpn.yaml \
+Usage (PYTHONPATH=tools):
+    python tools/param_check/reparam/benchmark.py \
+        --cfg_file tools/cfgs/model/vod_models/vod_radarnext_fpn.yaml \
         --ckpt output/cfgs/model/vod_models/vod_radarnext_fpn/default/ckpt/checkpoint_epoch_15.pth
 
     # MDFEN (pure-pytorch DCNv3 path, runs in base env):
-    python reparam/benchmark_reparam.py \
-        --cfg_file cfgs/model/vod_models/vod_radarnext_mdfen.yaml \
+    python tools/param_check/reparam/benchmark.py \
+        --cfg_file tools/cfgs/model/vod_models/vod_radarnext_mdfen.yaml \
         --ckpt output/cfgs/model/vod_models/vod_radarnext_mdfen/task7_mdfen_short/ckpt/checkpoint_epoch_15.pth
 
 Options:
@@ -48,17 +48,23 @@ Options:
 """
 
 import argparse
+import sys
 import time
 from pathlib import Path
 
 import numpy as np
 import torch
 
-from pcdet.config import cfg, cfg_from_yaml_file, log_config_to_file
-from pcdet.datasets import build_dataloader
-from pcdet.models import build_network
+# 仓库根加入 sys.path 前部（幂等）
+# benchmark.py 在 tools/param_check/reparam/，回退三级到仓库根
+_HERE = Path(__file__).resolve().parent
+_REPO_ROOT = _HERE.parent.parent.parent
+sys.path.insert(0, str(_REPO_ROOT))
+
 from pcdet.models.backbones_2d.mobileone_blocks import reparameterize_model
 from pcdet.utils import common_utils
+
+from param_check.core import build_model_from_cfg, count_params  # noqa: E402
 
 
 def parse_args():
@@ -76,10 +82,6 @@ def parse_args():
     p.add_argument('--workers', type=int, default=2)
     p.add_argument('--seed', type=int, default=0)
     return p.parse_args()
-
-
-def count_params(model):
-    return sum(p.numel() for p in model.parameters())
 
 
 def make_synthetic_batch(args, dataset, device):
@@ -167,22 +169,13 @@ def main():
     logger.info('Device: %s', torch.cuda.get_device_name(0) if device.type=='cuda' else 'CPU')
 
     logger.info('Loading cfg: %s', args.cfg_file)
-    cfg_from_yaml_file(args.cfg_file, cfg)
-    cfg.TAG = Path(args.cfg_file).stem
-    cfg.EXP_GROUP_PATH = '/'.join(args.cfg_file.split('/')[1:-1])
-    log_config_to_file(cfg, logger=logger)
-
-    # Build dataset ONLY for module_topology inputs (grid_size, pcr, num_point_features).
-    logger.info('Building dataset (for module_topology inputs)...')
-    train_set, _, _ = build_dataloader(
-        dataset_cfg=cfg.DATA_CONFIG, class_names=cfg.CLASS_NAMES,
-        batch_size=args.batch_size, dist=False, workers=args.workers,
-        logger=logger, training=True, total_epochs=0,
+    train_set, train_model, _cfg = build_model_from_cfg(
+        args.cfg_file, training=True, batch_size=args.batch_size, workers=args.workers,
+        logger=logger,
     )
 
     # ---- TRAINING-mode model + load ckpt ----
-    logger.info('Building TRAINING-mode model (multi-branch) and loading ckpt: %s', args.ckpt)
-    train_model = build_network(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=train_set)
+    logger.info('Loading ckpt: %s', args.ckpt)
     train_model.load_params_from_file(filename=args.ckpt, logger=logger, to_cpu=(device.type!='cuda'))
     train_params = count_params(train_model)
 

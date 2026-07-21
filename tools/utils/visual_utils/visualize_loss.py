@@ -30,13 +30,9 @@ def parse_log(path: Path):
 
     steps = []
     epoch_seen = {}  # ep_idx -> loss (最后一次)
-    last_total_it = 0  # tqdm 风格：train 行 (含 total_it) 与 epochs 行 (含 loss) 是相邻两行
     opener = gzip.open if path.suffix == ".gz" else lambda p, *a, **kw: open(p, *a, **kw)
     with opener(path, "rt", encoding="utf-8", errors="ignore") as f:
         for line in f:
-            m_it = totalit_pat.search(line)
-            if m_it:
-                last_total_it = int(m_it.group(1))
             m_loss = loss_pat.search(line)
             if not m_loss:
                 continue
@@ -45,8 +41,10 @@ def parse_log(path: Path):
             if m_e:
                 ep_curr = int(m_e.group(2))
                 epoch_seen[ep_curr] = loss
-            if last_total_it > 0:
-                steps.append((last_total_it, loss))
+            else:
+                m_it = totalit_pat.search(line)
+                if m_it:
+                    steps.append((int(m_it.group(1)), loss))
     epoch_sorted = sorted(epoch_seen.items())  # [(1, lv), (2, lv)...]
     return steps, epoch_sorted
 

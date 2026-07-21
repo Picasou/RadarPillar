@@ -1,7 +1,7 @@
-"""tools/count_params.py — 量 base 模型参数量并按模块拆解，对论文 0.27M 判定。
+"""tools/param_check/radarpillar.py — 量 RadarPillar base 模型参数量并按模块拆解，对论文 0.27M 判定。
 
 用法:
-    PYTHONPATH=tools python tools/count_params.py \
+    PYTHONPATH=tools python tools/param_check/radarpillar.py \
         --cfg_file tools/cfgs/model/vod_models/radarpillar/vod_radarpillar.yaml
 
 设计:
@@ -12,47 +12,35 @@
   - 直接参数 named-module 详单打印（但不与上面四组求和时双重计算）。
   - 容差: pass <=2% (264k-275k)、warn <=5%、fail >5% vs target 270000。
   - 含 OTHER 桶（任何不属于四组的 trainable 参数）。
+
+共享的工具（count_params / per_module_breakdown / build_model_from_cfg /
+verdict_pct）见同目录的 core.py；本脚本只保留 RadarPillar 特定的 group 归集
+和 reporting。
 """
 from __future__ import annotations
 
 import argparse
-import logging
-import os
 import sys
 from pathlib import Path
 
-import torch
-
-# 在导入 pcdet 之前，将仓库根目录加入 sys.path 前部，
-# 以保证加载本地 RadarPillar/pcdet/（含本仓库定制改动），而非 conda 系统中可能安装的 pcdet。
-# 即便用户已经在 PYTHONPATH=tools 下调用，本段也是幂等的（仓库根已在前部）。
+# 仓库根加入 sys.path 前部（幂等）
+# radarpillar.py 在 tools/param_check/，回退两级到仓库根
 _HERE = Path(__file__).resolve().parent
-_REPO_ROOT = _HERE.parent
+_REPO_ROOT = _HERE.parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
-from pcdet.config import cfg, cfg_from_yaml_file
-from pcdet.datasets import build_dataloader
-from pcdet.models import build_network
-from pcdet.utils import common_utils
+from param_check.core import (  # noqa: E402  (param_check/ 已 PYTHONPATH=tools 暴露)
+    build_model_from_cfg,
+    count_trainable,
+    per_module_breakdown,
+    verdict_pct,
+)
 
 
 # 论文 Table V base (C=32) 全模型口径
 TARGET_PARAMS = 270_000
 PASS_PCT = 2.0
 WARN_PCT = 5.0
-
-
-def _trainable(mod):
-    """Return trainable (requires_grad) parameter count for a module
-    using `parameters(recurse=False)` semantics — i.e., only the direct
-    parameters owned by this module, NOT children. Caller is responsible
-    for deciding tree (root vs children)."""
-    return sum(p.numel() for p in mod.parameters(recurse=False) if p.requires_grad)
-
-
-def _descendant_trainable_count(root):
-    """Total trainable params within an entire submodule subtree."""
-    return sum(p.numel() for p in root.parameters() if p.requires_grad)
 
 
 def parse_args():
@@ -65,34 +53,12 @@ def parse_args():
 def main():
     args = parse_args()
 
-    logger = common_utils.create_logger(rank=0)
-    # 屏蔽数据集/网络 verbose 噪声
-    for h in logger.handlers:
-        h.setLevel(logging.ERROR)
-    logger.setLevel(logging.ERROR)
-
-    cfg_from_yaml_file(args.cfg_file, cfg)
-
-    # build_dataloader 返回 (dataset, dataloader, sampler) — 取 index 0
-    dataset, _, _ = build_dataloader(
-        cfg.DATA_CONFIG,
-        cfg.CLASS_NAMES,
-        batch_size=1,
-        dist=False,
-        workers=0,
-        logger=logger,
-        training=False,
-        total_epochs=1,
-    )
-
-    model = build_network(
-        model_cfg=cfg.MODEL,
-        num_class=len(cfg.CLASS_NAMES),
-        dataset=dataset,
+    dataset, model, _cfg = build_model_from_cfg(
+        args.cfg_file, training=False, batch_size=1, workers=0,
     )
 
     # ---- 总量 (trainable) ----
-    total_trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    total_trainable = count_trainable(model)
     total_m = total_trainable / 1e6
 
     print("=" * 78)
@@ -125,7 +91,7 @@ def main():
         print(f"\n[NOTE] module_list length={actual_len}, expected={expected_len};")
         print(f"       PFE/POINT_HEAD/ROI_HEAD 已被 cfg 关闭或开启，导致拓扑相对期望有偏移。")
         for i, sub in enumerate(modlist):
-            n = _descendant_trainable_count(sub)
+            n = sum(p.numel() for p in sub.parameters() if p.requires_grad)
             print(f"       [{i}] {type(sub).__name__:30s} {n:>8d} params")
         # 兜底按类型自动归类
         by_type = {
@@ -139,7 +105,7 @@ def main():
             t = type(sub).__name__
             for g, pred in by_type.items():
                 if pred(t):
-                    type_group_counts[g] += _descendant_trainable_count(sub)
+                    type_group_counts[g] += sum(p.numel() for p in sub.parameters() if p.requires_grad)
                     break
         group_counts_fallback = type_group_counts
 
@@ -151,7 +117,7 @@ def main():
             cnt = 0
             for idx in idx_list:
                 sub = modlist[idx]
-                cnt += _descendant_trainable_count(sub)
+                cnt += sum(p.numel() for p in sub.parameters() if p.requires_grad)
             group_counts[name] = cnt
 
     # ---- OTHER 桶 ----
@@ -178,26 +144,21 @@ def main():
     print("\n[Named-module direct-param detail (no double-count in TOTAL)]")
     print("-" * 78)
     for name, mod in model.named_modules():
-        n = _trainable(mod)
+        n = sum(p.numel() for p in mod.parameters(recurse=False) if p.requires_grad)
         if n == 0:
             continue
         print(f"  {name:60s} {n:>10d}  {n/1e6:>9.5f} M")
 
     # ---- 容差判定 ----
+    verdict = verdict_pct(total_trainable, TARGET_PARAMS, PASS_PCT, WARN_PCT)
     diff = total_trainable - TARGET_PARAMS
     abs_pct = abs(diff) / TARGET_PARAMS * 100.0
     signed_pct = diff / TARGET_PARAMS * 100.0
-    if abs_pct <= PASS_PCT:
-        verdict = "PASS"
-    elif abs_pct <= WARN_PCT:
-        verdict = "WARN"
-    else:
-        verdict = "FAIL"
 
     print("\n" + "=" * 78)
     print(f"Diff vs target: {diff:+d} ({signed_pct:+.2f}% signed, {abs_pct:.2f}% abs)")
     print(f"Verdict: {verdict} "
-          f"(PASS<=2%, WARN<=5%, FAIL>5%)")
+          f"(PASS<={PASS_PCT}%, WARN<={WARN_PCT}%, FAIL>{WARN_PCT}%)")
     print("=" * 78)
 
     # 让 CI/外层脚本可程序化获取
