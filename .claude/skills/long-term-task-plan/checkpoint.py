@@ -20,6 +20,7 @@
 """
 import argparse
 import json
+import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -34,6 +35,9 @@ def _today() -> str:
 
 def _resolve_task_dir(task_slug: str) -> tuple[Path, bool]:
     """定位任务目录：先 rglob 找 task_meta.json（启动日），找不到则 fallback 当日。
+
+    P1-8 修复: 二级排序 — 优先用 task_meta 内 start_date（权威），其次 mtime。
+    多日期同名 slug 时,start_date 越晚越优先,避免跨天 init 同 slug 时挑错目录。
 
     Returns: (task_dir, from_meta)
     """
@@ -50,10 +54,19 @@ def _resolve_task_dir(task_slug: str) -> tuple[Path, bool]:
                 mtime = meta.stat().st_mtime
             except OSError:
                 continue
-            candidates.append((mtime, Path(meta).parent))
+            start_date = m.get('start_date', '1970-01-01')
+            candidates.append((start_date, mtime, Path(meta).parent))
         if candidates:
-            candidates.sort(key=lambda x: x[0], reverse=True)
-            return candidates[0][1], True
+            # 先按 start_date 倒序,再按 mtime 倒序
+            candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
+            top = candidates[0]
+            if len(candidates) > 1:
+                # 多日期同名存在 → 强制 WARN(用户需决策)
+                print(
+                    f'[checkpoint] [WARN] slug={task_slug} 跨多日期存在: '
+                    f'{[c[0] for c in candidates]},选 {top[0]} (最新 start_date)'
+                )
+            return top[2], True
     return TMP_DIR / _today() / task_slug, False
 
 
@@ -63,13 +76,19 @@ def _archive_path(task_slug: str) -> tuple[Path, bool]:
 
 
 def _load(task_slug: str) -> list:
+    """P1-8 修复: JSON 损坏不再静默返回 []，而是 sys.exit 让 LLM 走进度文件恢复路径。"""
     p, _ = _archive_path(task_slug)
     if not p.exists():
         return []
     try:
         return json.loads(p.read_text(encoding='utf-8'))
-    except json.JSONDecodeError:
-        return []
+    except json.JSONDecodeError as e:
+        sys.exit(
+            f'[checkpoint] [FAIL] {p} 损坏: {e}。\n'
+            f'[checkpoint] 请从 .tmp/<日期>/<slug>/<slug>.md 进度文件（叙事副本）人工恢复，'
+            f'或重新启动任务。\n'
+            f'[checkpoint] 提示：crash/磁盘满可能写一半，备份 .bak 后可手工修复 json。'
+        )
 
 
 def _save(task_slug: str, data: list) -> Path:
@@ -83,7 +102,10 @@ def _save(task_slug: str, data: list) -> Path:
 #  save: 打存档点
 # ════════════════════════════════════════════════════════════════
 def cmd_save(args):
-    """产物位置/结果都作为自由键值对传入，脚本只负责落盘归档，不解析大文件。"""
+    """产物位置/结果都作为自由键值对传入，脚本只负责落盘归档，不解析大文件。
+
+    P1-8 修复: 支持 --stage_id 显式指定(防 stage_idx 跳号),否则自动递增。
+    """
     artifacts = {}
     for kv in args.artifact or []:
         if '=' in kv:
@@ -96,7 +118,19 @@ def cmd_save(args):
             results[k.strip()] = v.strip()
 
     data = _load(args.task)
-    stage_idx = len(data) + 1
+
+    # P1-8 修复: --stage_id 显式递增校验
+    if args.stage_id is not None:
+        expected = len(data) + 1
+        if args.stage_id != expected:
+            existing = [r.get('stage_idx') for r in data]
+            sys.exit(
+                f'[checkpoint] [FAIL] --stage_id={args.stage_id} 与预期 {expected} 不一致,'
+                f'可能中间漏存档。已存在 stage_idx: {existing}'
+            )
+        stage_idx = args.stage_id
+    else:
+        stage_idx = len(data) + 1
     record = {
         'stage_idx': stage_idx,
         'stage': args.stage,
@@ -133,17 +167,35 @@ def cmd_list(args):
         print(f'       下一阶段: {r.get("next_start", "(未设)")}')
 
     # 链一致性检查：每个 next_start 应对应下一个存档的 stage（slug/stage 拼错防护）
+    # P1-8 修复: 失配从 WARN 升级到 [FAIL] + sys.exit(2)（致命缺陷不能只 warn）
     print('[checkpoint] 链一致性检查:')
-    broken = False
+    broken = []
     for i in range(len(data) - 1):
         cur_next = data[i].get('next_start', '')
         nxt_stage = data[i + 1].get('stage', '')
         # 宽松匹配：next_start 是 nxt_stage 的前缀或子串即可（允许 next_start=train-b 对应 stage=train-b-mdfen）
         if cur_next and cur_next not in nxt_stage and nxt_stage not in cur_next:
-            print(f'  [WARN] #{data[i]["stage_idx"]} next_start="{cur_next}" 与下一阶段 stage="{nxt_stage}" 不匹配，可能拼错续错')
-            broken = True
-    if not broken:
-        print('  [OK] 存档链连续，next_start 与下一 stage 一致')
+            broken.append(
+                f'  [FAIL] #{data[i]["stage_idx"]} next_start="{cur_next}" '
+                f'与下一阶段 stage="{nxt_stage}" 不匹配，可能拼错续错'
+            )
+    if broken:
+        for msg in broken:
+            print(msg)
+        sys.exit(
+            '[checkpoint] [FAIL] 链一致性破坏,严禁续跑。\n'
+            '[checkpoint] 请打开 .tmp/<日期>/<slug>/<slug>_checkpoints.json 手工对齐 next_start 与 stage,\n'
+            '[checkpoint] 或追加一个新的 stage 让 next_start 与 stage 一致。'
+        )
+    print('  [OK] 存档链连续，next_start 与下一 stage 一致')
+
+    # P1-8 修复: stage_id 连续性检查
+    # 期望 stage_idx 单调递增无空洞;若检测到空洞,提示用户中间漏存档
+    expected_idx = 1
+    for r in data:
+        if r.get('stage_idx') != expected_idx:
+            print(f'  [WARN] 期望 stage_idx={expected_idx} 实际={r.get("stage_idx")} (漏存档?)')
+        expected_idx += 1
 
 
 # ════════════════════════════════════════════════════════════════
@@ -171,6 +223,27 @@ def cmd_show_latest(args):
     print(f'[checkpoint] >> 续跑起点: {latest.get("next_start", "(未设)")}')
     # 机器可读行：供 LLM 启动时 parse
     print(f'[checkpoint] RESUME_FROM={latest.get("next_start", "")}')
+    # P1-8: 同时输出 stage_id 机器可读行(便于 LLM 校验续跑完整性)
+    print(f'[checkpoint] STAGE_ID={latest.get("stage_idx", 0)}')
+
+    # P-partial 修复: 扫 BLOCKED.json,显示 NaN/OOM 自愈警报
+    _print_blocked_alerts()
+
+
+def _print_blocked_alerts():
+    """扫 .tmp 下所有 BLOCKED.json(任何 task),给 LLM 启动时可见性。"""
+    blocked = list(TMP_DIR.rglob('BLOCKED.json'))
+    if not blocked:
+        return
+    print(f'[checkpoint] [ALERT] {len(blocked)} 个 BLOCKED.json 存在(NaN/OOM 自愈标记):')
+    for bp in blocked:
+        try:
+            d = json.loads(bp.read_text(encoding='utf-8'))
+            print(f'  - {bp.parent.parent.name}/{bp.parent.name}: model={d.get("model")}, '
+                  f'reason={d.get("reason")}, ep={d.get("last_epoch")}, '
+                  f'ckpt={d.get("last_ckpt")}, time={d.get("time")}')
+        except Exception:
+            print(f'  - {bp}: parse error')
 
 
 # ════════════════════════════════════════════════════════════════
@@ -181,6 +254,7 @@ def main():
     p_s = sub.add_parser('save', help='打一个阶段存档点')
     p_s.add_argument('--task', required=True, help='任务标识（与 .tmp/<日期>/<task>/ 一致）')
     p_s.add_argument('--stage', required=True, help='阶段名，如「训练A」')
+    p_s.add_argument('--stage_id', type=int, help='P1-8: 显式 stage_idx(防跳号,默认自动递增)')
     p_s.add_argument('--artifact', action='append', default=[], help='产物位置指针，格式 key=path，可多次')
     p_s.add_argument('--result', action='append', default=[], help='数据结果，格式 key=value，可多次')
     p_s.add_argument('--next_start', required=True, help='下一阶段起点（崩溃恢复从这续）')

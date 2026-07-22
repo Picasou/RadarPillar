@@ -8,6 +8,7 @@
 """
 import argparse
 import json
+import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -36,6 +37,8 @@ def main():
     ap.add_argument('--name', required=True, help='任务名')
     ap.add_argument('--slug', required=True, help='任务标识（目录/文件名用）')
     ap.add_argument('--input', action='append', default=[], help='入参快照，可多次，格式 key=value')
+    ap.add_argument('--force', action='store_true',
+                    help='P1-10 修复: 同 slug 已存在 task_meta.json 时强制重入(默认拒绝)')
     args = ap.parse_args()
 
     start_dt = datetime.now(CST)
@@ -43,10 +46,19 @@ def main():
     start_str = start_dt.strftime('%Y-%m-%d %H:%M CST')
 
     task_dir = TMP_DIR / start_date / args.slug
+
+    # P1-10 修复: --refuse-reinit（同 slug 已存在则 fail）
+    meta_path = task_dir / 'task_meta.json'
+    if meta_path.exists() and not args.force:
+        sys.exit(
+            f'[init] [FAIL] slug={args.slug} 已存在 task_meta.json (在 {task_dir})\n'
+            f'[init] 同 slug 续接请用 `checkpoint.py show-latest --task {args.slug}` 读存档\n'
+            f'[init] 如确认要新开任务,加 --force 强制重入(覆盖旧 meta + 索引)'
+        )
+
     task_dir.mkdir(parents=True, exist_ok=True)
     out = task_dir / f'{args.slug}.md'
 
-    meta_path = task_dir / 'task_meta.json'
     meta = {
         'slug': args.slug,
         'name': args.name,
@@ -54,6 +66,17 @@ def main():
         'start_time': start_str,
     }
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+
+    # P-partial 修复: init 时扫所有 BLOCKED.json,若有自愈标记则打印警报
+    blocked_list = list(TMP_DIR.rglob('BLOCKED.json'))
+    if blocked_list:
+        print(f'[init] [ALERT] 发现 {len(blocked_list)} 个 BLOCKED.json(NaN/OOM 自愈标记):')
+        for bp in blocked_list:
+            try:
+                data = json.loads(bp.read_text(encoding='utf-8'))
+                print(f'  - {bp.relative_to(ROOT)}: model={data.get("model")}, reason={data.get("reason")}, ep={data.get("last_epoch")}, ckpt={data.get("last_ckpt")}')
+            except Exception as e:
+                print(f'  - {bp.relative_to(ROOT)}: parse error {e}')
 
     inputs = '\n'.join(f'  - {i}' for i in args.input) if args.input else '  （无）'
 
