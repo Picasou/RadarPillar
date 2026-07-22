@@ -7,34 +7,34 @@ set -e
 # ════════════════════════════════════════════════════════════════
 #  必改
 # ════════════════════════════════════════════════════════════════
-CFG_FILE="tools/cfgs/model/vod_models/radarpillar/vod_radarpillar.yaml"
-BATCH_SIZE=4
-WORKERS=2
-GPU=0
-EXTRA_TAG="rp_base_0716"
-DATAROOT="data/VoD/view_of_delft_PUBLIC/radar_5frames"
+: "${CFG_FILE:=tools/cfgs/model/vod_models/radarpillar/vod_radarpillar.yaml}"
+: "${BATCH_SIZE:=4}"
+: "${WORKERS:=2}"
+: "${GPU:=0}"
+: "${EXTRA_TAG:=rp_base_0716}"
+: "${DATAROOT:=data/vod/view_of_delft_PUBLIC/radar_5frames}"
 
 # 输出根目录 (train.py:57-58 派生 EXP_GROUP_PATH + TAG)
 # [output 覆写: 与 train 一致的 OUTPUT_ROOT]
-OUTPUT_ROOT="output/train_log/vod/202607171624_radarpiller_bs8"
+: "${OUTPUT_ROOT:=output/train_log/vod/202607171624_radarpiller_bs8}"
 
 # ════════════════════════════════════════════════════════════════
 #  CPU eval 开关 (val 阶段强制 CPU)
 #   - 设为 True: 使用 tools/test_cpu.py (CPU-only test, 跳过 .cuda())
 #   - 设为 False: 使用 tools/test.py (GPU 模式)
 # ════════════════════════════════════════════════════════════════
-CPU_EVAL=True
+: "${CPU_EVAL:=False}"
 
 # ════════════════════════════════════════════════════════════════
 #  评估模式
 # ════════════════════════════════════════════════════════════════
 # single: 评估指定 --ckpt, 训练后用
 # all:    评估 ckpt_dir 下所有 checkpoint_epoch_*.pth, 训练中轮询用
-EVAL_MODE="single"
+: "${EVAL_MODE:=single}"
 
 # ---- single 模式 ----
-CKPT="${OUTPUT_ROOT}/ckpt/checkpoint_epoch_80.pth"
-EVAL_TAG="default"          # 与 tools/test.py 默认 eval_tag 一致
+: "${CKPT:=${OUTPUT_ROOT}/ckpt/checkpoint_epoch_80.pth}"
+: "${EVAL_TAG:=default}"           # 与 tools/test.py 默认 eval_tag 一致
 # SAVE_TO_FILE=True            # 导出 KITTI 格式预测文件
 
 # ---- all 模式 ----
@@ -70,7 +70,7 @@ else
         [ -f "$_c/etc/profile.d/conda.sh" ] && { source "$_c/etc/profile.d/conda.sh"; break; }
     done
 fi
-conda activate angle
+conda activate base
 export CUDA_VISIBLE_DEVICES="$GPU"
 
 # 注意: 不要 export NUMBA_DISABLE_CUDA=1

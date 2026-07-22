@@ -3,17 +3,19 @@
 # bs / workers 由 bs×workers sweep 测定：bs=8 / w=2 在 16GB 卡上 peak 14.95 sps。
 set -uo pipefail
 CFG_FILE="tools/cfgs/model/vod_models/radarnext/vod_radarnext_mdfen.yaml"
-BATCH_SIZE=8
+BATCH_SIZE=4
 WORKERS=2
 EPOCHS=80
 GPU=0
 EXTRA_TAG="rn_mdfen_0717_paper"
 
 cd "$(dirname "$0")/../.."
-# conda/env 参考 .claude/projects/.../memory/conda-and-tools-env.md
-source /home/dministrator1/miniconda3/etc/profile.d/conda.sh
-conda activate angle
+# 本机真实 conda：/home/admin/anaconda3 + env base（dministrator1/angle 是死路径，参见 memory/env-conda-base.md）
+source /home/admin/anaconda3/etc/profile.d/conda.sh
+conda activate base
 export CUDA_VISIBLE_DEVICES="$GPU"
+# sweep 脚本约定：PYTHONPATH=tools（参见 memory/radarpillar-env-ground-truth.md）
+export PYTHONPATH="$(pwd)/tools:${PYTHONPATH:-}"
 
 ARGS=(
     --cfg_file "$CFG_FILE"

@@ -30,6 +30,17 @@ def build_optimizer(model, optim_cfg):
         optimizer = OptimWrapper.create(
             optimizer_func, 3e-3, get_layer_groups(model), wd=optim_cfg.WEIGHT_DECAY, true_wd=True, bn_wd=True
         )
+    elif optim_cfg.OPTIMIZER == 'adamw':
+        # AdamW 分支：补回 ad5c77c 恢复时丢失的分支。RadarNeXt mdfen/fpn cfg
+        # (tools/cfgs/model/vod_models/radarnext/*.yaml) 显式 OPTIMIZER=adamw，
+        # 与论文对齐；scheduler 走 build_scheduler 中非 adam_onecycle 的
+        # LambdaLR + step decay 路径（论文纯 step decay，无 warmup）。
+        optimizer = optim.AdamW(
+            model.parameters(),
+            lr=optim_cfg.LR,
+            betas=(0.9, 0.999),
+            weight_decay=optim_cfg.WEIGHT_DECAY,
+        )
     else:
         raise NotImplementedError
 
