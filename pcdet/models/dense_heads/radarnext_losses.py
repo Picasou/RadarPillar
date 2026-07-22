@@ -335,12 +335,9 @@ class IouLoss(nn.Module):
         target = boxes_aligned_iou3d_gpu(pred_box[mask], box_gt[mask])  # (N,)
         target = 2 * target - 1
 
-        # NOTE (fidelity): the original PillarNeXt IouLoss passes pred (N,1) and
-        # target (N,) into F.l1_loss, which broadcasts to (N,N) before the sum.
-        # This shape mismatch is reproduced verbatim for numerical parity with
-        # the RadarNeXt reference (Task 4.5). Do not "fix" it without also
-        # fixing the reference.
-        loss = F.l1_loss(pred, target, reduction='sum')
+        # pred(N,1) 与 target(N,) 会 broadcast 到 (N,N) —— iou 项被放大 N 倍、梯度污染、loss 横盘。
+        # squeeze 到 (N,) 让 L1 按元素算：loss = Σ|pred_i - target_i|
+        loss = F.l1_loss(pred.squeeze(-1), target, reduction='sum')
         loss = loss / (mask.sum() + 1e-4)
         return loss
 
