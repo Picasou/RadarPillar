@@ -91,10 +91,7 @@ ARGS=(
 [ "$SKIP_EVAL" = True ]           && ARGS+=(--skip_eval)
 [ ${#SET_CFGS[@]} -gt 0 ]         && ARGS+=(--set "${SET_CFGS[@]}")
 
-# LOG_DIR 须与 train.py 的 ckpt 产物目录对齐（CFG_FILE 含 radarnext/ 层，
-# OpenPCDet 按 cfg 相对路径在 output/ 下镜像建目录 → 产物含 radarnext/ 层）。
-# 否则 log 落在少一层目录、ckpt 在另一处，监控易查错路径。
-LOG_DIR="output/cfgs/model/vod_models/radarnext/vod_radarnext_mdfen/${EXTRA_TAG}/logs"
+LOG_DIR="/home/dministrator1/RadarPillar/output/train_log/vod/radarnext_mdfen/${EXTRA_TAG}/logs"
 mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/train_$(date +%Y%m%d-%H%M%S).log"
 

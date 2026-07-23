@@ -182,7 +182,7 @@ MODEL:
 
 OPTIMIZATION:
     FIX_RANDOM_SEED: False
-    BATCH_SIZE_PER_GPU: 4
+    BATCH_SIZE_PER_GPU: 8
     NUM_EPOCHS: 80
     eval_interval: 1
     early_stop:
@@ -200,8 +200,6 @@ OPTIMIZATION:
     LR: 0.003
     WEIGHT_DECAY: 0.01
     MOMENTUM: 0.9
-    # bs=4：单卡 64 通道可装，去掉 accum 等价论文 bs=8 的单步梯度
-    ACCUM_STEPS: 1
 
     MOMS: [0.95, 0.85]
     PCT_START: 0.4

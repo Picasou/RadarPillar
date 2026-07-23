@@ -24,7 +24,8 @@ from .rep_common import RepBlock
 
 
 class RepDWCBackbone(nn.Module):
-    """Re-parameterizable backbone with MobileOne's Architecture (OpenPCDet port).
+    """
+    Re-parameterizable backbone with MobileOne's Architecture (OpenPCDet port).
 
     Multi-scale BEV backbone. Training-time it is multi-branched (depthwise
     MobileOneBlock + pointwise MobileOneBlock per stage); at inference the

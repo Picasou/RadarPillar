@@ -385,7 +385,8 @@ class RadarNeXtCenterHead(nn.Module):
     # Loss                                                               #
     # ----------------------------------------------------------------- #
     def get_loss(self):
-        """Compute and return the total loss + a tb_dict of sub-losses.
+        """
+        Compute and return the total loss + a tb_dict of sub-losses.
 
         Mirrors RadarNeXt's loss_by_feat: focal hm + L1 reg + (corner hm) +
         (aligned IoU score) + (dIoU reg), summed across tasks.
@@ -430,13 +431,11 @@ class RadarNeXtCenterHead(nn.Module):
 
             target_box = anno_boxes[task_id]
             # Reconstruct the anno_box from multiple reg heads.
-            if 'vel' in preds_dict:
-                preds_dict['anno_box'] = torch.cat((preds_dict['reg'], preds_dict['height'],
-                                                    preds_dict['dim'], preds_dict['vel'],
-                                                    preds_dict['rot']), dim=1)
-            else:
-                preds_dict['anno_box'] = torch.cat((preds_dict['reg'], preds_dict['height'],
-                                                    preds_dict['dim'], preds_dict['rot']), dim=1)
+            # RPiN 前置修复：与 get_targets_single 7-cat 对齐（去掉 height / vel），
+            # 让 pred (reg + dim + rot = 7) 与 target 一致；vel 头仍参与前向但不影响 7-cat 回归。
+            preds_dict['anno_box'] = torch.cat((preds_dict['reg'],
+                                                preds_dict['dim'],
+                                                preds_dict['rot']), dim=1)
 
             # Regression loss for dimension, offset, height, rotation.
             box_loss = self.crit_reg(
@@ -669,9 +668,12 @@ class RadarNeXtCenterHead(nn.Module):
                     rot = task_boxes[idx][k][6]
                     box_dim = task_boxes[idx][k][3:6]
                     box_dim = box_dim.log()
+                    # RPiN 前置计划修复：parent 漏掉 z 不写 7-col anno_box，
+                    # 与 code_weights=7 + bbox_code_size=7 不一致 → 首个非空目标即崩。
+                    # 改为 7-cat：dx, dy, log(dx), log(dy), log(dz), sin, cos。
                     anno_box[new_idx] = torch.cat([
                         center - torch.tensor([x, y], device=device),
-                        z.unsqueeze(0), box_dim,
+                        box_dim,
                         torch.sin(rot).unsqueeze(0),
                         torch.cos(rot).unsqueeze(0)
                     ])
