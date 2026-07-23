@@ -18,6 +18,23 @@ from pcdet.models import build_network
 from pcdet.utils import common_utils
 
 
+def apply_reparam_if_rep(model, logger=None):
+    """对含 RepDWC/MobileOne 多分支的模型，融合成推理单分支。
+
+    RadarNeXt (RepDWC) 训练用多分支、推理应融合成单分支（论文标准 RepVGG 套路）。
+    reparameterize_model 对无 reparameterize 方法的模块自动跳过，非 RepDWC 模型无影响。
+    融合是数学严格等价（仅参数量/速度变化，不改变输出），故不改变 AP。
+    """
+    from pcdet.models.backbones_2d.mobileone_blocks import reparameterize_model
+    has_rep = any(hasattr(m, 'reparameterize') for m in model.modules())
+    if not has_rep:
+        return model  # 非 RepDWC 模型，原样返回
+    fused = reparameterize_model(model)
+    if logger is not None:
+        logger.info('[reparam] RepDWC 多分支已融合为推理单分支')
+    return fused
+
+
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
     parser.add_argument('--cfg_file', type=str, default=None, help='specify the config for training')
@@ -39,6 +56,8 @@ def parse_config():
     parser.add_argument('--eval_all', action='store_true', default=False, help='whether to evaluate all checkpoints')
     parser.add_argument('--ckpt_dir', type=str, default=None, help='specify a ckpt directory to be evaluated if needed')
     parser.add_argument('--save_to_file', action='store_true', default=False, help='')
+    parser.add_argument('--reparam', action=argparse.BooleanOptionalAction, default=True,
+                        help='推理前融合 RepDWC 多分支为单分支（默认开；非 RepDWC 模型自动跳过）')
 
     args = parser.parse_args()
 
@@ -57,6 +76,8 @@ def parse_config():
 def eval_single_ckpt(model, test_loader, args, eval_output_dir, logger, epoch_id, dist_test=False):
     # load checkpoint
     model.load_params_from_file(filename=args.ckpt, logger=logger, to_cpu=dist_test)
+    if getattr(args, 'reparam', True):
+        model = apply_reparam_if_rep(model, logger=logger)
     model.cuda()
 
     # start evaluation
@@ -111,6 +132,11 @@ def repeat_eval_ckpt(model, test_loader, args, eval_output_dir, logger, ckpt_dir
         # check whether there is checkpoint which is not evaluated
         cur_epoch_id, cur_ckpt = get_no_evaluated_ckpt(ckpt_dir, ckpt_record_file, args)
         if cur_epoch_id == -1 or int(float(cur_epoch_id)) < args.start_epoch:
+            # 已 eval 过但无新 ckpt → 训练已结束(eval_all 一次性跑完场景), 立刻退出, 不再等满 30 分钟
+            if first_eval is False:
+                if cfg.LOCAL_RANK == 0:
+                    print('\n[test.py] eval_all 模式: 已无新 ckpt 待 eval, 立即退出 (避免 30min 死等)')
+                break
             wait_second = 30
             if cfg.LOCAL_RANK == 0:
                 print('Wait %s seconds for next check (progress: %.1f / %d minutes): %s \r'
@@ -125,18 +151,21 @@ def repeat_eval_ckpt(model, test_loader, args, eval_output_dir, logger, ckpt_dir
         first_eval = False
 
         model.load_params_from_file(filename=cur_ckpt, logger=logger, to_cpu=dist_test)
-        model.cuda()
+        # 用独立变量承接融合结果：原 model 始终保持多分支，供下一轮 load 多分支 ckpt。
+        # reparam 深拷贝生成新对象，不污染 model。
+        eval_model = apply_reparam_if_rep(model, logger=logger) if getattr(args, 'reparam', True) else model
+        eval_model.cuda()
 
         # start evaluation
         cur_result_dir = eval_output_dir / ('epoch_%s' % cur_epoch_id) / cfg.DATA_CONFIG.DATA_SPLIT['test']
         if cfg.MODEL.NAME == 'PointNetSeg':
             tb_dict = eval_pointseg.eval_one_epoch_seg(
-            cfg, model, test_loader, cur_epoch_id, logger, dist_test=dist_test,
+            cfg, eval_model, test_loader, cur_epoch_id, logger, dist_test=dist_test,
             result_dir=cur_result_dir, save_to_file=args.save_to_file
             )
         else:
             tb_dict = eval_utils.eval_one_epoch(
-            cfg, model, test_loader, cur_epoch_id, logger, dist_test=dist_test,
+            cfg, eval_model, test_loader, cur_epoch_id, logger, dist_test=dist_test,
             result_dir=cur_result_dir, save_to_file=args.save_to_file
             )
 
