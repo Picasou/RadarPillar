@@ -67,14 +67,14 @@ digraph mt {
 
 所有训练机命令统一经 WSL 下发（训练在 WSL2 Linux，Claude 在 Windows）：
 ```bash
-wsl bash -lc 'cd <工程根> && python .claude/skills/model-train/train_pipeline.py <子命令> ...'
+bash -lc 'cd <工程根> && python .claude/skills/model-train/train_pipeline.py <子命令> ...'
 ```
 **工程根与 conda env 名由各 `.sh` 内既有逻辑自探测**（`cd $(dirname)/../..` + conda 自激活），本 skill 不绑定具体路径/env，换机可用。
 
 ### 1. 启动前自检（preflight，护城河，不可跳过）
 
 ```bash
-wsl bash -lc 'cd <工程根> && python .claude/skills/model-train/train_pipeline.py preflight \
+bash -lc 'cd <工程根> && python .claude/skills/model-train/train_pipeline.py preflight \
   [--model <模型> | --cfg_file <cfg>] --dataset <数据集> --batch_size <bs>'
 ```
 - 未给 `--cfg_file` 时传 `--model`，脚本自动在 `tools/cfgs/` 定位 cfg（不靠 LLM glob）。
@@ -85,7 +85,7 @@ wsl bash -lc 'cd <工程根> && python .claude/skills/model-train/train_pipeline
 ### 2. 生成 `train_<模型>.sh`（gen + 自动造壳）
 
 ```bash
-wsl bash -lc 'cd <工程根> && python .claude/skills/model-train/train_pipeline.py gen \
+bash -lc 'cd <工程根> && python .claude/skills/model-train/train_pipeline.py gen \
   --model <模型> --dataset <数据集> --cfg_file <cfg> \
   --batch_size <bs> --workers <w> --epochs <ep> --gpu <g> \
   --tag <备注> [--visualize]'
@@ -101,7 +101,7 @@ wsl bash -lc 'cd <工程根> && python .claude/skills/model-train/train_pipeline
 
 仅造壳（不渲染顶部变量）：
 ```bash
-wsl bash -lc 'cd <工程根> && python .claude/skills/model-train/train_pipeline.py make_shell \
+bash -lc 'cd <工程根> && python .claude/skills/model-train/train_pipeline.py make_shell \
   --model <模型> --dataset <数据集> --cfg_file <cfg> [--force]'
 ```
 
@@ -118,7 +118,7 @@ wsl bash -lc 'cd <工程根> && python .claude/skills/model-train/train_pipeline
 ### 3. WSL 启动
 
 ```bash
-wsl bash -lc 'cd <工程根> && bash .claude/skills/model-train/train_<模型>.sh'
+bash -lc 'cd <工程根> && bash .claude/skills/model-train/train_<模型>.sh'
 ```
 记录 PID / LOG 路径 / OUTPUT_ROOT 到 `.tmp/<YYYY-MM-DD>/<slug>/<slug>.md`（slug 建议 `train-<模型>-<tag>`，与 init_lt_task.py 同目录约定）。骨架复用 [init_lt_task.py](../../long-term-task-plan/init_lt_task.py)，沿用 long-term schema；LLM 在该文件里追加 PID/LOG/OUTPUT_ROOT 三个字段值。
 
@@ -130,7 +130,7 @@ wsl bash -lc 'cd <工程根> && bash .claude/skills/model-train/train_<模型>.s
 
 **(a) 每 10min 简报**（brief）：
 ```bash
-wsl bash -lc '(crontab -l 2>/dev/null; echo "*/10 * * * * cd <工程根> && python .claude/skills/model-train/train_pipeline.py brief --model <模型> --log <LOG> --output_root <OUTPUT_ROOT> >> <OUTPUT_ROOT>/brief.log") | crontab -'
+bash -lc '(crontab -l 2>/dev/null; echo "*/10 * * * * cd <工程根> && python .claude/skills/model-train/train_pipeline.py brief --model <模型> --log <LOG> --output_root <OUTPUT_ROOT> >> <OUTPUT_ROOT>/brief.log") | crontab -'
 ```
 
 **(b) 每小时收尾检查**（autofinish，见步骤 5）。
@@ -143,7 +143,7 @@ brief 子命令自动解析 LOG（epoch/loss/lr/ETA/NaN/OOM）+ 按 temp.md 第 
 
 注册一条额外的训练机 crontab（比 brief 低频，如每小时检查一次是否训完）：
 ```bash
-wsl bash -lc '(crontab -l 2>/dev/null; echo "0 * * * * cd <工程根> && python .claude/skills/model-train/train_pipeline.py autofinish \
+bash -lc '(crontab -l 2>/dev/null; echo "0 * * * * cd <工程根> && python .claude/skills/model-train/train_pipeline.py autofinish \
   --model <模型> --dataset <数据集> --cfg_file <cfg> \
   --batch_size <bs> --workers <w> --epochs <ep> --gpu <g> \
   --tag <备注> --output_root <OUTPUT_ROOT> --log <LOG>") | crontab -'

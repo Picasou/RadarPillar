@@ -65,12 +65,18 @@ def _render_template(template_path: Path, out_path: Path, cfg_file: str, label: 
 
     text = template_path.read_text(encoding='utf-8')
     cfg_escaped = re.escape(TEMPLATE_DEFAULT_CFG)
-    new_text, n = re.subn(
+    # 兼容两种模板写法：硬赋值 CFG_FILE="..." 与 env 默认式 : "${CFG_FILE:=...}"（F2 后的 eval 模板）
+    new_text, n1 = re.subn(
         rf'CFG_FILE="{cfg_escaped}"',
         f'CFG_FILE="{cfg_file}"',
         text,
     )
-    if n == 0:
+    new_text, n2 = re.subn(
+        rf': "\$\{{CFG_FILE:={cfg_escaped}\}}"',
+        f': "${{CFG_FILE:={cfg_file}}}"',
+        new_text,
+    )
+    if n1 + n2 == 0:
         sys.exit(
             f'[make_shell] {label}模板里没找到默认 CFG_FILE 行（{TEMPLATE_DEFAULT_CFG}），'
             f'模板结构可能已变更，请手动改 {out_path.name}'
@@ -786,10 +792,33 @@ def _autofinish_locked(args, output_root: Path, epochs: int, start_epoch: int):
     import subprocess
 
     # 判定训练是否结束：目标 ckpt 已生成
+    # F3 修复(2026-07-23 rpin 审查): 未满 epochs 且训练进程已死（crash/OOM/被杀）时，
+    # 回退「现存末 20 ckpt 部分收尾」，避免 autofinish 永远跳过、阶段静默卡死；
+    # 训练中（进程存活 或 2h 内有 ckpt 更新）仍按原逻辑跳过。
+    import time as _time
     target_ckpt = output_root / 'ckpt' / f'checkpoint_epoch_{epochs}.pth'
     if not target_ckpt.exists():
-        print(f'[autofinish] 训练未结束（缺 {target_ckpt.name}），跳过')
-        return
+        ckpt_dir = output_root / 'ckpt'
+        cks = sorted(ckpt_dir.glob('checkpoint_epoch_*.pth')) if ckpt_dir.exists() else []
+        try:
+            proc = subprocess.run(['pgrep', '-af', 'tools/train.py'],
+                                  capture_output=True, text=True, timeout=30)
+            alive = str(output_root) in proc.stdout
+        except Exception:
+            alive = False
+        fresh = bool(cks) and (_time.time() - max(c.stat().st_mtime for c in cks) < 7200)
+        if alive or fresh:
+            print(f'[autofinish] 训练未结束（缺 {target_ckpt.name}），跳过')
+            return
+        if not cks:
+            print(f'[autofinish] 无任何 ckpt（缺 {target_ckpt.name}），跳过')
+            return
+        max_ep = max(int(re.search(r'checkpoint_epoch_(\d+)', c.name).group(1)) for c in cks)
+        epochs = max_ep
+        start_epoch = max(0, max_ep - 19)
+        (output_root / 'FINISHED_PARTIAL').write_text(
+            f'max_epoch={max_ep}\nstart_epoch={start_epoch}\n', encoding='utf-8')
+        print(f'[autofinish] 训练已死且 ckpt 停更 >2h → 部分收尾 (max_epoch={max_ep}, start={start_epoch})')
 
     print(f'[autofinish] 训练已结束，开始收尾链')
 
@@ -814,13 +843,20 @@ def _autofinish_locked(args, output_root: Path, epochs: int, start_epoch: int):
         'BATCH_SIZE': str(args.batch_size),
         'WORKERS': str(args.workers),
         'GPU': str(args.gpu),
+        # F4 修复(2026-07-23 rpin 审查): 训完 GPU 空闲，val 走 GPU（比 CPU 快 10-20x，
+        # 避免 20 ckpt CPU eval 撞 2h timeout 永卡）；收尾批量 eval 关可视化。
+        'CPU_EVAL': 'False',
+        'RUN_VIZ': 'False',
     })
-    print(f'[autofinish] 1/3 末 20 epoch val (start_epoch={start_epoch})')
+    # timeout 按 ckpt 数缩放（每档预留 15min，下限 2h）
+    _n_cks = max(1, epochs - start_epoch + 1)
+    _val_timeout = max(7200, 900 * _n_cks)
+    print(f'[autofinish] 1/3 末 20 epoch val (start_epoch={start_epoch}, GPU eval, timeout={_val_timeout}s)')
     try:
         r = subprocess.run(['bash', str(eval_sh)],
-                           env=eval_env, cwd=ROOT, timeout=7200)
+                           env=eval_env, cwd=ROOT, timeout=_val_timeout)
     except subprocess.TimeoutExpired:
-        sys.exit(f'[autofinish] val 超时（2h）')
+        sys.exit(f'[autofinish] val 超时（{_val_timeout}s）')
     if r.returncode != 0:
         sys.exit(f'[autofinish] val 失败（退出码 {r.returncode}）')
 

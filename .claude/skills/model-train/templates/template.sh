@@ -66,8 +66,10 @@ OUTPUT_ROOT="output/train_log/vod/$(date +%Y%m%d%H%M)_radarpiller_bs8"
 
 # ============================================================
 # train.py 自适应脚本
+# F1 修复(2026-07-23 rpin 审查): 壳落点为 tools/scripts/（SHELLS_DIR），
+# 到仓库根是 2 级 ../..；旧 4 级 ../../../.. 会 cd 到 /home 造成静默假启动。
 # ============================================================
-cd "$(dirname "$0")/../../../.."
+cd "$(dirname "$0")/../.."
 
 # conda 自探测（不写死 /home/xxx）
 if command -v conda >/dev/null 2>&1; then

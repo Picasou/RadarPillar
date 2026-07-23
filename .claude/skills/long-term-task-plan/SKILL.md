@@ -109,7 +109,7 @@ CLAUDE.md「新增函数需与用户沟通确认」+ memory「未经允许不得
 
 **启动硬规则（不可跳过）：先读存档。** 多阶段任务重启时，第一个动作必须是：
 ```bash
-wsl bash -lc 'cd <工程根> && python .claude/skills/long-term-task-plan/checkpoint.py show-latest --task <任务标识>'
+bash -lc 'cd <工程根> && python .claude/skills/long-term-task-plan/checkpoint.py show-latest --task <任务标识>'
 ```
 - 有存档 → 从 `RESUME_FROM=<下一阶段>` 续跑，**不重做已完成阶段**。
 - 无存档 → 从头开始。
@@ -119,7 +119,7 @@ wsl bash -lc 'cd <工程根> && python .claude/skills/long-term-task-plan/checkp
 
 - **初始化进度文件**（脚本，不手写）：
   ```bash
-  wsl bash -lc 'cd <工程根> && python .claude/skills/long-term-task-plan/init_lt_task.py \
+  bash -lc 'cd <工程根> && python .claude/skills/long-term-task-plan/init_lt_task.py \
     --name "<任务名>" --slug <任务标识> --input "key=value" ...'
   ```
   脚本生成 `.tmp/<YYYY-MM-DD>/<任务标识>/<任务标识>.md`，含本 skill 规定的完整 schema（决策快照段 / 新增函数清单 / 阻塞自愈记录等）。LLM 之后只负责**更新字段值**，不负责排版。
@@ -168,7 +168,7 @@ wsl bash -lc 'cd <工程根> && python .claude/skills/long-term-task-plan/checkp
 
 **打存档点**（每阶段完成后，脚本，不手写）：
 ```bash
-wsl bash -lc 'cd <工程根> && python .claude/skills/long-term-task-plan/checkpoint.py save \
+bash -lc 'cd <工程根> && python .claude/skills/long-term-task-plan/checkpoint.py save \
   --task <任务标识> --stage "<阶段名，如训练A>" \
   --artifact "ckpt=<产物路径>" --artifact "best=<产物路径>" \
   --artifact "loss_curve=<tensorboard 路径>" --artifact "eval=<eval 目录>" \

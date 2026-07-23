@@ -6,13 +6,15 @@ set -e
 
 # ════════════════════════════════════════════════════════════════
 #  必改
+#  F2 修复(2026-07-23 rpin 审查): 全部改 :="${VAR:=default}" 形式，
+#  让 autofinish 的 env 注入能覆盖默认值（旧硬赋值会吞掉 env）。
 # ════════════════════════════════════════════════════════════════
-CFG_FILE="tools/cfgs/model/vod_models/radarpillar/vod_radarpillar.yaml"
-BATCH_SIZE=4
-WORKERS=2
-GPU=0
-EXTRA_TAG="rp_base_0716"
-DATAROOT="data/VoD/view_of_delft_PUBLIC/radar_5frames"
+: "${CFG_FILE:=tools/cfgs/model/vod_models/radarpillar/vod_radarpillar.yaml}"
+: "${BATCH_SIZE:=4}"
+: "${WORKERS:=2}"
+: "${GPU:=0}"
+: "${EXTRA_TAG:=rp_base_0716}"
+: "${DATAROOT:=data/VoD/view_of_delft_PUBLIC/radar_5frames}"
 
 # 输出根目录 (train.py:57-58 派生 EXP_GROUP_PATH + TAG)
 # P0-5 修复: 用 :="${VAR:=default}" 形式让 env 注入能覆盖默认值(autofinish 可用 env 注入训练 OUTPUT_ROOT)
@@ -25,17 +27,17 @@ export OUTPUT_ROOT
 #   - 设为 True: 使用 tools/test_cpu.py (CPU-only test, 跳过 .cuda())
 #   - 设为 False: 使用 tools/test.py (GPU 模式)
 # ════════════════════════════════════════════════════════════════
-CPU_EVAL=True
+: "${CPU_EVAL:=True}"
 
 # ════════════════════════════════════════════════════════════════
 #  评估模式
 # ════════════════════════════════════════════════════════════════
 # single: 评估指定 --ckpt, 训练后用
 # all:    评估 ckpt_dir 下所有 checkpoint_epoch_*.pth, 训练中轮询用
-EVAL_MODE="single"
+: "${EVAL_MODE:=single}"
 
 # ---- single 模式 ----
-CKPT="${OUTPUT_ROOT}/ckpt/checkpoint_epoch_80.pth"
+: "${CKPT:=${OUTPUT_ROOT}/ckpt/checkpoint_epoch_80.pth}"
 EVAL_TAG="default"          # 与 tools/test.py 默认 eval_tag 一致
 # SAVE_TO_FILE=True            # 导出 KITTI 格式预测文件
 
@@ -54,7 +56,7 @@ RUN_MODE="foreground"
 # ════════════════════════════════════════════════════════════════
 #  eval 完可视化 (结构化结果 + loss 曲线 + 多帧 PNG)
 # ════════════════════════════════════════════════════════════════
-RUN_VIZ=True
+: "${RUN_VIZ:=True}"
 N_VIZ_SAMPLES=10                # 可视化帧数 (>=10)
 SCORE_THRESH=0.1                # Pred 置信度阈值
 TRAIN_LOG_DIR="${OUTPUT_ROOT}"  # 含 logs/ 与 tensorboard/ 的目录
@@ -184,7 +186,6 @@ if [ "$RUN_VIZ" = True ] && [ "$EVAL_EXIT" = 0 ]; then
 fi
 
 # ============================================================
-# P1-9 修复: USER_CUSTOMIZED 标记 — 若用户在 eval 模板底部手动改过内容并加此标记,
-# make_shell 时会检测到此标记并拒绝覆盖。
+# 注: 手调此壳后想防覆盖，可在文件末追加一行 "# USER_CUSTOMIZED"。
+# （模板自身不带该标记 —— rpin 审查修复）
 # ============================================================
-# USER_CUSTOMIZED

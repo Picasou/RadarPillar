@@ -20,6 +20,7 @@
 """
 import argparse
 import json
+import os
 import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -76,15 +77,24 @@ def _archive_path(task_slug: str) -> tuple[Path, bool]:
 
 
 def _load(task_slug: str) -> list:
-    """P1-8 修复: JSON 损坏不再静默返回 []，而是 sys.exit 让 LLM 走进度文件恢复路径。"""
+    """P1-8 修复: JSON 损坏不再静默返回 []，而是 sys.exit 让 LLM 走进度文件恢复路径。
+    F7 修复(2026-07-23): 损坏时先自动回退 .bak（_save 原子写保留的上一版），.bak 也无才退人工恢复。"""
     p, _ = _archive_path(task_slug)
     if not p.exists():
         return []
     try:
         return json.loads(p.read_text(encoding='utf-8'))
     except json.JSONDecodeError as e:
+        bak = p.with_suffix('.json.bak')
+        if bak.exists():
+            try:
+                data = json.loads(bak.read_text(encoding='utf-8'))
+                print(f'[checkpoint] [WARN] {p.name} 损坏({e})，已自动回退上一版 {bak.name}')
+                return data
+            except (json.JSONDecodeError, OSError):
+                pass
         sys.exit(
-            f'[checkpoint] [FAIL] {p} 损坏: {e}。\n'
+            f'[checkpoint] [FAIL] {p} 损坏: {e}（.bak 也不可用）。\n'
             f'[checkpoint] 请从 .tmp/<日期>/<slug>/<slug>.md 进度文件（叙事副本）人工恢复，'
             f'或重新启动任务。\n'
             f'[checkpoint] 提示：crash/磁盘满可能写一半，备份 .bak 后可手工修复 json。'
@@ -92,9 +102,19 @@ def _load(task_slug: str) -> list:
 
 
 def _save(task_slug: str, data: list) -> Path:
+    """F7 修复(2026-07-23): 原子写 — 先写 .tmp 再 os.replace，写入中途崩溃不损坏既有存档；
+    替换前保留上一版为 .bak（_load 损坏时可自动回退）。"""
     p, from_meta = _archive_path(task_slug)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+    if p.exists():
+        try:
+            import shutil
+            shutil.copy2(p, p.with_suffix('.json.bak'))
+        except OSError:
+            pass
+    tmp = p.with_suffix('.json.tmp')
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+    os.replace(tmp, p)
     return p
 
 
