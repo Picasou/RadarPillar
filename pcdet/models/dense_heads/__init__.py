@@ -6,6 +6,7 @@ from .point_head_simple import PointHeadSimple
 from .point_intra_part_head import PointIntraPartOffsetHead
 from .point_seg_head import PointSegHead
 from .radarnext_center_head import RadarNeXtCenterHead
+from .radarnext_center_head_2d import RadarNeXtCenterHead2D
 
 # 原版 OpenPCDet 移植（第一批，依赖 centernet_utils/transfusion_utils/basic_block_2d/hungarian_assigner 均已就位）
 # 注：center_head 不搬（centerpoint 裁决=选项A，只留移植版 RadarNeXtCenterHead）
@@ -21,6 +22,7 @@ __all__ = {
     'AnchorHeadMulti': AnchorHeadMulti,
     'PointSegHead': PointSegHead,
     'RadarNeXtCenterHead': RadarNeXtCenterHead,
+    'RadarNeXtCenterHead2D': RadarNeXtCenterHead2D,
     # 移植（第一批）
     'TransFusionHead': TransFusionHead,
     'VoxelNeXtHead': VoxelNeXtHead,

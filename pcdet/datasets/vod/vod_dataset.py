@@ -9,6 +9,9 @@ from ...ops.roiaware_pool3d import roiaware_pool3d_utils
 from ...utils import box_utils, calibration_kitti, common_utils, object3d_kitti
 from ..dataset import DatasetTemplate
 
+# RPiN E3：VDC 模块（权威 RADAR_FEATURE_ORDER；VodDataset 复用）
+from .vdc import RADAR_FEATURE_ORDER, compensate_motion
+
 
 class VodDataset(DatasetTemplate):
     def __init__(self, dataset_cfg, class_names, training=True, root_path=None, logger=None):
@@ -32,7 +35,7 @@ class VodDataset(DatasetTemplate):
         self.vod_infos = []
         self.include_vod_data(self.mode)
 
-        self.radar_feature_order = ['x', 'y', 'z', 'rcs', 'v_r', 'v_r_comp', 'time']
+        self.radar_feature_order = RADAR_FEATURE_ORDER
         self.selected_feature_list = list(self.dataset_cfg.POINT_FEATURE_ENCODING.used_feature_list)
         self.selected_feature_idx = [self.radar_feature_order.index(x) for x in self.selected_feature_list]
 
@@ -52,6 +55,10 @@ class VodDataset(DatasetTemplate):
             self.feature_std = None
 
         self.class_name_mapping = self.dataset_cfg.get('CLASS_MAPPINGS', {})
+
+        # RPiN E3：VDC 多帧速度运动补偿开关（在原始 7 维点云、特征筛选前应用）
+        self.use_vdc = bool(self.dataset_cfg.get('USE_VDC', False))
+        self.vdc_cfg = dict(self.dataset_cfg.get('VDC_CFG', {})) if self.use_vdc else {}
 
     def include_vod_data(self, mode):
         if self.logger is not None:
@@ -86,6 +93,8 @@ class VodDataset(DatasetTemplate):
         lidar_file = self.root_split_path / 'velodyne' / ('%s.bin' % idx)
         assert lidar_file.exists()
         points = np.fromfile(str(lidar_file), dtype=np.float32).reshape(-1, 7)
+        if self.use_vdc:
+            points = compensate_motion(points, self.vdc_cfg)
         points = points[:, self.selected_feature_idx]
         if self.use_feature_norm:
             points = (points - self.feature_mean) / self.feature_std
