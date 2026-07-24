@@ -642,12 +642,88 @@ def cmd_pickbest(args):
 
 
 # ════════════════════════════════════════════════════════════════
+#  模型统计：参数量 + 计算量（record 调用，thop 实测；失败兜底不阻塞）
+# ════════════════════════════════════════════════════════════════
+def _count_params_flops(cfg_file, model, batch_size):
+    """返回 (参数量字符串, 计算量字符串)。build 网络→numel 得参数量；thop 得 MACs。
+    全程 try 兜底：build/thop 失败（CUDA 缺/模块报错）返回占位，绝不抛错阻塞 record。"""
+    import torch
+    try:
+        import sys as _sys
+        if str(ROOT) not in _sys.path:
+            _sys.path.insert(0, str(ROOT))
+        from easydict import EasyDict
+        from pcdet.config import cfg_from_yaml_file
+        from pcdet.models import build_network
+        import numpy as np
+        local_cfg = EasyDict()
+        cfg_path = ROOT / cfg_file if cfg_file else None
+        if not cfg_path or not cfg_path.exists():
+            return '_', '_'
+        cfg_from_yaml_file(str(cfg_path), local_cfg)
+        pcr = local_cfg.DATA_CONFIG.POINT_CLOUD_RANGE
+        vs = np.array(local_cfg.DATA_CONFIG.DATA_PROCESSOR[2]['VOXEL_SIZE'])
+        gs = np.array([int((pcr[3]-pcr[0])/vs[0]), int((pcr[4]-pcr[1])/vs[1]), int((pcr[5]-pcr[2])/vs[2])], np.int32)
+
+        class _DS: pass
+        ds = _DS(); ds.class_names = list(local_cfg.CLASS_NAMES)
+        ds.point_feature_encoder = _DS(); ds.point_feature_encoder.num_point_features = 9
+        ds.grid_size = gs; ds.voxel_size = vs; ds.point_cloud_range = list(pcr)
+        net = build_network(model_cfg=local_cfg.MODEL, num_class=len(ds.class_names), dataset=ds)
+        dev = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        net = net.to(dev).eval()
+        n_params = sum(p.numel() for p in net.parameters())
+        n_train = sum(p.numel() for p in net.parameters() if p.requires_grad)
+        param_str = f'{n_params/1e6:.4f} M (可训练 {n_train/1e6:.4f} M)'
+        # 计算量：thop profile。PointPillar 系喂 dummy voxel batch（spconv 需 CUDA）。
+        macs_str = '_'
+        try:
+            import thop
+            bs = max(1, int(batch_size))
+            M = 1000
+            NPTS = 32
+            NF = ds.point_feature_encoder.num_point_features
+            # PillarVFE 期望 (num_voxels, num_points, features)；spconv coords 须 int32
+            voxels = torch.randn(M, NPTS, NF, device=dev)
+            coords = torch.stack([torch.randint(0, bs, (M,)),
+                                  torch.zeros(M, dtype=torch.int32),
+                                  torch.randint(0, int(gs[1]), (M,)).to(torch.int32),
+                                  torch.randint(0, int(gs[0]), (M,)).to(torch.int32)], dim=1).to(dev).to(torch.int32)
+            bd = {'voxels': voxels, 'voxel_coords': coords,
+                  'voxel_num_points': torch.full((M,), NPTS, device=dev, dtype=torch.int32),
+                  'batch_size': bs}
+            macs, _ = thop.profile(net, inputs=(bd,), verbose=False)
+            macs_str = f'{macs/1e9:.3f} GMACs ≈ {2*macs/1e9:.3f} GFLOPs (bs={bs})'
+        except Exception as e:
+            macs_str = f'_（thop 未跑通：{type(e).__name__}）'
+        return param_str, macs_str
+    except Exception as e:
+        return f'_（build 失败：{type(e).__name__}）', '_'
+
+
+# ════════════════════════════════════════════════════════════════
 #  record: 生成实验记录 md
 # ════════════════════════════════════════════════════════════════
 def cmd_record(args):
     output_root = Path(args.output_root)
     tmp = Path(args.tmp_file) if args.tmp_file else None
     timestamp = datetime.now(CST).strftime('%Y%m%d%H')
+
+    # 读 cfg 取训练超参（seed / optimizer / lr / decay），写进配置表
+    cfg_seed = ''
+    cfg_optimizer = ''
+    cfg_path = ROOT / args.cfg_file if args.cfg_file else None
+    if cfg_path and cfg_path.exists():
+        try:
+            import yaml as _yaml
+            _cfg = _yaml.safe_load(cfg_path.read_text(encoding='utf-8', errors='ignore')) or {}
+            opt = _cfg.get('OPTIMIZATION', {}) or {}
+            seed = opt.get('FIX_RANDOM_SEED', None)
+            cfg_seed = f"{seed}" if seed is not None else 'False（默认非确定性）'
+            cfg_optimizer = (f"{opt.get('OPTIMIZER', '?')} | LR={opt.get('LR', '?')} | "
+                             f"WD={opt.get('WEIGHT_DECAY', '?')} | decay={[int(x) for x in opt.get('DECAY_STEP_LIST', [])]}")
+        except Exception:
+            pass
 
     # 参考 experiments/RPiN.md 风格：标题 + 配置表 + 结果
     lines = [
@@ -663,6 +739,8 @@ def cmd_record(args):
         f'| cfg | `{args.cfg_file}` |',
         f'| batch / workers / epochs | {args.batch_size} / {args.workers} / {args.epochs} |',
         f'| GPU | {args.gpu} |',
+        f'| seed | `{cfg_seed}` |',
+        f'| optimizer | `{cfg_optimizer}` |' if cfg_optimizer else '| optimizer | `_` |',
         f'| 备注 | {args.tag} |',
         '',
         '## 结果',
@@ -680,10 +758,22 @@ def cmd_record(args):
     else:
         lines.append('- best.pth：未找到（pickbest 是否已跑？）')
 
+    # ── 模型统计：参数量 + 计算量（thop 实测）─────────────────────────
+    # build 网络 → sum(p.numel()) 得参数量；thop.profile 得 MACs/FLOPs。
+    # 用 dummy 输入 (voxels/coords) 喂 VFE→BEV→2D→head 全链；失败则仅报参数量或不报（不阻塞 record）。
+    n_params_m, macs_g = _count_params_flops(args.cfg_file, args.model, args.batch_size)
+    lines.append('')
+    lines.append('### 模型统计（实测）')
+    lines.append('| 项 | 值 |')
+    lines.append('|---|---|')
+    lines.append(f'| 参数量 | {n_params_m} |')
+    lines.append(f'| 计算量 (MACs) | {macs_g} |')
+
     # 末 20 epoch val 结果聚合（口径：Car 3D AP moderate_R40，与 pickbest 一致）
     # 让达标判定有结构化数据源，而非依赖肉眼读日志
     eval_root = output_root / 'eval'
     ap_rows = []
+    ap_rows_3cls = []   # (ep, {'Car':..,'Ped':..,'Cyc':..,'mAP':..}) 三类+总值
     if eval_root.exists():
         # 兼容多路径：单 ckpt (eval/epoch_N/...) + eval_all_default（eval/eval_all_default/...）
         # + cfg.EXP_GROUP_PATH 含 abs 前缀导致错位的 output/<abs>/eval/eval_all_default/...
@@ -699,22 +789,45 @@ def cmd_record(args):
             ep = int(m.group(1))
             result_files = list(ep_dir.rglob('result*')) + list(ep_dir.rglob('*.json'))
             ap_val = None
+            three = {}   # {'Car':..,'Pedestrian':..,'Cyclist':..}
             for rf in result_files:
                 try:
                     content = rf.read_text(encoding='utf-8', errors='ignore')
+                    # 三类 moderate_R40（分类值）—— Car/Ped/Cyc 全取
+                    for cls in ('Car', 'Pedestrian', 'Cyclist'):
+                        mm = re.search(rf'{cls}_3d/moderate_R40[^0-9-]*([0-9.]+)', content)
+                        if mm and cls not in three:
+                            three[cls] = float(mm.group(1))
                     mod_match = re.search(r'Car_3d/moderate_R40[^0-9-]*([0-9.]+)', content)
                     if mod_match:
                         ap_val = float(mod_match.group(1))
-                        break
                     mt = re.search(r'3d\s+AP:[0-9.]+,\s*([0-9.]+),', content)
-                    if mt:
+                    if mt and ap_val is None:
                         ap_val = float(mt.group(1))
-                        break
+                    if ap_val is not None and len(three) >= 2:
+                        break   # 已拿到 Car + 至少一类
                 except Exception:
                     continue
             if ap_val is not None:
                 ap_rows.append((ep, ap_val))
-    if ap_rows:
+                # 三类齐全才算 mAP（缺类不计，避免拉偏均值）
+                if len(three) == 3:
+                    three['mAP'] = round(sum(three.values()) / 3, 4)
+                    ap_rows_3cls.append((ep, three))
+    # 主表：三类 + mAP（若三类齐全）；否则回退到仅 Car
+    if ap_rows_3cls:
+        lines.append('')
+        lines.append('## 末段 val 结果（3D AP moderate_R40，三类 + mAP，VoD EAA）')
+        lines.append('| epoch | Car | Pedestrian | Cyclist | **mAP** |')
+        lines.append('|---|---|---|---|---|')
+        best_map = max(r[1]['mAP'] for r in ap_rows_3cls)
+        for ep, t in ap_rows_3cls:
+            mark = ' **(best)**' if t['mAP'] == best_map else ''
+            lines.append(f"| {ep} | {t['Car']:.2f} | {t['Pedestrian']:.2f} | {t['Cyclist']:.2f} | **{t['mAP']:.2f}**{mark} |")
+        best_ep = [r[0] for r in ap_rows_3cls if r[1]['mAP'] == best_map][0]
+        best_epoch_str = f'（best = epoch {best_ep}, mAP_R40 {best_map:.2f}）'
+        lines.append(f'- 口径说明：moderate_R40，IoU Car=0.5/Ped-Cyc=0.25，EAA；mAP=(Car+Ped+Cyc)/3{best_epoch_str}')
+    elif ap_rows:
         lines.append('')
         lines.append('## 末段 val 结果（Car 3D AP moderate_R40，VoD EAA）')
         lines.append('| epoch | Car 3D AP |')
@@ -749,10 +862,27 @@ def cmd_record(args):
             lines.append(src.read_text(encoding='utf-8', errors='ignore').strip()[:3000])
             lines.append('```')
 
-    out = ROOT / 'experiments' / f'{timestamp}_{args.model}_{args.tag}.md'
+    # 图像引用段：资产落 output_root/asset/（与报告同目录，相对路径 asset/xxx.png）
+    asset_dir = output_root / 'asset'
+    asset_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        root_rel = output_root.relative_to(ROOT)
+    except ValueError:
+        root_rel = output_root
+    lines.append('')
+    lines.append('## 图像')
+    lines.append(f'> 训练/评估图像统一落 `{root_rel}/asset/`，报告用相对路径 `asset/xxx.png` 引用。')
+    lines.append('占位（LLM 写报告时按实际产图替换）：')
+    lines.append('- ![loss 曲线](asset/loss_curve.png)')
+    lines.append('- ![tensorboard](asset/tb_loss_curves.png)')
+
+    # 落点规则（用户要求）：报告写到 OUTPUT_ROOT（output/train_log/<数据集>/<名字>/）的 log 文件夹，
+    # 即与训练产物（ckpt/eval/brief.log）同目录；不再散落 experiments/。asset 同级。
+    out = output_root / f'{timestamp}_{args.model}_{args.tag}.md'
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text('\n'.join(lines) + '\n', encoding='utf-8')
-    print(f'[record] 已生成 {out.relative_to(ROOT)}')
+    print(f'[record] 已生成 {out}')
+    print(f'[record] 资产目录 {asset_dir}/（图像落此处，报告内 asset/xxx.png 引用）')
 
 
 # autofinish: 训练结束后自动串跑 val→pickbest→record（供训练机 cron 触发）
@@ -890,7 +1020,29 @@ def _autofinish_locked(args, output_root: Path, epochs: int, start_epoch: int):
     if r.returncode != 0:
         sys.exit(f'[autofinish] record 失败（退出码 {r.returncode}）')
 
-    print('[autofinish] [OK] 收尾链完成（val->pickbest->record）')
+    # 4) resbag 落袋（resbag skill 集成点；check=False 兜底归档失败不阻塞）
+    # skill: .claude/skills/resbag/ — 详见 docs/superpowers/specs/2026-07-24-resbag-skill-design.md
+    print('[autofinish] 4/4 resbag make')
+    resbag_py = ROOT / '.claude' / 'skills' / 'resbag' / 'resbag.py'
+    if resbag_py.exists():
+        rb_args = [sys.executable, str(resbag_py), 'make',
+                   '--output_root', str(output_root),
+                   '--dataset', args.dataset,
+                   '--tag', args.tag,
+                   '--model', args.model,
+                   '--cfg_file', args.cfg_file,
+                   '--batch_size', str(args.batch_size)]
+        try:
+            subprocess.run(rb_args, cwd=ROOT, timeout=600,
+                            env=dict(os.environ), check=False)
+        except subprocess.TimeoutExpired:
+            print('[autofinish] [WARN] resbag make 超时（10min），继续', flush=True)
+        except Exception as e:
+            print(f'[autofinish] [WARN] resbag make 异常：{type(e).__name__}', flush=True)
+    else:
+        print(f'[autofinish] [WARN] resbag 未安装：{resbag_py} 不存在', flush=True)
+
+    print('[autofinish] [OK] 收尾链完成（val->pickbest->record->resbag）')
 
 
 # ════════════════════════════════════════════════════════════════
