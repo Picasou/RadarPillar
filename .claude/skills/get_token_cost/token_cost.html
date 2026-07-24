@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token Cost · Telemetry</title>
+<style>
+:root{
+  --bg:#0B0E13; --panel:#11151C; --panel-2:#161B24;
+  --border:#1F2630; --border-strong:#2A313C;
+  --text:#D8DEE9; --muted:#6B7785; --dim:#3D4754;
+  --accent:#4EA8DE; --accent-dim:#1E4E78;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:
+    radial-gradient(circle at 1px 1px, #1a2030 1px, transparent 0) 0 0/24px 24px,
+    var(--bg);
+  color:var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
+               "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  font-size:14px; line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+  letter-spacing:0.005em;
+}
+.mono{font-family: "SF Mono", "JetBrains Mono", "Cascadia Code", "Cascadia Mono",
+       Menlo, Consolas, "Roboto Mono", ui-monospace, monospace;
+       font-variant-numeric:tabular-nums; letter-spacing:0;}
+.title{font-weight:650;letter-spacing:-0.02em}
+
+.wrap{max-width:1280px;margin:0 auto;padding:28px 32px 60px}
+.grid{display:grid;grid-template-columns:300px 1fr;gap:36px;align-items:start}
+@media (max-width:960px){.grid{grid-template-columns:1fr;gap:24px}}
+
+.rail{position:sticky;top:24px}
+.eyebrow{
+  font-family: ui-monospace, monospace; font-size:11px;
+  color:var(--accent);letter-spacing:0.18em;font-weight:600;
+  display:flex;align-items:center;gap:8px;
+}
+.eyebrow::before{content:"";display:inline-block;width:8px;height:8px;
+  background:var(--accent);border-radius:50%;
+  box-shadow:0 0 14px var(--accent);}
+.title{font-size:28px;font-weight:650;margin:10px 0 6px;letter-spacing:-0.025em;line-height:1.15}
+.title em{font-style:normal;color:var(--accent);font-weight:600}
+.meta{font-size:12px;color:var(--muted);margin-bottom:2px}
+.meta.mono{font-size:11px;color:var(--dim)}
+
+hr{border:none;border-top:1px solid var(--border);margin:22px 0}
+
+.kpi-stack{display:flex;flex-direction:column}
+.kpi{
+  padding:11px 0 11px 14px;border-bottom:1px solid var(--border);
+  cursor:pointer;transition:background .12s;position:relative;
+}
+.kpi:first-child{padding-top:4px}
+.kpi:last-child{border-bottom:none}
+.kpi::before{
+  content:"";position:absolute;left:0;top:50%;transform:translateY(-50%);
+  width:2px;height:0;background:var(--accent);transition:height .15s;
+}
+.kpi.active::before{height:62%}
+.kpi.active .val{color:var(--accent)}
+.kpi:hover{background:var(--panel-2)}
+.kpi .lbl{
+  font-family: ui-monospace, monospace; font-size:10px;
+  color:var(--muted);letter-spacing:0.12em;text-transform:uppercase;font-weight:500;
+}
+.kpi .val{font-size:22px;font-weight:600;margin-top:3px;transition:color .15s}
+
+.peak .lbl{
+  font-family: ui-monospace, monospace; font-size:10px;
+  color:var(--muted);letter-spacing:0.12em;text-transform:uppercase;font-weight:500;
+}
+.peak .val{font-size:18px;font-weight:600;margin-top:4px}
+.peak-bars{display:flex;gap:3px;margin-top:12px;height:36px;align-items:flex-end}
+.peak-bars .pb{
+  flex:1;background:var(--panel-2);border-top:2px solid var(--dim);
+  min-height:2px;transition:all .15s;
+}
+.peak-bars .pb.top{background:var(--accent-dim);border-top-color:var(--accent)}
+.peak-bars .pb.zero{opacity:.35}
+
+main{min-width:0}
+.controls{
+  display:grid;grid-template-columns:1fr 1fr 1.3fr 1.5fr auto;gap:14px;
+  background:var(--panel);border:1px solid var(--border);
+  border-radius:6px;padding:14px 16px;margin-bottom:16px;
+  align-items:end;
+}
+@media (max-width:760px){.controls{grid-template-columns:1fr 1fr}}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{
+  font-family: ui-monospace, monospace; font-size:10px;
+  color:var(--muted);letter-spacing:0.12em;text-transform:uppercase;font-weight:500;
+}
+.field input,.field select{
+  background:var(--bg);color:var(--text);border:1px solid var(--border);
+  border-radius:4px;padding:7px 9px;font:inherit;font-size:13px;
+  font-family: ui-monospace, monospace;
+}
+.field input:focus,.field select:focus{outline:none;border-color:var(--accent)}
+.presets{display:flex;gap:6px}
+.presets button{
+  font-family: ui-monospace, monospace; font-size:11px;font-weight:500;
+  background:transparent;color:var(--muted);
+  border:1px solid var(--border);border-radius:4px;
+  padding:7px 11px;cursor:pointer;transition:all .15s;letter-spacing:0.04em;
+}
+.presets button:hover{color:var(--text);border-color:var(--border-strong)}
+.presets button.active{color:var(--accent);border-color:var(--accent);background:var(--accent-dim)}
+
+section{
+  background:var(--panel);border:1px solid var(--border);
+  border-radius:6px;padding:18px 20px;margin-bottom:14px;
+}
+
+/* ---- static fallback bar chart (visible until Chart.js takes over) ---- */
+.fallback-chart{
+  position:relative;height:460px;
+  display:grid;grid-template-columns:64px 1fr;grid-template-rows:1fr 22px;
+  border:1px solid var(--border);border-radius:6px;overflow:hidden;
+  font-family:"SF Mono","JetBrains Mono",Menlo,monospace;z-index:1;
+}
+.fallback-chart .yaxis{
+  grid-column:1;grid-row:1;
+  display:flex;flex-direction:column-reverse;justify-content:space-between;
+  padding:6px 8px;background:var(--panel-2);
+  font-size:10px;color:var(--muted);text-align:right;
+  border-right:1px solid var(--border);
+}
+.fallback-chart .plot{
+  grid-column:2;grid-row:1;
+  display:flex;align-items:flex-end;gap:2px;padding:8px 6px;min-height:0;
+}
+.fallback-chart .bar-col{
+  flex:1 1 0;min-width:0;height:100%;
+  display:flex;flex-direction:column;justify-content:flex-end;
+  position:relative;
+}
+.fallback-chart .bar-stack{
+  width:100%;display:flex;flex-direction:column-reverse;
+  position:relative;
+}
+.fallback-chart .bar-seg{
+  width:100%;display:block;min-height:1px;
+  transition:opacity .15s;
+}
+.fallback-chart .bar-seg:hover{opacity:.78}
+.fallback-chart .bar-col .label{
+  position:absolute;left:50%;bottom:-18px;transform:translateX(-50%);
+  font-size:10px;color:var(--muted);white-space:nowrap;
+}
+.fallback-chart .xaxis{
+  grid-column:2;grid-row:2;
+  display:flex;justify-content:space-between;align-items:center;
+  padding:0 6px;border-top:1px solid var(--border);
+  font-size:10px;color:var(--muted);
+}
+.fallback-chart.hidden{display:none}
+canvas#chart{display:none;max-width:100%}
+.chart-wrap{position:relative;height:460px}
+canvas#chart.live{display:block;height:100%!important;width:100%!important}
+.section-head{display:flex;justify-content:space-between;align-items:baseline;
+  margin-bottom:14px;flex-wrap:wrap;gap:6px}
+.section-title{
+  font-family: ui-monospace, monospace; font-size:11px;
+  color:var(--accent);letter-spacing:0.16em;text-transform:uppercase;font-weight:600;
+}
+.section-sub{font-size:12px;color:var(--muted);font-family: ui-monospace, monospace}
+
+.legend{display:flex;flex-wrap:wrap;gap:14px 22px}
+.legend-item{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;
+  user-select:none;transition:opacity .15s}
+.legend-item.muted{opacity:.35}
+.legend-item .sw{width:12px;height:12px;border-radius:2px}
+.legend-item .lbl-text{color:var(--text)}
+.legend-item .pc{color:var(--muted);font-size:12px;font-family: ui-monospace, monospace}
+
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:10px 0;border-bottom:1px solid var(--border)}
+th{
+  font-family: ui-monospace, monospace; font-size:10px;
+  color:var(--muted);letter-spacing:0.12em;text-transform:uppercase;font-weight:500;
+}
+td{font-family: ui-monospace, monospace}
+td .name{color:var(--text);font-family:inherit;font-size:13px}
+td .share{color:var(--muted);font-size:12px}
+td .bar-cell{width:38%;padding-left:14px}
+td .bar-track{height:6px;background:var(--panel-2);border-radius:3px;overflow:hidden}
+td .bar{height:100%;background:var(--accent);border-radius:3px;min-width:2px}
+
+.empty{
+  padding:48px 0;text-align:center;color:var(--muted);font-size:13px;
+  font-family: ui-monospace, monospace;letter-spacing:0.04em;
+}
+
+footer{
+  margin-top:28px;font-size:11px;color:var(--muted);
+  display:flex;gap:18px;flex-wrap:wrap;align-items:center;
+}
+footer .tag{
+  font-family: ui-monospace, monospace; letter-spacing:0.1em;
+  color:var(--dim);font-size:10px;text-transform:uppercase;
+}
+footer .val{font-family: ui-monospace, monospace; color:var(--text);font-size:11px}
+
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="grid">
+    <aside class="rail">
+      <div class="eyebrow">TOKEN COST</div>
+      <h1 class="title">Token Cost <em>Telemetry</em></h1>
+      <div class="meta">5 models · Σ 2.77B token · 2026-07-15 → 2026-07-24</div>
+      <div class="meta mono">2026-07-24 17:00 CST</div>
+
+      <hr>
+
+      <div class="kpi-stack" id="kpis">
+        <div class="kpi active" data-metric="total"><div class="lbl">Total</div><div class="val mono" id="k-total">2.77B</div></div>
+        <div class="kpi" data-metric="input"><div class="lbl">Input</div><div class="val mono" id="k-input">730.37M</div></div>
+        <div class="kpi" data-metric="cache_read"><div class="lbl">Cache Read</div><div class="val mono" id="k-cr">2.03B</div></div>
+        <div class="kpi" data-metric="cache_creation"><div class="lbl">Cache Creation</div><div class="val mono" id="k-cc">3.16M</div></div>
+        <div class="kpi" data-metric="output"><div class="lbl">Output</div><div class="val mono" id="k-output">6.55M</div></div>
+      </div>
+
+      <hr>
+
+      <div class="peak">
+        <div class="lbl">Peak day</div>
+        <div class="val mono" id="peak-day">2026-07-19</div>
+        <div class="peak-bars" id="peak-bars"><div class="pb" style="height:2px" title="2026-07-15 · 48.30M"></div><div class="pb" style="height:6px" title="2026-07-16 · 134.72M"></div><div class="pb top" style="height:29px" title="2026-07-17 · 678.39M"></div><div class="pb top" style="height:12px" title="2026-07-18 · 292.02M"></div><div class="pb top" style="height:36px" title="2026-07-19 · 844.25M"></div><div class="pb" style="height:2px" title="2026-07-20 · 32.38M"></div><div class="pb" style="height:5px" title="2026-07-21 · 125.05M"></div><div class="pb top" style="height:10px" title="2026-07-22 · 242.43M"></div><div class="pb top" style="height:10px" title="2026-07-23 · 223.53M"></div><div class="pb" style="height:6px" title="2026-07-24 · 144.04M"></div></div>
+        <div class="meta" style="margin-top:10px">last 21 days · top 5 highlighted</div>
+      </div>
+    </aside>
+
+    <main>
+      <div class="controls">
+        <div class="field"><label for="start">Start</label><input type="date" id="start" value="2026-07-15" min="2026-07-15" max="2026-07-24"></div>
+        <div class="field"><label for="end">End</label><input type="date" id="end" value="2026-07-24" min="2026-07-15" max="2026-07-24"></div>
+        <div class="field"><label for="bucket">Granularity</label>
+          <select id="bucket">
+            <option value="30">30 min</option>
+            <option value="60" selected>1 hour</option>
+            <option value="240">4 hours</option>
+            <option value="1440">1 day</option>
+          </select>
+        </div>
+        <div class="field"><label for="metric">Metric</label>
+          <select id="metric">
+            <option value="total" selected>Total</option>
+            <option value="input">Input</option>
+            <option value="cache_creation">Cache Creation</option>
+            <option value="cache_read">Cache Read</option>
+            <option value="output">Output</option>
+          </select>
+        </div>
+        <div class="presets" id="presets">
+          <button data-preset="24">24h</button>
+          <button data-preset="168">7d</button>
+          <button data-preset="all">All</button>
+        </div>
+      </div>
+
+      <section>
+        <div class="section-head">
+          <span class="section-title">Stacked by model</span>
+          <span class="section-sub" id="ctitle">Total · stacked by model · 2026-07-15 → 2026-07-24</span>
+        </div>
+        <div class="fallback-chart" id="fallback"><div class="yaxis"><span>0</span><span>54.35M</span><span>108.69M</span><span>163.04M</span><span>217.39M</span></div><div class="plot"><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:0.60%;background:#4EA8DE" title="glm-5.2 · 96.9k"></div></div><span class="label">07-15 14:00</span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:0.60%;background:#4EA8DE" title="glm-5.2 · 451.9k"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:3.15%;background:#4EA8DE" title="glm-5.2 · 6.86M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:0.60%;background:#4EA8DE" title="glm-5.2 · 638.9k"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:1.34%;background:#4EA8DE" title="glm-5.2 · 2.92M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:6.62%;background:#4EA8DE" title="glm-5.2 · 14.39M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:6.97%;background:#4EA8DE" title="glm-5.2 · 15.15M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:3.58%;background:#4EA8DE" title="glm-5.2 · 7.78M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:3.33%;background:#4EA8DE" title="glm-5.2 · 7.24M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:2.06%;background:#4EA8DE" title="glm-5.2 · 4.48M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:1.95%;background:#4EA8DE" title="glm-5.2 · 4.23M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:0.93%;background:#4EA8DE" title="glm-5.2 · 2.01M"></div></div><span class="label">07-16 03:00</span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:1.43%;background:#4EA8DE" title="glm-5.2 · 3.12M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:0.72%;background:#4EA8DE" title="glm-5.2 · 1.56M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:1.84%;background:#4EA8DE" title="glm-5.2 · 4.00M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:7.38%;background:#4EA8DE" title="glm-5.2 · 16.05M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:2.31%;background:#4EA8DE" title="glm-5.2 · 5.02M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:2.58%;background:#4EA8DE" title="glm-5.2 · 5.61M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:2.22%;background:#4EA8DE" title="glm-5.2 · 4.83M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:3.55%;background:#4EA8DE" title="glm-5.2 · 7.72M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:2.66%;background:#4EA8DE" title="glm-5.2 · 5.78M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:0.60%;background:#4EA8DE" title="glm-5.2 · 1.14M"></div><div class="bar-seg" style="height:0.71%;background:#F0883E" title="MiniMax-M3 · 1.54M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:1.68%;background:#4EA8DE" title="glm-5.2 · 3.65M"></div></div><span class="label">07-16 18:00</span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:2.65%;background:#4EA8DE" title="glm-5.2 · 5.77M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:3.49%;background:#4EA8DE" title="glm-5.2 · 7.60M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:1.94%;background:#4EA8DE" title="glm-5.2 · 4.21M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:4.87%;background:#4EA8DE" title="glm-5.2 · 10.58M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:13.15%;background:#4EA8DE" title="glm-5.2 · 28.59M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:20.33%;background:#4EA8DE" title="glm-5.2 · 44.19M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:8.13%;background:#4EA8DE" title="glm-5.2 · 17.67M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:4.38%;background:#4EA8DE" title="glm-5.2 · 9.53M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:4.96%;background:#4EA8DE" title="glm-5.2 · 10.77M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:4.90%;background:#4EA8DE" title="glm-5.2 · 10.65M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:5.17%;background:#4EA8DE" title="glm-5.2 · 11.23M"></div></div><span class="label">07-17 05:00</span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:5.37%;background:#4EA8DE" title="glm-5.2 · 11.67M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:3.85%;background:#4EA8DE" title="glm-5.2 · 8.37M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:3.96%;background:#4EA8DE" title="glm-5.2 · 8.61M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:3.91%;background:#4EA8DE" title="glm-5.2 · 8.50M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:14.15%;background:#4EA8DE" title="glm-5.2 · 30.77M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:13.88%;background:#4EA8DE" title="glm-5.2 · 30.17M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:4.70%;background:#4EA8DE" title="glm-5.2 · 10.23M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:27.19%;background:#4EA8DE" title="glm-5.2 · 59.11M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:6.42%;background:#4EA8DE" title="glm-5.2 · 13.96M"></div><div class="bar-seg" style="height:13.82%;background:#F0883E" title="MiniMax-M3 · 30.05M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:51.26%;background:#F0883E" title="MiniMax-M3 · 111.43M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:34.58%;background:#F0883E" title="MiniMax-M3 · 75.16M"></div></div><span class="label">07-17 16:00</span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:8.00%;background:#4EA8DE" title="glm-5.2 · 17.40M"></div><div class="bar-seg" style="height:44.16%;background:#F0883E" title="MiniMax-M3 · 96.01M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:7.84%;background:#4EA8DE" title="glm-5.2 · 17.04M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:1.56%;background:#A371F7" title="k3 · 3.38M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:13.18%;background:#A371F7" title="k3 · 28.66M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:6.37%;background:#A371F7" title="k3 · 13.85M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:17.75%;background:#A371F7" title="k3 · 38.59M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:22.81%;background:#A371F7" title="k3 · 49.59M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:8.83%;background:#F0883E" title="MiniMax-M3 · 19.19M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:10.59%;background:#F0883E" title="MiniMax-M3 · 23.01M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:10.05%;background:#F0883E" title="MiniMax-M3 · 21.85M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:10.86%;background:#F0883E" title="MiniMax-M3 · 23.60M"></div></div><span class="label">07-18 19:00</span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:9.96%;background:#F0883E" title="MiniMax-M3 · 21.65M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:10.43%;background:#F0883E" title="MiniMax-M3 · 22.67M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:12.67%;background:#F0883E" title="MiniMax-M3 · 27.55M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:20.38%;background:#F0883E" title="MiniMax-M3 · 44.31M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:20.39%;background:#F0883E" title="MiniMax-M3 · 44.33M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:47.55%;background:#F0883E" title="MiniMax-M3 · 103.37M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:100.00%;background:#F0883E" title="MiniMax-M3 · 217.39M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:92.82%;background:#F0883E" title="MiniMax-M3 · 201.79M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:30.48%;background:#F0883E" title="MiniMax-M3 · 66.27M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:1.65%;background:#F0883E" title="MiniMax-M3 · 3.59M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:4.21%;background:#F0883E" title="MiniMax-M3 · 9.16M"></div></div><span class="label">07-19 17:00</span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:17.34%;background:#F0883E" title="MiniMax-M3 · 37.70M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:24.68%;background:#F0883E" title="MiniMax-M3 · 53.64M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:15.83%;background:#F0883E" title="MiniMax-M3 · 34.41M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:3.88%;background:#4EA8DE" title="glm-5.2 · 8.43M"></div><div class="bar-seg" style="height:9.20%;background:#F0883E" title="MiniMax-M3 · 20.00M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:10.64%;background:#4EA8DE" title="glm-5.2 · 23.12M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:9.68%;background:#4EA8DE" title="glm-5.2 · 21.05M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:2.27%;background:#4EA8DE" title="glm-5.2 · 4.94M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:0.99%;background:#4EA8DE" title="glm-5.2 · 2.14M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:0.60%;background:#4EA8DE" title="glm-5.2 · 1.22M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:0.60%;background:#4EA8DE" title="glm-5.2 · 1.02M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:0.60%;background:#4EA8DE" title="glm-5.2 · 184.9k"></div><div class="bar-seg" style="height:0.60%;background:#F0883E" title="MiniMax-M3 · 1.30M"></div></div><span class="label">07-20 13:00</span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:0.60%;background:#F0883E" title="MiniMax-M3 · 1.29M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:0.70%;background:#F0883E" title="MiniMax-M3 · 1.52M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:0.94%;background:#F0883E" title="MiniMax-M3 · 2.05M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:0.61%;background:#F0883E" title="MiniMax-M3 · 1.32M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:1.54%;background:#F0883E" title="MiniMax-M3 · 3.34M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:0.60%;background:#4EA8DE" title="glm-5.2 · 1.09M"></div><div class="bar-seg" style="height:0.60%;background:#F0883E" title="MiniMax-M3 · 840.6k"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:1.59%;background:#4EA8DE" title="glm-5.2 · 3.45M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:0.98%;background:#4EA8DE" title="glm-5.2 · 2.12M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:1.01%;background:#4EA8DE" title="glm-5.2 · 2.20M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:1.08%;background:#4EA8DE" title="glm-5.2 · 2.35M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:1.04%;background:#4EA8DE" title="glm-5.2 · 2.26M"></div></div><span class="label">07-21 00:00</span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:0.96%;background:#4EA8DE" title="glm-5.2 · 2.10M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:1.99%;background:#4EA8DE" title="glm-5.2 · 4.32M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:3.49%;background:#4EA8DE" title="glm-5.2 · 7.59M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:2.98%;background:#4EA8DE" title="glm-5.2 · 6.49M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:4.13%;background:#4EA8DE" title="glm-5.2 · 8.98M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:2.07%;background:#4EA8DE" title="glm-5.2 · 4.50M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:3.79%;background:#4EA8DE" title="glm-5.2 · 8.25M"></div><div class="bar-seg" style="height:9.92%;background:#F0883E" title="MiniMax-M3 · 21.58M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:10.49%;background:#F0883E" title="MiniMax-M3 · 22.80M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:7.88%;background:#F0883E" title="MiniMax-M3 · 17.13M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:1.51%;background:#F0883E" title="MiniMax-M3 · 3.27M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:0.60%;background:#F0883E" title="MiniMax-M3 · 925.8k"></div></div><span class="label">07-21 18:00</span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:1.96%;background:#F0883E" title="MiniMax-M3 · 4.25M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:3.10%;background:#F0883E" title="MiniMax-M3 · 6.74M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:1.78%;background:#F0883E" title="MiniMax-M3 · 3.88M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:7.10%;background:#F0883E" title="MiniMax-M3 · 15.44M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:11.82%;background:#F0883E" title="MiniMax-M3 · 25.70M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:5.97%;background:#F0883E" title="MiniMax-M3 · 12.98M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:25.17%;background:#F0883E" title="MiniMax-M3 · 54.72M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:12.30%;background:#F0883E" title="MiniMax-M3 · 26.74M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:4.23%;background:#F0883E" title="MiniMax-M3 · 9.20M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:3.86%;background:#F0883E" title="MiniMax-M3 · 8.40M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:3.82%;background:#F0883E" title="MiniMax-M3 · 8.31M"></div></div><span class="label">07-22 17:00</span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:1.91%;background:#4EA8DE" title="glm-5.2 · 4.15M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:13.28%;background:#4EA8DE" title="glm-5.2 · 28.87M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:13.67%;background:#4EA8DE" title="glm-5.2 · 29.71M"></div><div class="bar-seg" style="height:1.49%;background:#F0883E" title="MiniMax-M3 · 3.24M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:1.34%;background:#4EA8DE" title="glm-5.2 · 2.91M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:3.62%;background:#4EA8DE" title="glm-5.2 · 7.87M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:1.93%;background:#4EA8DE" title="glm-5.2 · 4.20M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:5.73%;background:#4EA8DE" title="glm-5.2 · 12.47M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:2.90%;background:#4EA8DE" title="glm-5.2 · 6.29M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:1.46%;background:#4EA8DE" title="glm-5.2 · 3.18M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:10.41%;background:#4EA8DE" title="glm-5.2 · 22.63M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:5.81%;background:#4EA8DE" title="glm-5.2 · 12.63M"></div></div><span class="label">07-23 14:00</span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:3.79%;background:#4EA8DE" title="glm-5.2 · 8.23M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:8.27%;background:#4EA8DE" title="glm-5.2 · 17.98M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:2.52%;background:#4EA8DE" title="glm-5.2 · 5.48M"></div><div class="bar-seg" style="height:5.06%;background:#F0883E" title="MiniMax-M3 · 11.00M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:0.60%;background:#4EA8DE" title="glm-5.2 · 1.23M"></div><div class="bar-seg" style="height:6.41%;background:#F0883E" title="MiniMax-M3 · 13.93M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:0.60%;background:#4EA8DE" title="glm-5.2 · 307.5k"></div><div class="bar-seg" style="height:3.11%;background:#F0883E" title="MiniMax-M3 · 6.75M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:1.23%;background:#4EA8DE" title="glm-5.2 · 2.67M"></div><div class="bar-seg" style="height:9.08%;background:#F0883E" title="MiniMax-M3 · 19.75M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:17.90%;background:#F0883E" title="MiniMax-M3 · 38.91M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:4.42%;background:#4EA8DE" title="glm-5.2 · 9.62M"></div><div class="bar-seg" style="height:5.53%;background:#F0883E" title="MiniMax-M3 · 12.03M"></div><div class="bar-seg" style="height:8.49%;background:#6E7681" title="qwen3.8-max-preview · 18.45M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:2.90%;background:#F0883E" title="MiniMax-M3 · 6.30M"></div><div class="bar-seg" style="height:9.83%;background:#6E7681" title="qwen3.8-max-preview · 21.37M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:8.34%;background:#6E7681" title="qwen3.8-max-preview · 18.13M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:5.15%;background:#4EA8DE" title="glm-5.2 · 11.20M"></div><div class="bar-seg" style="height:0.63%;background:#F0883E" title="MiniMax-M3 · 1.37M"></div><div class="bar-seg" style="height:0.60%;background:#6E7681" title="qwen3.8-max-preview · 772.6k"></div></div><span class="label">07-24 10:00</span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:1.52%;background:#4EA8DE" title="glm-5.2 · 3.30M"></div><div class="bar-seg" style="height:6.67%;background:#F0883E" title="MiniMax-M3 · 14.49M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:0.83%;background:#4EA8DE" title="glm-5.2 · 1.80M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:3.24%;background:#4EA8DE" title="glm-5.2 · 7.05M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:11.78%;background:#4EA8DE" title="glm-5.2 · 25.62M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:5.78%;background:#4EA8DE" title="glm-5.2 · 12.57M"></div><div class="bar-seg" style="height:8.55%;background:#F0883E" title="MiniMax-M3 · 18.58M"></div></div><span class="label"></span></div><div class="bar-col"><div class="bar-stack"><div class="bar-seg" style="height:0.68%;background:#F0883E" title="MiniMax-M3 · 1.48M"></div></div><span class="label">07-24 17:00</span></div></div><div class="xaxis"><span>07-15 14:00</span><span>07-17 06:00</span><span>07-19 20:00</span><span>07-22 11:00</span><span>07-24 17:00</span></div></div>
+        <div class="chart-wrap"><canvas id="chart"></canvas></div>
+      </section>
+
+      <section>
+        <div class="section-head">
+          <span class="section-title">Legend · click to toggle</span>
+          <span class="section-sub" id="lsub">5 models · Σ 2.77B</span>
+        </div>
+        <div class="legend" id="legend"><span class="legend-item" data-model="glm-5.2" title="glm-5.2 · 861.09M"><span class="sw" style="background:#4EA8DE"></span><span class="lbl-text">glm-5.2</span><span class="pc">861.09M · 31%</span></span><span class="legend-item" data-model="MiniMax-M3" title="MiniMax-M3 · 1.71B"><span class="sw" style="background:#F0883E"></span><span class="lbl-text">MiniMax-M3</span><span class="pc">1.71B · 62%</span></span><span class="legend-item" data-model="k3" title="k3 · 134.07M"><span class="sw" style="background:#A371F7"></span><span class="lbl-text">k3</span><span class="pc">134.07M · 5%</span></span><span class="legend-item" data-model="qwen3.8-max-preview" title="qwen3.8-max-preview · 58.73M"><span class="sw" style="background:#6E7681"></span><span class="lbl-text">qwen3.8-max-preview</span><span class="pc">58.73M · 2%</span></span></div>
+      </section>
+
+      <section>
+        <div class="section-head">
+          <span class="section-title">Per-model breakdown</span>
+          <span class="section-sub" id="tsub">Σ 2.77B</span>
+        </div>
+        <table id="mtable">
+          <thead><tr><th>Model</th><th>Tokens</th><th>Share</th><th></th></tr></thead>
+          <tbody><tr><td><span class="name">MiniMax-M3</span></td><td>1.71B</td><td class="share">61.9%</td><td class="bar-cell"><div class="bar-track"><div class="bar" style="width:62%"></div></div></td></tr><tr><td><span class="name">glm-5.2</span></td><td>861.09M</td><td class="share">31.1%</td><td class="bar-cell"><div class="bar-track"><div class="bar" style="width:31%"></div></div></td></tr><tr><td><span class="name">k3</span></td><td>134.07M</td><td class="share">4.8%</td><td class="bar-cell"><div class="bar-track"><div class="bar" style="width:5%"></div></div></td></tr><tr><td><span class="name">qwen3.8-max-preview</span></td><td>58.73M</td><td class="share">2.1%</td><td class="bar-cell"><div class="bar-track"><div class="bar" style="width:2%"></div></div></td></tr></tbody>
+        </table>
+      </section>
+    </main>
+  </div>
+
+  <footer>
+    <span class="tag">SCOPE</span><span class="val">~/.claude/projects</span>
+    <span class="tag">UNITS</span><span class="val">tokens</span>
+    <span class="tag">TZ</span><span class="val">Asia/Shanghai</span>
+    <span class="tag">GENERATED</span><span class="val" id="gen-ts">2026-07-24 17:00 CST</span>
+  </footer>
+</div>
+
+<script id="payload" type="application/json">{"models": ["glm-5.2", "MiniMax-M3", "k3", "<synthetic>", "qwen3.8-max-preview"], "by_model": {"glm-5.2": {"buckets": {"2026-07-24T11:30": [160160, 0, 198464, 10333], "2026-07-24T13:00": [139683, 0, 46400, 7488], "2026-07-24T13:30": [829937, 0, 737728, 42725], "2026-07-24T14:00": [1069232, 0, 1768064, 29225], "2026-07-24T14:30": [1271228, 0, 2878208, 30752], "2026-07-24T15:00": [5542183, 0, 5911872, 37404], "2026-07-24T15:30": [9450890, 0, 4623424, 50887], "2026-07-24T16:00": [3462993, 0, 3017920, 81526], "2026-07-24T16:30": [2111349, 0, 3878912, 21189], "2026-07-16T16:30": [1101511, 0, 272128, 7388], "2026-07-16T17:00": [64432, 0, 295936, 8300], "2026-07-22T22:00": [2475665, 0, 2192064, 14629], "2026-07-22T22:30": [854894, 0, 2284096, 51071], "2026-07-22T23:00": [734564, 0, 2710080, 39281], "2026-07-22T23:30": [176450, 0, 533632, 3306], "2026-07-23T10:00": [3002978, 0, 4375936, 29588], "2026-07-23T10:30": [1789881, 0, 3206144, 62676], "2026-07-23T11:00": [793944, 0, 405312, 2360], "2026-07-23T11:30": [1997576, 0, 3080704, 14627], "2026-07-23T12:00": [576253, 0, 768128, 1786], "2026-07-23T12:30": [1104310, 0, 723712, 2769], "2026-07-23T13:00": [7808794, 0, 5885824, 36532], "2026-07-23T13:30": [5008090, 0, 3779840, 113509], "2026-07-23T14:00": [3273034, 0, 2182208, 51794], "2026-07-23T14:30": [2321297, 0, 4723328, 82742], "2026-07-23T15:00": [3133898, 0, 1774528, 49747], "2026-07-23T15:30": [2022098, 0, 1212416, 37794], "2026-07-23T16:00": [2449090, 0, 1437184, 22331], "2026-07-23T16:30": [6495127, 0, 7492224, 85965], "2026-07-23T17:00": [2948347, 0, 2452544, 76587], "2026-07-22T18:30": [1673714, 0, 2413120, 65215], "2026-07-22T19:00": [2317233, 0, 10554880, 63144], "2026-07-22T19:30": [2938479, 0, 12952704, 41863], "2026-07-22T20:00": [7158312, 0, 16210688, 78718], "2026-07-22T20:30": [3540363, 0, 2675840, 42947], "2026-07-22T21:00": [1317071, 0, 1579136, 9795], "2026-07-24T10:00": [604089, 0, 1945536, 30508], "2026-07-24T10:30": [1224924, 0, 7375744, 19922], "2026-07-24T11:00": [342108, 0, 2553408, 33423], "2026-07-16T23:00": [2771001, 0, 6258304, 128240], "2026-07-16T23:30": [4956020, 0, 14371264, 100914], "2026-07-17T00:00": [11682789, 0, 22001088, 170164], "2026-07-17T00:30": [4497295, 0, 5817280, 24460], "2026-07-17T01:00": [3012936, 0, 10067584, 33172], "2026-07-17T10:00": [11470498, 0, 8738304, 81477], "2026-07-17T10:30": [6273484, 0, 4175296, 30257], "2026-07-15T17:00": [465714, 0, 1447424, 33507], "2026-07-16T22:00": [3381491, 0, 4246400, 25617], "2026-07-15T14:30": [54470, 0, 41984, 474], "2026-07-23T18:30": [479247, 0, 724032, 24549], "2026-07-17T13:30": [23959836, 0, 12175104, 147432], "2026-07-17T14:00": [10356707, 0, 3549824, 50552], "2026-07-23T19:30": [303962, 0, 1280, 2248], "2026-07-23T21:00": [561420, 0, 522688, 3581], "2026-07-23T21:30": [420127, 0, 1155456, 5393], "2026-07-16T17:30": [264460, 0, 469184, 36243], "2026-07-16T18:00": [295010, 0, 1947136, 18705], "2026-07-16T18:30": [263925, 0, 1098688, 23751], "2026-07-16T19:00": [820328, 0, 2253504, 66922], "2026-07-16T20:30": [1244925, 0, 4390976, 32722], "2026-07-16T21:00": [1273365, 0, 2898816, 37608], "2026-07-23T23:00": [1193872, 0, 5475072, 60450], "2026-07-23T23:30": [682011, 0, 2183616, 21489], "2026-07-15T16:00": [130634, 0, 125760, 8660], "2026-07-15T16:30": [86306, 0, 97792, 2752], "2026-07-16T13:30": [2556908, 0, 884096, 22586], "2026-07-16T14:00": [1445182, 0, 579648, 16453], "2026-07-16T14:30": [2351200, 0, 432704, 9533], "2026-07-16T15:00": [1895214, 0, 991296, 14127], "2026-07-16T15:30": [3535694, 0, 1268416, 16137], "2026-07-17T01:30": [537254, 0, 4010368, 5852], "2026-07-17T02:00": [1027456, 0, 3662720, 4876], "2026-07-17T02:30": [569112, 0, 4259584, 5098], "2026-07-17T03:00": [1093910, 0, 3874304, 4888], "2026-07-17T03:30": [611072, 0, 5183104, 5576], "2026-07-17T04:00": [1155514, 0, 4094592, 5256], "2026-07-17T04:30": [633748, 0, 4754432, 5670], "2026-07-17T05:00": [1225822, 0, 4312960, 6440], "2026-07-17T05:30": [667396, 0, 5010304, 5274], "2026-07-17T06:00": [1294808, 0, 4528384, 6728], "2026-07-17T06:30": [929424, 0, 4905856, 5280], "2026-07-17T07:00": [2333650, 0, 1818752, 5094], "2026-07-17T07:30": [2765618, 0, 1437184, 5112], "2026-07-17T08:00": [2192974, 0, 2058496, 5110], "2026-07-17T08:30": [2419558, 0, 1930880, 5154], "2026-07-17T09:00": [2819784, 0, 1913856, 5742], "2026-07-17T09:30": [2361472, 0, 1393792, 4364], "2026-07-17T11:00": [4412652, 0, 479488, 16906], "2026-07-17T11:30": [14007060, 0, 11202688, 54444], "2026-07-17T12:00": [3845530, 0, 1682688, 6184], "2026-07-17T12:30": [3966896, 0, 702720, 22734], "2026-07-17T13:00": [15208016, 0, 7571584, 43778], "2026-07-17T17:30": [14354646, 0, 2939776, 101766], "2026-07-17T18:00": [8681114, 0, 1739264, 78288], "2026-07-17T18:30": [5754638, 0, 763520, 19416], "2026-07-16T19:30": [433353, 0, 2153280, 38002], "2026-07-16T22:30": [1268758, 0, 1532352, 127127], "2026-07-20T00:00": [3338164, 0, 1508992, 91545], "2026-07-20T10:00": [487852, 0, 1026880, 19821], "2026-07-20T10:30": [305997, 0, 286784, 14129], "2026-07-20T11:00": [302982, 0, 376640, 7121], "2026-07-20T11:30": [305294, 0, 220160, 5529], "2026-07-20T12:00": [144542, 0, 343552, 4266], "2026-07-20T12:30": [98841, 0, 426496, 4301], "2026-07-20T13:00": [68278, 0, 115200, 1443], "2026-07-20T19:30": [803457, 0, 269824, 12220], "2026-07-20T20:00": [1409443, 0, 994432, 19906], "2026-07-20T20:30": [318550, 0, 700160, 4210], "2026-07-20T21:00": [18296, 0, 1038400, 3978], "2026-07-20T21:30": [304048, 0, 754944, 3994], "2026-07-20T22:00": [167648, 0, 910592, 3976], "2026-07-20T22:30": [197394, 0, 918656, 4028], "2026-07-20T23:00": [177910, 0, 975616, 3988], "2026-07-20T23:30": [388228, 0, 802624, 4006], "2026-07-21T00:00": [664428, 0, 508032, 3989], "2026-07-21T00:30": [652289, 0, 423552, 5282], "2026-07-21T01:00": [529401, 0, 580800, 5285], "2026-07-21T01:30": [553640, 0, 424576, 4064], "2026-07-21T02:00": [560008, 0, 444992, 4035], "2026-07-21T02:30": [2088277, 0, 1207808, 11062], "2026-07-21T03:00": [619253, 0, 445184, 1337], "2026-07-21T03:30": [3688721, 0, 2811712, 23869], "2026-07-21T10:00": [1798832, 0, 137728, 8152], "2026-07-21T10:30": [2840060, 0, 1647808, 54883], "2026-07-21T11:00": [4763995, 0, 2093632, 65162], "2026-07-21T11:30": [1921441, 0, 134848, 4461], "2026-07-21T13:00": [1145014, 0, 42880, 8392], "2026-07-21T13:30": [3141891, 0, 160256, 5667], "2026-07-21T14:00": [7661746, 0, 571456, 15356], "2026-07-16T20:00": [680919, 0, 1202368, 43872], "2026-07-19T21:30": [4205580, 0, 4219392, 8791], "2026-07-19T22:00": [2950712, 0, 3422080, 5778], "2026-07-19T22:30": [9655143, 0, 7044096, 42593], "2026-07-19T23:00": [6916505, 0, 4399168, 46361], "2026-07-19T23:30": [7840732, 0, 1790272, 56767], "2026-07-15T17:30": [1487284, 0, 3381120, 40122], "2026-07-15T18:00": [103341, 0, 0, 216], "2026-07-15T18:30": [254978, 0, 264320, 16062], "2026-07-15T19:00": [221947, 0, 217024, 10090], "2026-07-15T19:30": [1721706, 0, 691072, 61922], "2026-07-15T20:00": [2597887, 0, 3772480, 61954], "2026-07-15T20:30": [2736602, 0, 5183040, 40782], "2026-07-15T22:00": [4089864, 0, 4849920, 27007], "2026-07-15T22:30": [3635424, 0, 2543168, 9222], "2026-07-15T23:00": [2277846, 0, 960256, 5123], "2026-07-15T23:30": [2865403, 0, 1662336, 10537], "2026-07-16T00:00": [2879727, 0, 1282112, 16145], "2026-07-16T00:30": [2447493, 0, 600576, 12897], "2026-07-16T01:00": [794570, 0, 110336, 464], "2026-07-16T01:30": [2501805, 0, 1061696, 11746], "2026-07-16T02:00": [904896, 0, 51968, 338], "2026-07-16T02:30": [2175019, 0, 1088768, 7352], "2026-07-16T03:00": [563096, 0, 437760, 544], "2026-07-16T03:30": [963730, 0, 47104, 546], "2026-07-16T04:00": [1742441, 0, 856768, 7841], "2026-07-16T04:30": [503472, 0, 6144, 352], "2026-07-16T05:00": [650222, 0, 122880, 556], "2026-07-16T05:30": [631800, 0, 151680, 636], "2026-07-16T06:00": [2614279, 0, 516928, 10313], "2026-07-16T06:30": [712998, 0, 138112, 3573], "2026-07-16T10:00": [4283711, 0, 1690496, 22948], "2026-07-16T10:30": [7975536, 0, 2043200, 36803], "2026-07-16T11:00": [141680, 0, 20480, 3323], "2026-07-16T11:30": [3194295, 0, 1625216, 36521], "2026-07-16T13:00": [1798998, 0, 320384, 30050], "2026-07-16T16:00": [3596211, 0, 802432, 5153]}}, "MiniMax-M3": {"buckets": {"2026-07-24T16:30": [4393760, 0, 14154291, 35520], "2026-07-24T17:00": [661671, 0, 817641, 747], "2026-07-16T17:00": [264789, 0, 318208, 17235], "2026-07-16T17:30": [90852, 0, 822098, 24123], "2026-07-23T17:30": [5890353, 0, 4999014, 107978], "2026-07-23T18:00": [1704988, 0, 4234298, 19065], "2026-07-23T18:30": [1870211, 0, 6075904, 26754], "2026-07-23T19:00": [1879780, 0, 4862592, 10272], "2026-07-23T21:30": [4242751, 0, 14234220, 29686], "2026-07-23T22:00": [7839814, 0, 28870656, 38337], "2026-07-23T22:30": [1518, 0, 2153728, 2798], "2026-07-23T23:30": [3565819, 0, 8451466, 11844], "2026-07-24T00:00": [2686934, 0, 3600705, 12465], "2026-07-24T10:30": [913658, 0, 457088, 364], "2026-07-24T11:00": [4212084, 0, 10273307, 6464], "2026-07-21T22:30": [2557278, 0, 4124147, 55449], "2026-07-21T23:00": [951142, 0, 2832054, 23273], "2026-07-21T23:30": [347, 0, 72481, 73], "2026-07-22T10:00": [3476078, 0, 7758176, 39905], "2026-07-22T10:30": [1126583, 0, 3008408, 27876], "2026-07-22T11:00": [6172505, 0, 13041982, 71001], "2026-07-22T11:30": [1160412, 0, 5239247, 10363], "2026-07-22T12:00": [1210422, 0, 4659840, 23432], "2026-07-22T12:30": [1748016, 0, 5327540, 7480], "2026-07-22T13:00": [7918407, 0, 26900605, 86909], "2026-07-22T13:30": [6887981, 0, 12890765, 33699], "2026-07-22T14:00": [2857343, 0, 6262332, 12950], "2026-07-22T14:30": [4260623, 0, 13318588, 30909], "2026-07-22T15:00": [3688797, 0, 5137778, 13280], "2026-07-22T16:00": [2675990, 0, 5716877, 7977], "2026-07-22T17:00": [1309977, 0, 832, 1972], "2026-07-22T17:30": [3342049, 0, 3651842, 4694], "2026-07-21T17:30": [1115293, 0, 2123537, 35446], "2026-07-21T18:00": [2227, 0, 297088, 979], "2026-07-21T18:30": [155882, 0, 467230, 2372], "2026-07-21T21:00": [826567, 0, 2899521, 16098], "2026-07-21T21:30": [76662, 0, 431232, 2919], "2026-07-21T16:00": [3010343, 0, 13128604, 44225], "2026-07-21T16:30": [203424, 0, 735808, 3136], "2026-07-17T14:30": [1691934, 0, 28333522, 23336], "2026-07-17T15:00": [87456, 0, 49755176, 55136], "2026-07-17T15:30": [110064, 0, 61380934, 43188], "2026-07-17T16:00": [63158, 0, 40361300, 31884], "2026-07-17T16:30": [3138334, 0, 31540410, 27028], "2026-07-17T17:00": [10097972, 0, 85848440, 63042], "2026-07-22T15:30": [180310, 0, 181248, 1787], "2026-07-22T20:30": [572767, 0, 2663636, 2256], "2026-07-20T13:30": [325143, 0, 967314, 6811], "2026-07-20T14:00": [233338, 0, 454912, 4497], "2026-07-20T14:30": [1941, 0, 594688, 2929], "2026-07-20T15:00": [247885, 0, 246080, 1498], "2026-07-20T15:30": [387372, 0, 629120, 5569], "2026-07-20T16:00": [274221, 0, 1062675, 9526], "2026-07-20T16:30": [4739, 0, 696431, 2889], "2026-07-20T17:00": [435735, 0, 288665, 2879], "2026-07-20T17:30": [445361, 0, 149650, 1500], "2026-07-20T18:00": [304051, 0, 460018, 2989], "2026-07-20T18:30": [172379, 0, 2387868, 11641], "2026-07-20T19:00": [166102, 0, 333824, 1467], "2026-07-20T19:30": [169412, 0, 168274, 1483], "2026-07-21T14:30": [6962894, 0, 14585953, 26802], "2026-07-21T15:00": [2590561, 0, 9516104, 12475], "2026-07-21T15:30": [2910932, 0, 7759232, 9263], "2026-07-18T16:00": [4951526, 0, 2836834, 2679], "2026-07-18T16:30": [4985682, 0, 6413602, 2840], "2026-07-18T17:00": [5017061, 0, 7169157, 2771], "2026-07-18T17:30": [4327768, 0, 6494908, 2801], "2026-07-18T18:00": [4353726, 0, 6533417, 2875], "2026-07-18T18:30": [4380342, 0, 6574386, 3282], "2026-07-18T19:00": [4409919, 0, 8086717, 3529], "2026-07-18T19:30": [9963, 0, 11087797, 3039], "2026-07-18T20:00": [2980890, 0, 7436852, 2722], "2026-07-18T20:30": [4490328, 0, 6739203, 3039], "2026-07-18T21:00": [4517443, 0, 6778507, 3047], "2026-07-18T21:30": [4544752, 0, 6820847, 3039], "2026-07-18T22:00": [4571403, 0, 6860391, 3039], "2026-07-18T22:30": [4603577, 0, 11506934, 5143], "2026-07-18T23:00": [7713665, 0, 11573709, 3540], "2026-07-18T23:30": [6248778, 0, 18749709, 17550], "2026-07-19T00:00": [1584332, 0, 228, 508], "2026-07-19T00:30": [4138178, 0, 38576261, 33914], "2026-07-19T01:00": [11645159, 0, 73884404, 55789], "2026-07-19T01:30": [2543284, 0, 15241734, 4585], "2026-07-19T13:00": [8850820, 0, 79541121, 34893], "2026-07-19T13:30": [8062132, 0, 120884898, 14611], "2026-07-19T14:00": [4690954, 0, 128197505, 2174], "2026-07-19T14:30": [3780163, 0, 65102292, 13084], "2026-07-19T15:00": [13607641, 0, 51242819, 36198], "2026-07-19T15:30": [4675, 0, 1370880, 2799], "2026-07-19T16:00": [8962, 0, 1847936, 4354], "2026-07-19T16:30": [10062, 0, 1705984, 9565], "2026-07-19T17:30": [411952, 0, 8731520, 11548], "2026-07-19T18:00": [44088, 0, 15545216, 6199], "2026-07-19T18:30": [47685, 0, 22052608, 6896], "2026-07-19T19:00": [43327, 0, 24228864, 6206], "2026-07-19T19:30": [43714, 0, 29314944, 7013], "2026-07-19T20:00": [906761, 0, 27954447, 5061], "2026-07-19T20:30": [1235040, 0, 4304243, 6048], "2026-07-19T21:00": [934828, 0, 1866456, 1281], "2026-07-19T21:30": [1318927, 0, 15864266, 12300], "2026-07-23T21:00": [339289, 0, 897408, 5845]}}, "k3": {"buckets": {"2026-07-17T21:30": [2010995, 0, 1368832, 993], "2026-07-17T22:00": [7149570, 0, 5050880, 13386], "2026-07-17T22:30": [2738736, 0, 13690880, 15683], "2026-07-17T23:00": [2739942, 0, 11091712, 15359], "2026-07-18T14:00": [8315257, 0, 13350656, 11202], "2026-07-18T14:30": [1245777, 0, 15663360, 3612], "2026-07-18T15:00": [3743222, 0, 16841216, 13695], "2026-07-18T15:30": [6184416, 0, 22775552, 32435]}}, "<synthetic>": {"buckets": {"2026-07-24T14:30": [0, 0, 0, 0], "2026-07-24T16:30": [0, 0, 0, 0], "2026-07-16T17:00": [0, 0, 0, 0], "2026-07-16T17:30": [0, 0, 0, 0], "2026-07-23T17:30": [0, 0, 0, 0], "2026-07-24T10:00": [0, 0, 0, 0], "2026-07-23T17:00": [0, 0, 0, 0], "2026-07-21T18:30": [0, 0, 0, 0], "2026-07-16T14:00": [0, 0, 0, 0], "2026-07-17T14:30": [0, 0, 0, 0], "2026-07-17T17:00": [0, 0, 0, 0], "2026-07-17T17:30": [0, 0, 0, 0], "2026-07-17T18:30": [0, 0, 0, 0], "2026-07-20T13:00": [0, 0, 0, 0], "2026-07-20T13:30": [0, 0, 0, 0], "2026-07-20T19:30": [0, 0, 0, 0], "2026-07-21T14:30": [0, 0, 0, 0], "2026-07-17T14:00": [0, 0, 0, 0], "2026-07-17T21:30": [0, 0, 0, 0], "2026-07-17T23:00": [0, 0, 0, 0], "2026-07-18T14:00": [0, 0, 0, 0], "2026-07-18T15:30": [0, 0, 0, 0], "2026-07-18T16:00": [0, 0, 0, 0], "2026-07-19T00:30": [0, 0, 0, 0], "2026-07-19T14:30": [0, 0, 0, 0], "2026-07-19T21:30": [0, 0, 0, 0], "2026-07-15T18:30": [0, 0, 0, 0], "2026-07-16T16:30": [0, 0, 0, 0]}}, "qwen3.8-max-preview": {"buckets": {"2026-07-23T23:30": [12349, 387104, 17880576, 171101], "2026-07-24T00:00": [4027, 654652, 18303403, 98021], "2026-07-24T00:30": [72, 579092, 1724048, 6529], "2026-07-24T01:00": [11541, 766562, 17251415, 103741], "2026-07-24T10:00": [690, 770796, 0, 1065]}}}, "totals": {"input": 730370000, "cache_creation": 3158206, "cache_read": 2025028066, "output": 6551509, "total": 2765107781}, "range": {"min": "2026-07-15T14:30", "max": "2026-07-24T17:00"}, "colors": {"glm-5.2": "#4EA8DE", "MiniMax-M3": "#F0883E", "k3": "#A371F7", "<synthetic>": "#6E7681"}, "generated_at_cst": "2026-07-24 17:00 CST"}</script>
+<script src="chart.umd.min.js"></script>
+<script>
+'use strict';
+const DATA = JSON.parse(document.getElementById('payload').textContent);
+const METRIC_LABEL = {total:'Total',input:'Input',cache_creation:'Cache Creation',cache_read:'Cache Read',output:'Output'};
+const SLOT = {input:0,cache_creation:1,cache_read:2,output:3};
+
+function fmt(n){
+  if(n>=1e9) return (n/1e9).toFixed(2)+'B';
+  if(n>=1e6) return (n/1e6).toFixed(2)+'M';
+  if(n>=1e3) return (n/1e3).toFixed(1)+'k';
+  return String(n);
+}
+function colorOf(m){
+  if(DATA.colors[m]) return DATA.colors[m];
+  return m==='unknown' ? '#444C56' : '#6E7681';
+}
+function parseParts(bk){
+  return {Y:+bk.slice(0,4), Mo:+bk.slice(5,7), D:+bk.slice(8,10),
+          h:+bk.slice(11,13), mi:+bk.slice(14,16)};
+}
+function floorParts(p, bucket){
+  let {Y,Mo,D,h,mi}=p;
+  if(bucket===30) mi = mi<30?0:30;
+  else if(bucket===60) mi=0;
+  else if(bucket===240) { mi=0; h=Math.floor(h/4)*4; }
+  else if(bucket===1440){ mi=0; h=0; }
+  const pp=n=>String(n).padStart(2,'0');
+  return `${Y}-${pp(Mo)}-${pp(D)}T${pp(h)}:${pp(mi)}`;
+}
+function bucketLabel(bk, bucket){
+  const p=parseParts(bk); const pp=n=>String(n).padStart(2,'0');
+  const md=`${pp(p.Mo)}-${pp(p.D)}`;
+  if(bucket>=1440) return md;
+  if(bucket>=60) return `${md} ${pp(p.h)}:00`;
+  return `${md} ${pp(p.h)}:${pp(p.mi)}`;
+}
+function inRange(bk,startYmd,endYmd){
+  const d=bk.slice(0,10);
+  return d>=startYmd && d<=endYmd;
+}
+function escapeHtml(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+const state = {
+  start: DATA.range.min.slice(0,10),
+  end:   DATA.range.max.slice(0,10),
+  bucket: 60,
+  metric: 'total',
+  hidden: new Set(),
+};
+
+function aggregateAll(){
+  const metric=state.metric, start=state.start, end=state.end, bucket=state.bucket;
+  const perModel={}; const bucketExists={};
+  DATA.models.forEach(m=>{
+    perModel[m]={};
+    const buckets=DATA.by_model[m].buckets;
+    for(const bk in buckets){
+      if(!inRange(bk,start,end)) continue;
+      const v=buckets[bk];
+      const fp=floorParts(parseParts(bk),bucket);
+      bucketExists[fp]=1;
+      const cur=perModel[m][fp]||[0,0,0,0];
+      cur[0]+=v[0];cur[1]+=v[1];cur[2]+=v[2];cur[3]+=v[3];
+      perModel[m][fp]=cur;
+    }
+  });
+  const bkList=Object.keys(bucketExists).sort();
+  function valOf(slot){
+    if(metric==='total') return slot[0]+slot[1]+slot[2]+slot[3];
+    return slot[SLOT[metric]] || 0;
+  }
+  const kpis={total:0,input:0,cache_creation:0,cache_read:0,output:0};
+  DATA.models.forEach(m=>{
+    for(const fp in perModel[m]){
+      const s=perModel[m][fp];
+      kpis.input+=s[0]; kpis.cache_creation+=s[1];
+      kpis.cache_read+=s[2]; kpis.output+=s[3];
+    }
+  });
+  kpis.total=kpis.input+kpis.cache_creation+kpis.cache_read+kpis.output;
+  const perModelTot=DATA.models.map(m=>{
+    let t=0; for(const fp in perModel[m]) t+=valOf(perModel[m][fp]);
+    return {m, t};
+  });
+  return {bkList, perModel, kpis, perModelTot, valOf};
+}
+
+let chart=null;
+const canvasEl = document.getElementById('chart');
+const fallbackEl = document.getElementById('fallback');
+
+function renderChart(agg){
+  const labels=agg.bkList.map(bk=>bucketLabel(bk,state.bucket));
+  const datasets=DATA.models
+    .filter(m=>!state.hidden.has(m))
+    .map(m=>({
+      label:m,
+      data:agg.bkList.map(bk=>{const s=agg.perModel[m][bk]; return s?agg.valOf(s):0;}),
+      backgroundColor:colorOf(m),
+      borderColor:colorOf(m),
+      borderWidth:0,
+      stack:'tokens',
+      borderRadius:1,
+      maxBarThickness: state.bucket<240 ? 18 : 32,
+    }));
+
+  // 1. If Chart.js is unavailable, render fallback (instant, never fails).
+  if(typeof Chart === 'undefined'){
+    renderFallback(agg, labels, datasets);
+    fallbackEl.classList.remove('hidden');
+    canvasEl.classList.remove('live');
+    document.getElementById('ctitle').textContent =
+      `${METRIC_LABEL[state.metric]} · ${agg.bkList.length} buckets · ${state.start} → ${state.end}`;
+    return;
+  }
+  try{
+    if(chart){chart.destroy();chart=null;}
+    if(!labels.length){
+      canvasEl.classList.remove('live');
+      return;
+    }
+    canvasEl.classList.add('live');
+    // Y axis ceiling = actual max of the *currently filtered* stacked column,
+    // NOT all-time max — so 7-15 alone won't be visually crushed by 7-19's spike.
+    const colTotals = labels.map((_, i) => datasets.reduce((a, d) => a + (d.data[i]||0), 0));
+    const dataMax = colTotals.length ? Math.max(...colTotals) : 1;
+    chart=new Chart(canvasEl,{
+    type:'bar',
+    data:{labels,datasets},
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      animation:{duration:200},
+      interaction:{mode:'index',intersect:false},
+      hover:{mode:'index',intersect:false,animationDuration:80},
+      plugins:{
+        legend:{display:false},
+        tooltip:{
+          enabled:true,
+          backgroundColor:'#11151C',borderColor:'#4EA8DE',borderWidth:1,
+          titleColor:'#4EA8DE',bodyColor:'#D8DEE9',footerColor:'#6B7785',
+          padding:12,cornerRadius:6,boxPadding:6,boxWidth:10,boxHeight:10,
+          titleFont:{family:'monospace',size:12,weight:'bold'},
+          bodyFont:{family:'monospace',size:11},
+          footerFont:{family:'monospace',size:10},
+          displayColors:true,
+          callbacks:{
+            title:(items)=>`${items[0].label}`,
+            label:(c)=>{
+              const v = c.parsed.y;
+              const grand = items.reduce((a,it)=>a+it.parsed.y,0);
+              const pct = grand ? (v/grand*100).toFixed(1) : '0';
+              return ` ${c.dataset.label}  ·  ${fmt(v)}  (${pct}%)`;
+            },
+            footer:(items)=>{
+              const sum=items.reduce((a,it)=>a+it.parsed.y,0);
+              return `Σ ${fmt(sum)}`;
+            }
+          }
+        }
+      },
+      scales:{
+        x:{stacked:true,ticks:{color:'#6B7785',font:{family:'monospace',size:10},
+           maxRotation:45,minRotation:0,autoSkip:true,maxTicksLimit:18,autoSkipPadding:18},
+           grid:{display:false},border:{color:'#1F2630'}},
+        y:{stacked:true,beginAtZero:true,max:dataMax,
+           ticks:{color:'#6B7785',font:{family:'monospace',size:10},
+           callback:v=>fmt(v),maxTicksLimit:8},grid:{color:'#161B24'},border:{display:false}}
+      },
+      onHover:(evt, els)=>{
+        evt.native.target.style.cursor = els.length ? 'crosshair' : 'default';
+      }
+    }
+  });
+  }catch(err){
+    console.error('[token_cost] Chart.js failed, falling back:', err);
+    renderFallback(agg, labels, datasets);
+    fallbackEl.classList.remove('hidden');
+    canvasEl.classList.remove('live');
+    return;
+  }
+  document.getElementById('ctitle').textContent =
+    `${METRIC_LABEL[state.metric]} · ${agg.bkList.length} buckets · ${state.start} → ${state.end}`;
+}
+
+function renderFallback(agg, labels, datasets){
+  // Mirrors the Python-side grid layout (#fallback contains .yaxis + .plot + .xaxis).
+  const wrap = fallbackEl;
+  if(!labels.length || !datasets.length){
+    wrap.innerHTML = '<div style="grid-column:1/3;grid-row:1/3;display:flex;align-items:center;justify-content:center;color:var(--muted);font-family:monospace">no data in selected range</div>';
+    return;
+  }
+  const colTotals = labels.map((_, i) => datasets.reduce((a, d) => a + d.data[i], 0));
+  const ymax = Math.max(...colTotals) || 1;
+  const yticks = [0, .25, .5, .75, 1].map(f => fmt(f * ymax));
+
+  const cols = labels.map((lbl, i) => {
+    const segs = datasets.filter(d => d.data[i] > 0).map(d => {
+      const h = Math.max(0.6, d.data[i] / ymax * 100);
+      return `<div class="bar-seg" style="height:${h.toFixed(2)}%;background:${d.color}" title="${escapeHtml(d.label)} · ${fmt(d.data[i])}"></div>`;
+    }).join('');
+    const step = Math.max(1, Math.floor(labels.length / 12));
+    const showLabel = (i % step === 0) || i === labels.length - 1;
+    return `<div class="bar-col"><div class="bar-stack">${segs}</div>` +
+           `<span class="label">${showLabel ? escapeHtml(lbl) : ''}</span></div>`;
+  }).join('');
+
+  const xsteps = [0, Math.floor(labels.length/4), Math.floor(labels.length/2),
+                  Math.floor(labels.length*3/4), labels.length-1];
+  const xaxis = xsteps.map(i => `<span>${escapeHtml(labels[i])}</span>`).join('');
+
+  wrap.innerHTML =
+    `<div class="yaxis">${yticks.map(t=>`<span>${escapeHtml(t)}</span>`).join('')}</div>` +
+    `<div class="plot">${cols}</div>` +
+    `<div class="xaxis">${xaxis}</div>`;
+}
+
+function renderKpis(agg){
+  document.getElementById('k-total').textContent  = fmt(agg.kpis.total);
+  document.getElementById('k-input').textContent  = fmt(agg.kpis.input);
+  document.getElementById('k-cr').textContent     = fmt(agg.kpis.cache_read);
+  document.getElementById('k-cc').textContent     = fmt(agg.kpis.cache_creation);
+  document.getElementById('k-output').textContent = fmt(agg.kpis.output);
+  document.querySelectorAll('.kpi').forEach(b=>{
+    b.classList.toggle('active', b.dataset.metric===state.metric);
+    b.style.cursor = 'pointer';
+    b.onclick = ()=>{
+      if(state.metric !== b.dataset.metric){
+        state.metric = b.dataset.metric;
+        render();
+      }
+    };
+  });
+}
+
+function renderLegend(agg){
+  const grand=agg.perModelTot.reduce((a,e)=>a+e.t,0);
+  const el=document.getElementById('legend');
+  el.innerHTML = agg.perModelTot.map(e=>{
+    const pc=grand?Math.round(e.t/grand*100):0;
+    const muted=state.hidden.has(e.m)?' muted':'';
+    return `<span class="legend-item${muted}" data-model="${escapeHtml(e.m)}" title="${escapeHtml(e.m)} · ${fmt(e.t)}">
+      <span class="sw" style="background:${colorOf(e.m)}"></span>
+      <span class="lbl-text">${escapeHtml(e.m)}</span>
+      <span class="pc">${fmt(e.t)} · ${pc}%</span>
+    </span>`;
+  }).join('');
+  el.querySelectorAll('.legend-item').forEach(it=>{
+    it.addEventListener('click',()=>{
+      const m=it.dataset.model;
+      if(state.hidden.has(m)) state.hidden.delete(m);
+      else state.hidden.add(m);
+      render();
+    });
+  });
+  document.getElementById('lsub').textContent =
+    `${agg.perModelTot.length} models · Σ ${fmt(grand)}`;
+}
+
+function renderTable(agg){
+  const grand=agg.perModelTot.reduce((a,e)=>a+e.t,0);
+  const tbody=document.querySelector('#mtable tbody');
+  tbody.innerHTML = agg.perModelTot
+    .sort((a,b)=>b.t-a.t)
+    .map(e=>{
+      const pc=grand?(e.t/grand*100):0;
+      const barW=Math.max(2, Math.round(pc));
+      return `<tr>
+        <td><span class="name">${escapeHtml(e.m)}</span></td>
+        <td>${fmt(e.t)}</td>
+        <td class="share">${pc.toFixed(1)}%</td>
+        <td class="bar-cell"><div class="bar-track"><div class="bar" style="width:${barW}%"></div></div></td>
+      </tr>`;
+    }).join('');
+  document.getElementById('tsub').textContent = `Σ ${fmt(grand)}`;
+}
+
+function syncPreset(){
+  document.querySelectorAll('.presets button').forEach(b=>{
+    const p=b.dataset.preset;
+    let active=false;
+    if(p==='all'){
+      active = (state.start===DATA.range.min.slice(0,10) && state.end===DATA.range.max.slice(0,10));
+    } else {
+      const hours=parseInt(p,10);
+      const e=new Date(state.end+'T23:59:59+08:00');
+      const s=new Date(e.getTime()-hours*3600*1000);
+      const pp=n=>String(n).padStart(2,'0');
+      active = (`${s.getFullYear()}-${pp(s.getMonth()+1)}-${pp(s.getDate())}`===state.start);
+    }
+    b.classList.toggle('active',active);
+  });
+}
+
+function render(){
+  syncPreset();
+  const agg=aggregateAll();
+  renderKpis(agg);
+  renderChart(agg);
+  renderLegend(agg);
+  renderTable(agg);
+}
+
+document.getElementById('start').addEventListener('change',e=>{
+  state.start=e.target.value;
+  if(state.start>state.end) state.end=state.start;
+  render();
+});
+document.getElementById('end').addEventListener('change',e=>{
+  state.end=e.target.value;
+  if(state.end<state.start) state.start=state.end;
+  render();
+});
+document.getElementById('bucket').addEventListener('change',e=>{
+  state.bucket=parseInt(e.target.value,10);
+  render();
+});
+document.getElementById('metric').addEventListener('change',e=>{
+  state.metric=e.target.value;
+  render();
+});
+document.querySelectorAll('.kpi').forEach(b=>{
+  b.addEventListener('click',()=>{
+    state.metric=b.dataset.metric;
+    document.getElementById('metric').value=state.metric;
+    render();
+  });
+});
+document.querySelectorAll('.presets button').forEach(b=>{
+  b.addEventListener('click',()=>{
+    const p=b.dataset.preset;
+    if(p==='all'){
+      state.start=DATA.range.min.slice(0,10);
+      state.end=DATA.range.max.slice(0,10);
+    } else {
+      const hours=parseInt(p,10);
+      const e=new Date(DATA.range.max+'T00:00:00+08:00');
+      const s=new Date(e.getTime()-(hours-24)*3600*1000);
+      const pp=n=>String(n).padStart(2,'0');
+      state.start=`${s.getFullYear()}-${pp(s.getMonth()+1)}-${pp(s.getDate())}`;
+      state.end=DATA.range.max.slice(0,10);
+    }
+    document.getElementById('start').value=state.start;
+    document.getElementById('end').value=state.end;
+    render();
+  });
+});
+
+// First paint.
+render();
+
+// Hide fallback on boot if Chart.js is up (it's the layered overlay default).
+if(typeof Chart !== 'undefined'){
+  fallbackEl.classList.add('hidden');
+  canvasEl.classList.add('live');
+}
+</script>
+</body>
+</html>
