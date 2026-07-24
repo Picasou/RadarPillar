@@ -12,14 +12,19 @@ ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / 'data' / 'VoD' / 'view_of_delft_PUBLIC' / 'radar_5frames'
 
 fails = []
+optional_missing = []  # 可选依赖（仅 deploy/export 用），缺失不阻塞核心环境
 
 
-def check(name, fn):
+def check(name, fn, optional=False):
     try:
         msg = fn()
         print(f'  [OK]   {name}' + (f' — {msg}' if msg else ''))
         return True
     except Exception as e:
+        if optional:
+            print(f'  [WARN] {name}（可选，仅 deploy/export）— {type(e).__name__}: {e}')
+            optional_missing.append(name)
+            return False
         print(f'  [FAIL] {name} — {type(e).__name__}: {e}')
         fails.append(name)
         return False
@@ -60,12 +65,15 @@ check('Python>=3.7', ck_python)
 check('torch+CUDA+GPU', ck_torch_cuda)
 check('spconv', ck_import('spconv'))
 check('pcdet', ck_import('pcdet'))
-check('onnx', ck_import('onnx'))
-check('onnxruntime', ck_import('onnxruntime'))
+check('onnx', ck_import('onnx'), optional=True)
+check('onnxruntime', ck_import('onnxruntime'), optional=True)
 check('VoD 数据', ck_data)
 
 if fails:
-    print(f'=== FAIL: {len(fails)} 项未过: {fails} ===')
+    print(f'=== FAIL: {len(fails)} 项核心未过: {fails} ===')
     sys.exit(1)
-print('=== ALL OK ===')
+if optional_missing:
+    print(f'=== ALL OK（核心环境就绪；可选项缺失不影响训练: {optional_missing}）===')
+else:
+    print('=== ALL OK ===')
 sys.exit(0)

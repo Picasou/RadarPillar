@@ -9,6 +9,7 @@
 """
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -62,7 +63,6 @@ def run_one(tag: str, gpu: int) -> dict:
     ts = datetime.now(CST).strftime('%Y%m%d%H%M%S')
     for attempt, bs in enumerate(bs_seq, 1):
         out_root = LOG_DIR / f'{ts}_rpin1ep_{tag}_bs{bs}'
-        log = out_root / 'train.log'
         out_root.mkdir(parents=True, exist_ok=True)
         cmd = [
             'python', '-u', 'tools/train.py',
@@ -76,12 +76,10 @@ def run_one(tag: str, gpu: int) -> dict:
             '--set', 'OPTIMIZATION.early_stop.enabled', 'False',
             'OPTIMIZATION.LR_WARMUP', 'False',
         ]
-        env = {'CUDA_VISIBLE_DEVICES': str(gpu),
-               'PATH': '/home/dministrator1/miniconda3/envs/angle/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-               'HOME': '/home/dministrator1',
-               'CONDA_DEFAULT_ENV': 'angle',
-               'PYTHONPATH': '/home/dministrator1/RadarPillar',
-               'PYTHONHOME': '/home/dministrator1/miniconda3/envs/angle'}
+        # 机器无关（plan 自审 + §0.5 S4）：继承当前激活环境（base），仅覆盖可见 GPU。
+        # 旧版硬编码 /home/dministrator1/.../angle 死路径 → 子进程 PYTHONHOME 失效，必崩。
+        env = dict(os.environ)
+        env['CUDA_VISIBLE_DEVICES'] = str(gpu)
         t0 = time.time()
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900, env=env)
@@ -89,12 +87,21 @@ def run_one(tag: str, gpu: int) -> dict:
         except subprocess.TimeoutExpired:
             attempts.append({'bs': bs, 'dt': 900, 'exit': 'TIMEOUT'})
             continue
-        stderr_tail = proc.stderr[-400:] if proc.stderr else ''
+        stderr_full = proc.stderr or ''
+        stderr_tail = stderr_full[-400:]
         if proc.returncode == 0:
             # 检查 NaN：抓 train log 中 "loss=nan" 或 "nan" 标记
-            log_text = (log.read_text(encoding='utf-8', errors='ignore')
-                         if log.exists() else proc.stdout)
-            nan = bool(re.search(r'loss\s*=\s*nan|NaN detected', log_text, re.I))
+            # H5 修复：NaN 信号改从可靠源取。train.py 实际写 log_train_*.txt（非 train.log），
+            # 逐 iter loss 只进 tqdm(stderr)+tensorboard。旧版读 train.log（永不存在）→回退
+            # stdout（无 loss）→正则永假→NaN-loss(rc=0) 误报 OK。现扫 stderr ∪ log_train_*.txt
+            # 判 loss 是否 nan，并校验 ckpt 落盘，S13 结构性 NaN 预筛据此真正生效。
+            log_files = sorted(out_root.glob('log_train_*.txt'))
+            log_path = str(log_files[-1]) if log_files else ''
+            log_text = stderr_full
+            if log_files:
+                log_text = log_files[-1].read_text(encoding='utf-8', errors='ignore') + '\n' + log_text
+            nan = bool(re.search(r'loss\s*[=:]\s*nan|NaN detected', log_text, re.I))
+            ckpt_ok = bool(list(out_root.rglob('checkpoint_epoch_1.pth')))
             if nan:
                 attempts.append({'bs': bs, 'dt': round(dt, 1), 'exit': 'NAN'})
                 # 结构性 NaN 预筛：第一次就 NaN → 跳 bs 循环
@@ -102,8 +109,11 @@ def run_one(tag: str, gpu: int) -> dict:
                     return {'tag': tag, 'status': 'BLOCKED_NAN', 'attempts': attempts,
                             'final_bs': bs, 'msg': '结构性 NaN（首步即 nan）'}
                 continue
+            if not ckpt_ok:
+                return {'tag': tag, 'status': 'FAIL', 'attempts': attempts,
+                        'final_bs': bs, 'msg': 'rc=0 但未落 checkpoint_epoch_1.pth'}
             return {'tag': tag, 'status': 'OK', 'attempts': attempts,
-                    'final_bs': bs, 'msg': f'{dt:.1f}s bs={bs}', 'log': str(log)}
+                    'final_bs': bs, 'msg': f'{dt:.1f}s bs={bs}', 'log': log_path}
         # 退出非 0：判 OOM（显存/资源）
         if 'CUDA out of memory' in proc.stderr or 'OutOfMemory' in proc.stderr:
             attempts.append({'bs': bs, 'dt': round(dt, 1), 'exit': 'OOM'})
@@ -113,6 +123,11 @@ def run_one(tag: str, gpu: int) -> dict:
         return {'tag': tag, 'status': 'FAIL', 'attempts': attempts,
                 'final_bs': bs,
                 'msg': (stderr_tail[-300:] if stderr_tail else proc.stdout[-300:])}
+    # M6：耗尽 bs 序列后按最后一次 attempt 的退出类型分类（不再硬编码 BLOCKED_OOM）
+    last_exit = attempts[-1]['exit'] if attempts else 'OOM'
+    if last_exit == 'NAN':
+        return {'tag': tag, 'status': 'BLOCKED_NAN', 'attempts': attempts,
+                'final_bs': bs_seq[-1], 'msg': f'bs 降到 {bs_seq[-1]} 仍 NaN'}
     return {'tag': tag, 'status': 'BLOCKED_OOM', 'attempts': attempts,
             'final_bs': bs_seq[-1], 'msg': f'bs 降到 {bs_seq[-1]} 仍 OOM'}
 

@@ -7,6 +7,7 @@
 避免双层链 merge 不到的问题，也避免每个 cfg 重复内联大块底座。
 """
 from pathlib import Path
+import copy
 import yaml
 
 REPO = Path('.')
@@ -38,10 +39,31 @@ def deep_merge(a, b):
 base_full = expand(BASE_PATH)
 
 
+def anchor_cfg_with_stride(stride: int):
+    """复用底座 ANCHOR_GENERATOR_CONFIG，仅改 feature_map_stride。
+
+    MDFEN（n3/n6）multi_fusion 融合到 80x80（grid/4），anchor 网格须同步到
+    stride=4 才与 backbone 输出对齐（其余 neck 输出 160x160，用底座 stride=2）。
+    """
+    anchors = copy.deepcopy(base_full['MODEL']['DENSE_HEAD']['ANCHOR_GENERATOR_CONFIG'])
+    for a in anchors:
+        a['feature_map_stride'] = stride
+    return anchors
+
+
 def write(tag: str, overrides: dict):
     merged = deep_merge(base_full, overrides or {})
     # 移除顶层 _BASE_CONFIG_（已展开）
     merged.pop('_BASE_CONFIG_', None)
+    # 卫生：RepDWC 系列 backbone（RadarNeXt*/RepDWCNone）用 REP_DWC.OUT_CHANNELS +
+    # neck 子配置，不消费 BaseBEVBackbone 的 NUM_FILTERS/UPSAMPLE_*。这些键是 baseline
+    # deep_merge 带入的残留（[32,32,32] 与实际 64 通道自相矛盾），显式 pop 防 cfg 自误导。
+    bb = merged.get('MODEL', {}).get('BACKBONE_2D', {})
+    # 仅 RepDWC 系列（RadarNeXt*/RepDWCNone）用 REP_DWC.OUT_CHANNELS，不消费
+    # UPSAMPLE_*（BaseBEVBackbone 残留）。PP* 仍需 NUM_FILTERS（StandardMultiScale）。
+    if bb.get('NAME', '') in ('RadarNeXtFPNBackbone', 'RadarNeXtMDFENBackbone', 'RepDWCNoneBackbone'):
+        for stale in ('UPSAMPLE_STRIDES', 'NUM_UPSAMPLE_FILTERS'):
+            bb.pop(stale, None)
     p = YAML_DIR / f'{tag}.yaml'
     with p.open('w', encoding='utf-8') as f:
         yaml.safe_dump(merged, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
@@ -120,6 +142,7 @@ write('n3', {
                 'USE_DWCONV': True, 'USE_NORMCONV': False,
             },
         },
+        'DENSE_HEAD': {'ANCHOR_GENERATOR_CONFIG': anchor_cfg_with_stride(4)},
     },
 })
 write('n4', {
@@ -135,6 +158,7 @@ write('n4', {
             'NUM_CONV_BRANCHES': 1, 'USE_NORMCONV': False, 'USE_DWCONV': True,
             'NUM_UPSAMPLE_FILTERS': [64, 128, 256],
         },
+        # n4 取 outs[0]=160×160（见 repdwc_none.py 设计裁决），anchor stride 与 n1 同=2
     },
 })
 write('n5', {
@@ -176,6 +200,7 @@ write('n6', {
                 'USE_DWCONV': True, 'USE_NORMCONV': False,
             },
         },
+        'DENSE_HEAD': {'ANCHOR_GENERATOR_CONFIG': anchor_cfg_with_stride(4)},
     },
 })
 
@@ -189,6 +214,12 @@ write('head_center', {
             'CODE_WEIGHTS': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
             'COMMON_HEADS': {'reg': (2, 2), 'height': (1, 2), 'dim': (3, 2), 'rot': (2, 2)},
             'OUT_SIZE_FACTOR': 2,
+            # H1 修复：RadarNeXtCenterHead.post_processing 读 model_cfg.NMS_CONFIG（无默认），
+            # 缺之则 eval/inference 必崩（AttributeError）。镜像 head_2d / vod_radarnext_fpn。
+            'NMS_CONFIG': {'NMS_TYPE': 'nms_gpu', 'NMS_THRESH': 0.1,
+                            'NMS_PRE_MAXSIZE': 4096, 'NMS_POST_MAXSIZE': 500},
+            'SCORE_THRESHOLD': 0.2,
+            'POST_CENTER_LIMIT_RANGE': [0, -25.6, -3, 51.2, 25.6, 2],
         },
     },
 })
@@ -200,14 +231,14 @@ write('head_2d', {
             'CODE_WEIGHTS': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
             'COMMON_HEADS': {'reg': (2, 2), 'height': (1, 2), 'dim': (3, 2), 'vel': (2, 2), 'rot': (2, 2)},
             'WEIGHT': 1.0, 'IOU_WEIGHT': 1.0, 'IOU_REG_WEIGHT': 0.5,
-            # RPiN 修复：head_2D 跑在 320x320 backbone 输出之上；
-            # 设 OUT_SIZE_FACTOR=1 让 feature_map=320x320 与 cls_pred 匹配；
-            # 去掉 STRIDES=[2]（plan 默认）→ 不上采样，pred=320x320。
-            'OUT_SIZE_FACTOR': 1,
+            # RPiN 修复：head_2D 跑在 BaseBEVBackbone 输出之上（spatial=160x160）；
+            # OUT_SIZE_FACTOR=2 → feature_map=grid/2=160x160 与 pred 匹配（同 head_center）。
+            # 旧版误设 OUT_SIZE_FACTOR=1（以为 backbone=320x320）→ feature_map=320 与 160 pred 2x 失配。
+            'OUT_SIZE_FACTOR': 2,
             'ANCHOR_BOTTOM_HEIGHTS': [-1.78, -0.6, -0.72],
             'NMS_CONFIG': {'NMS_TYPE': 'nms_gpu', 'NMS_THRESH': 0.1,
                             'NMS_PRE_MAXSIZE': 4096, 'NMS_POST_MAXSIZE': 500},
-            'SCORE_THRESH': 0.2,
+            'SCORE_THRESHOLD': 0.2,
             'POST_CENTER_LIMIT_RANGE': [0, -25.6, -3, 51.2, 25.6, 2],
         },
     },
@@ -225,7 +256,11 @@ write('e1', {
         },
     },
 })
-write('e3', {'DATA_CONFIG': {'USE_VDC': True}})
+write('e3', {'DATA_CONFIG': {'USE_VDC': True,
+                              # H4 修复：radar_5frames 的 time 列是整数帧索引 [-4..0]（非秒）；
+                              # 10Hz 同步网格 → 帧间隔 0.1s，time_scale=0.1 把帧索引换算成秒。
+                              # 默认 1.0 会把帧索引当秒 → 运动补偿过量 ~10×、7.5% 点甩出 PC range。
+                              'VDC_CFG': {'time_scale': 0.1, 'use_vr_comp': True}}})
 write('f1', {
     'DATA_CONFIG': {
         'DATA_PATH': './data/VoD/view_of_delft_PUBLIC/radar_1frame',

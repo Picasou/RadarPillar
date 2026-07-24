@@ -80,7 +80,10 @@ def check_one(cfg_path: Path, gpu: int, dryrun: bool):
                 ok = isinstance(out, dict) and ('pred_dicts' in out or 'preds_dicts' in out)
                 msg_dry = 'OK' if ok else f'no_pred_keys ({list(out.keys())[:3]})'
             except Exception as e:
-                msg_dry = f'NODATA({type(e).__name__}: {str(e)[:60]})'
+                # 注意：dryrun 喂 spatial_features 给整模（从 VFE 起，需 voxels），
+                # 完整 forward 需 dataset 真实 batch（Task4 的 1-epoch 才覆盖）。
+                # 故此处恒抛 → 仅验证「构造」，不验证前向。诚实标注，不冒充 ALL_OK 含前向保证。
+                msg_dry = f'CONSTRUCTION_ONLY(前向需 dataset：{type(e).__name__})'
         return True, f'params={n_params/1e6:.2f}M dryrun={msg_dry}', None
     except Exception:
         return False, '', traceback.format_exc().strip().splitlines()[-3:]
@@ -104,7 +107,7 @@ def main():
         results.append((c, ok, msg))
     n_pass = sum(1 for _, ok, _ in results if ok)
     if n_pass == len(results):
-        print('SUMMARY ALL_OK')
+        print('SUMMARY ALL_OK（注：仅验证构造+参数量；前向正确性由 Task4 1-epoch 覆盖）')
         sys.exit(0)
     print(f'SUMMARY {n_pass}/{len(results)} OK（FAIL 不阻塞：网格/head cfg 允许 gap）')
     sys.exit(1)

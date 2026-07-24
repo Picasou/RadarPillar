@@ -1,6 +1,7 @@
 #!/bin/bash
-# RPiN 前置 1-epoch 验证 .sh — e2（E2 底座(9维)）
-# 仿 train_radarpillar.sh 约定；conda activate angle（plan §0.5 S4 实测修正）。
+# RPiN 前置完整训练 .sh（80 epochs）— e2（E2 底座(9维)）
+# 注：1-epoch 冒烟验证请用 tools/scripts/rpin_1epoch.py（本 .sh 是全量训练入口）。
+# 仿 train_radarpillar.sh 约定；conda activate base（plan §0.5 S4：env=base，angle 为死路径）。
 set -e
 cd "$(dirname "$0")/../.."
 
@@ -11,7 +12,7 @@ else
         [ -f "$_c/etc/profile.d/conda.sh" ] && { source "$_c/etc/profile.d/conda.sh"; break; }
     done
 fi
-conda activate angle
+conda activate base
 
 CFG="experiments/YAML/e2.yaml"
 BS=16

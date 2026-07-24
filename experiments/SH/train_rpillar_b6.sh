@@ -1,5 +1,5 @@
 #!/bin/bash
-# RPiN 前置完整训练 .sh（80 epochs）— n4（N4=RepDWC+无neck(RepDWCNone)）
+# RPiN 阶段2 补强完整训练 .sh（80 epochs）— b6（RepDWCNoneBackbone，OUT_CHANNELS=[32, 64, 128]，对齐 standard b2）
 # 注：1-epoch 冒烟验证请用 tools/scripts/rpin_1epoch.py（本 .sh 是全量训练入口）。
 # 仿 train_radarpillar.sh 约定；conda activate base（plan §0.5 S4：env=base，angle 为死路径）。
 set -e
@@ -14,13 +14,13 @@ else
 fi
 conda activate base
 
-CFG="experiments/YAML/n4.yaml"
+CFG="experiments/YAML/b6.yaml"
 BS=16
 WORKERS=2
 EPOCHS=80
 GPU=0
-EXTRA_TAG="n4"
-OUTPUT_ROOT="output/train_log/vod/$(date +%Y%m%d%H%M)_radarpillar_n4"
+EXTRA_TAG="b6"
+OUTPUT_ROOT="output/train_log/vod/$(date +%Y%m%d%H%M)_radarpillar_b6"
 
 ARGS=(
     --cfg_file "$CFG"
@@ -35,7 +35,7 @@ ARGS=(
 
 LOG="$OUTPUT_ROOT/train_$(date +%Y%m%d-%H%M%S).log"
 mkdir -p "$OUTPUT_ROOT"
-echo "[rpin:n4] log=$LOG  bs=$BS  output_root=$OUTPUT_ROOT"
+echo "[rpin:b6] log=$LOG  bs=$BS  output_root=$OUTPUT_ROOT"
 nohup python -u tools/train.py "${ARGS[@]}" > "$LOG" 2>&1 &
 PID=$!
 echo "PID=$PID"

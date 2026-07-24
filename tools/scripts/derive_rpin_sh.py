@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """RPiN 前置计划 Task 3：派生 22 .sh 到 experiments/SH/。
 
-每 .sh 仿 train_radarpillar.sh 约定：conda activate angle + ARGS 数组 + OUTPUT_ROOT + 后台运行。
+每 .sh 仿 train_radarpillar.sh 约定：conda activate base + ARGS 数组 + OUTPUT_ROOT + 后台运行。
 bs 按 plan §0.5 S11：默认 16；b3/b4/n3/n5/n6/head_center/head_2d 降 8。
 .sh 一律在工程根执行（plan §0.5 S16）。
 """
@@ -39,8 +39,9 @@ SH_MAP = {
 }
 
 TEMPLATE = """#!/bin/bash
-# RPiN 前置 1-epoch 验证 .sh — {tag}（{note}）
-# 仿 train_radarpillar.sh 约定；conda activate angle（plan §0.5 S4 实测修正）。
+# RPiN 前置完整训练 .sh（80 epochs）— {tag}（{note}）
+# 注：1-epoch 冒烟验证请用 tools/scripts/rpin_1epoch.py（本 .sh 是全量训练入口）。
+# 仿 train_radarpillar.sh 约定；conda activate base（plan §0.5 S4：env=base，angle 为死路径）。
 set -e
 cd "$(dirname "$0")/../.."
 
@@ -51,7 +52,7 @@ else
         [ -f "$_c/etc/profile.d/conda.sh" ] && {{ source "$_c/etc/profile.d/conda.sh"; break; }}
     done
 fi
-conda activate angle
+conda activate base
 
 CFG="experiments/YAML/{tag}.yaml"
 BS={bs}
