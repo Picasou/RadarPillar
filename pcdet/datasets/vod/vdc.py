@@ -14,7 +14,10 @@ def compensate_motion(points: np.ndarray, cfg: dict = None) -> np.ndarray:
     """对 (N, 7) 原始点云做速度运动补偿，返回新数组（不改输入）。
 
     cfg（可选）：
-      time_scale: float, 默认 1.0（time 通道量纲为秒且符号为 t_point-t_cur 时取 1.0）
+      time_scale: float, 默认 1.0。**注意 time 通道量纲**：radar_5frames 的 time 列是
+        整数帧索引（[-4..0]，非秒）；10Hz 同步网格下应传 time_scale=0.1（帧索引×0.1s）
+        才是真实时间。仅当 time 通道已为秒（t_point-t_cur）时才用默认 1.0。
+        误用 1.0 于帧索引会使补偿过量 ~10×、约 7.5% 点被甩出 point_cloud_range。
       use_vr_comp: bool, 默认 False；True 时用 v_r_comp(列_VRC) 代替 v_r(列_VR)
       eps: float, 默认 1e-3（方位角除零保护）
     """

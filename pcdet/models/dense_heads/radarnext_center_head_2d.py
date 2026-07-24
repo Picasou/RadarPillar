@@ -35,27 +35,29 @@ class RadarNeXtCenterHead2D(RadarNeXtCenterHead):
         self.bbox_code_size = int(cfg.get('BBOX_CODE_SIZE', 7))
 
     def _override_height(self, preds_dicts):
-        """把每个 task 的 preds_dict['height'] 替换为 cfg.ANCHOR_BOTTOM_HEIGHTS 的均值。
+        """2D BEV 口径：去 z 预测，height 按 cell 预测类别（hm argmax）填该类 anchor 底高。
 
-        2D BEV 口径：z 固定为 anchor 高度（去 z 预测）。height 头通道数通常是 1（不分
-        类），故用 anchor 表的均值作为常数填充，保持 shape (B, C_h, H, W)。
+        H3 修复：旧版用跨类均值（mean(-1.78,-0.6,-0.72)=-1.033）填所有 cell，
+        Ped/Cyc 的 z 偏差 >1m → 3D IoU 恒低于阈值、AP 数学上为 0。改为按 cell 预测
+        类别 scatter 各类 anchor_bottom_heights（与 AnchorHead 逐类 z 口径一致）。
+        height 头 shape (B, 1, H, W)；hm shape (B, C, H, W)，C==len(anchor_bottom_heights)。
         """
-        h_list = self.anchor_bottom_heights
-        mean_h = float(sum(h_list)) / max(1, len(h_list))
         for preds_dict in preds_dicts:
-            preds_dict['height'] = torch.full_like(preds_dict['height'], mean_h)
+            hm = preds_dict['hm']                       # (B, C, H, W)
+            height = preds_dict['height']               # (B, 1, H, W)
+            cls = hm.argmax(dim=1)                      # (B, H, W) 每 cell 预测类别
+            anchors = torch.tensor(self.anchor_bottom_heights,
+                                   device=height.device, dtype=height.dtype)
+            preds_dict['height'] = anchors[cls].unsqueeze(1)   # (B, 1, H, W)
 
-    def forward(self, data_dict):
-        out = super().forward(data_dict)
-        if self.training:
-            return out
-        # eval 路径：preds_dicts 在 forward_ret_dict 里；取出来改 height
-        if self.forward_ret_dict is not None:
-            self._override_height(self.forward_ret_dict)
-        return out
+    # H2 修复：删除旧 forward 的 eval 分支——它把 forward_ret_dict（训练态的 dict
+    # {'preds_dicts':...,'gt_boxes':...}）误传给 _override_height，train 后首次
+    # in-process eval（early_stop）迭代 dict 得字符串键 → TypeError 必崩。
+    # eval 的 height 覆盖已由下方 predict() override（经父类 forward 虚分发）完整承担，
+    # forward 无需 override，直接继承父类。
 
     @torch.no_grad()
     def predict(self, preds_dicts, data_dict):
-        """在父类 predict 之前先覆盖 height，避免 NMS 用预测的 z。"""
+        """在父类 predict 之前先按类覆盖 height，避免 NMS 用预测的 z。"""
         self._override_height(preds_dicts)
         return super().predict(preds_dicts, data_dict)

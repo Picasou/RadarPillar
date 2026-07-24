@@ -77,14 +77,6 @@ MODEL:
     - 32
     - 32
     - 32
-    UPSAMPLE_STRIDES:
-    - 1
-    - 2
-    - 4
-    NUM_UPSAMPLE_FILTERS:
-    - 64
-    - 128
-    - 256
     OUT_CHANNELS:
     - 64
     - 128

@@ -40,6 +40,9 @@ DATA_CONFIG:
       - 0.95
       - 1.05
   USE_VDC: true
+  VDC_CFG:
+    time_scale: 0.1
+    use_vr_comp: true
 MODEL:
   NAME: PointPillar
   VFE:

@@ -11,9 +11,11 @@ Pipeline:
         -> RepDWCBackbone -> 3 scales
            [(B, 64, 160, 160), (B, 128, 80, 80), (B, 256, 40, 40)]
            (mmdet3d ordering: largest-first (x0,x1,x2) = (160,80,40))
-        -> MDFENNeck      -> fused           (B, 384, 160, 160)
+        -> MDFENNeck      -> fused           (B, 384, 80, 80)
            (PAN bidirectional + former_deform2 DCN + MultiMAPFusion
-            fusion_strides=[1,2])
+            fusion_strides=[1,2] -> 全部融合到中间尺度 80×80=grid/4)
+           注：head 对齐口径——anchor cfg feature_map_stride=4（或 center head
+           SepHead STRIDES=[2] 上采样 80→160）。早期 docstring 误标 160×160 已更正。
     data_dict['spatial_features_2d'] = fused
 
 The wrapped ``RepDWCBackbone`` and ``MDFENNeck`` are constructed from

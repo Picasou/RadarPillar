@@ -1,3 +1,8 @@
+# RPiN 阶段2 补强：RepDWC 容量扫描（无 neck）。
+# 对齐 standard 块 b3（NUM_FILTERS=[64, 128, 256]）；本档 OUT_CHANNELS=[64, 128, 256]。
+# 口径：RepDWC 深度可分离，同档参数量显著小于 standard；前端 VFE/NUM_BEV 锁 32（RepDWC 输入硬约束），
+#       首层 OUT=64 时靠 PW 升维 32->64，不随 standard b3 升 64。横比以 stage_stats 实测 Params/FLOPs 为准。
+
 CLASS_NAMES:
 - Car
 - Pedestrian
@@ -52,19 +57,19 @@ MODEL:
     USE_VELOCITY_OFFSET: false
     USE_REL_VELOCITY_OFFSET: false
     NUM_FILTERS:
-    - 64
+    - 32
   BACKBONE_3D:
     NAME: PillarAttention
-    ATTN_CHANNELS: 64
+    ATTN_CHANNELS: 32
     NUM_HEADS: 1
     DROPOUT: 0.0
-    FFN_CHANNELS: 64
+    FFN_CHANNELS: 32
     USE_LAYER_NORM: true
   MAP_TO_BEV:
     NAME: PointPillarScatter
-    NUM_BEV_FEATURES: 64
+    NUM_BEV_FEATURES: 32
   BACKBONE_2D:
-    NAME: RadarNeXtMDFENBackbone
+    NAME: RepDWCNoneBackbone
     LAYER_NUMS:
     - 3
     - 5
@@ -73,57 +78,16 @@ MODEL:
     - 2
     - 2
     - 2
-    NUM_FILTERS:
-    - 32
-    - 32
-    - 32
-    REP_DWC:
-      OUT_CHANNELS:
-      - 64
-      - 128
-      - 256
-      LAYER_NUMS:
-      - 3
-      - 5
-      - 5
-      LAYER_STRIDES:
-      - 2
-      - 2
-      - 2
-      NUM_OUTPUTS: 3
-      INFERENCE_MODE: false
-      USE_SE: false
-      NUM_CONV_BRANCHES: 1
-      USE_NORMCONV: false
-      USE_DWCONV: true
-    MDFEN_NECK:
-      CHANNELS_LIST:
-      - 64
-      - 128
-      - 256
-      - 128
-      - 64
-      - 128
-      - 256
-      NUM_REPEATS:
-      - 1
-      - 1
-      - 1
-      - 1
-      DCN_LAYER: false
-      FORMER: true
-      LATTER: false
-      GROUP: 4
-      MULTI_FUSION: true
-      FUSED_CHANNELS:
-      - 128
-      - 128
-      - 128
-      FUSION_STRIDES:
-      - 1
-      - 2
-      USE_DWCONV: true
-      USE_NORMCONV: false
+    OUT_CHANNELS:
+    - 64
+    - 128
+    - 256
+    NUM_OUTPUTS: 3
+    INFERENCE_MODE: false
+    USE_SE: false
+    NUM_CONV_BRANCHES: 1
+    USE_NORMCONV: false
+    USE_DWCONV: true
   DENSE_HEAD:
     NAME: AnchorHeadSingle
     CLASS_AGNOSTIC: false
@@ -143,7 +107,7 @@ MODEL:
       anchor_bottom_heights:
       - -1.78
       align_center: false
-      feature_map_stride: 4
+      feature_map_stride: 2
       matched_threshold: 0.6
       unmatched_threshold: 0.45
     - class_name: Pedestrian
@@ -157,7 +121,7 @@ MODEL:
       anchor_bottom_heights:
       - -0.6
       align_center: false
-      feature_map_stride: 4
+      feature_map_stride: 2
       matched_threshold: 0.5
       unmatched_threshold: 0.35
     - class_name: Cyclist
@@ -174,7 +138,7 @@ MODEL:
       anchor_bottom_heights:
       - -0.72
       align_center: false
-      feature_map_stride: 4
+      feature_map_stride: 2
       matched_threshold: 0.5
       unmatched_threshold: 0.35
     TARGET_ASSIGNER_CONFIG:
