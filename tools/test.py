@@ -132,20 +132,16 @@ def repeat_eval_ckpt(model, test_loader, args, eval_output_dir, logger, ckpt_dir
         # check whether there is checkpoint which is not evaluated
         cur_epoch_id, cur_ckpt = get_no_evaluated_ckpt(ckpt_dir, ckpt_record_file, args)
         if cur_epoch_id == -1 or int(float(cur_epoch_id)) < args.start_epoch:
-            # 已 eval 过但无新 ckpt → 训练已结束(eval_all 一次性跑完场景), 立刻退出, 不再等满 30 分钟
-            if first_eval is False:
-                if cfg.LOCAL_RANK == 0:
-                    print('\n[test.py] eval_all 模式: 已无新 ckpt 待 eval, 立即退出 (避免 30min 死等)')
-                break
-            wait_second = 30
+            # 已无 ckpt 待 eval — 训练已结束, 立刻退出(不再等满 30 分钟).
+            # 之前逻辑只在 first_eval is False 时 break, 但即使 first_eval is True
+            # (从未 eval 过任何 ckpt — 例如 ckpt_dir 为空或 start_epoch 太高),
+            # 也不该死等 30 分钟 — 立即退更合理.
             if cfg.LOCAL_RANK == 0:
-                print('Wait %s seconds for next check (progress: %.1f / %d minutes): %s \r'
-                      % (wait_second, total_time * 1.0 / 60, args.max_waiting_mins, ckpt_dir), end='', flush=True)
-            time.sleep(wait_second)
-            total_time += 30
-            if total_time > args.max_waiting_mins * 60 and (first_eval is False):
-                break
-            continue
+                if first_eval is False:
+                    print('\n[test.py] eval_all 模式: 所有 ckpt 已 eval 完, 立即退出')
+                else:
+                    print('\n[test.py] eval_all 模式: 未发现可 eval ckpt, 立即退出 (避免 30min 死等)')
+            break
 
         total_time = 0
         first_eval = False

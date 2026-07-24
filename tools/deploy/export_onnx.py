@@ -42,8 +42,12 @@ def main():
         logger.warning(f'ckpt loaded, missing={len(missing)}, unexpected={len(unexpected)}')
     if torch.cuda.is_available():
         model = model.cuda()
-    print('[export_onnx] 模型构建成功'
-          + (f' → ONNX 路径 {args.output}' if args.output else '（未指定输出，仅 build 链验证）'))
+    # 注意：本脚本是「前置占位」——当前只验证 build 链，并未调用 torch.onnx.export
+    # （主计划阶段6 启用真正的 ONNX 导出）。诚实标注，不让输出路径看起来像已落盘。
+    if args.output:
+        print(f'[export_onnx] build 链验证成功（占位：未实际导出 ONNX，主计划阶段6 启用 torch.onnx.export）')
+    else:
+        print('[export_onnx] build 链验证成功（未指定输出，仅 build 验证）')
 
 
 if __name__ == '__main__':
