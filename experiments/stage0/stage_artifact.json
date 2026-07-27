@@ -1,0 +1,44 @@
+{
+  "stage": 0,
+  "ts": "20260727-002559",
+  "bases": [
+    {
+      "name": "baseline_radarpillar",
+      "cfg": "tools/cfgs/model/vod_models/radarpillar/vod_radarpillar_rot.yaml",
+      "ckpt": "model_store/baseline_radarpillar/best.pth",
+      "eval_dir": "/home/admin/projects/RadarPillar/experiments/stage0/radarpillar_val/eval/epoch_no_number/val/default",
+      "log": "/home/admin/projects/RadarPillar/experiments/stage0/radarpillar_val/eval/epoch_no_number/val/default/log_eval_20260727-001313.txt",
+      "params": 184168,
+      "mAP_R11_mod": 50.086333333333336,
+      "mAP_R40_mod": 48.71313333333333
+    },
+    {
+      "name": "baseline_radarnext_fpn",
+      "cfg": "store/baseline_radarnext_fpn/resbag/cfg.yaml",
+      "ckpt": "store/baseline_radarnext_fpn/resbag/best.pth",
+      "eval_dir": "/home/admin/projects/RadarPillar/experiments/stage0/radarnext_fpn_val/eval/epoch_no_number/val/default",
+      "log": "/home/admin/projects/RadarPillar/experiments/stage0/radarnext_fpn_val/eval/epoch_no_number/val/default/log_eval_20260727-001716.txt",
+      "params": 1105549,
+      "mAP_R11_mod": 45.4597,
+      "mAP_R40_mod": 44.75723333333334
+    },
+    {
+      "name": "baseline_radarnext_mdfen",
+      "cfg": "store/baseline_radarnext-mdfen/resbag/cfg.yaml",
+      "ckpt": "store/baseline_radarnext-mdfen/resbag/best.pth",
+      "eval_dir": "/home/admin/projects/RadarPillar/experiments/stage0/radarnext_mdfen_val/eval/epoch_no_number/val/default",
+      "log": "/home/admin/projects/RadarPillar/experiments/stage0/radarnext_mdfen_val/eval/epoch_no_number/val/default/log_eval_20260727-002039.txt",
+      "params": 1639993,
+      "mAP_R11_mod": 47.338166666666666,
+      "mAP_R40_mod": 45.462766666666674
+    }
+  ],
+  "outputs": {
+    "stats_manifest": "/home/admin/projects/RadarPillar/experiments/stage0/stats_manifest.yaml",
+    "stage_stats_md": "/home/admin/projects/RadarPillar/experiments/stage0/stage_stats.md",
+    "stage_stats_csv": "/home/admin/projects/RadarPillar/experiments/stage0/stage_stats.csv",
+    "report": "/home/admin/projects/RadarPillar/experiments/stage0/20260727-002559_stage0_report.md"
+  },
+  "fix_note": "baseline_radarpillar 用 vod_radarpillar_rot.yaml(6-anchor) 而非 stale resbag cfg(8-anchor)",
+  "no_freeze": true
+}

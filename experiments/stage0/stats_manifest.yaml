@@ -1,0 +1,15 @@
+# RPiN stage0 三 base 清单（驱动 stage_stats，不重跑 eval）
+stage: 0
+models:
+  - name: baseline_radarpillar
+    cfg: tools/cfgs/model/vod_models/radarpillar/vod_radarpillar_rot.yaml
+    ckpt: model_store/baseline_radarpillar/best.pth
+    eval_dir: /home/admin/projects/RadarPillar/experiments/stage0/radarpillar_val/eval/epoch_no_number/val/default
+  - name: baseline_radarnext_fpn
+    cfg: store/baseline_radarnext_fpn/resbag/cfg.yaml
+    ckpt: store/baseline_radarnext_fpn/resbag/best.pth
+    eval_dir: /home/admin/projects/RadarPillar/experiments/stage0/radarnext_fpn_val/eval/epoch_no_number/val/default
+  - name: baseline_radarnext_mdfen
+    cfg: store/baseline_radarnext-mdfen/resbag/cfg.yaml
+    ckpt: store/baseline_radarnext-mdfen/resbag/best.pth
+    eval_dir: /home/admin/projects/RadarPillar/experiments/stage0/radarnext_mdfen_val/eval/epoch_no_number/val/default

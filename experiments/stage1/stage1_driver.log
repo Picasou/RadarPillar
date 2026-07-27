@@ -1,0 +1,31 @@
+[2026-07-27 00:34:25] ==================== LAUNCH rpillar_a0 (tag=a0) ====================
+[train] 使用 conda env: base
+log=output/train_log/vod/2026072700_rpillar_a0_a0/logs/train_20260727-003426.log
+PID=1316449, log=output/train_log/vod/2026072700_rpillar_a0_a0/logs/train_20260727-003426.log
+跟踪: tail -f output/train_log/vod/2026072700_rpillar_a0_a0/logs/train_20260727-003426.log
+[2026-07-27 00:34:26] rpillar_a0 PID=1316449 LOG=output/train_log/vod/2026072700_rpillar_a0_a0/logs/train_20260727-003426.log OR=output/train_log/vod/2026072700_rpillar_a0_a0
+[2026-07-27 02:24:00] rpillar_a0 epoch80 ckpt 出现，训练完成
+[2026-07-27 02:24:00] rpillar_a0 autofinish 开始（GPU 末20ep val + pickbest + record + resbag）
+[2026-07-27 03:25:48] rpillar_a0 autofinish exit=1
+[2026-07-27 03:25:48] rpillar_a0 WARN: model_store.yaml 缺失，查 output/train_log/vod/2026072700_rpillar_a0_a0/autofinish.log
+[2026-07-27 03:25:48] ==================== LAUNCH rpillar_a2 (tag=a2) ====================
+[train] 使用 conda env: base
+log=output/train_log/vod/2026072700_rpillar_a2_a2/logs/train_20260727-032549.log
+PID=1360203, log=output/train_log/vod/2026072700_rpillar_a2_a2/logs/train_20260727-032549.log
+跟踪: tail -f output/train_log/vod/2026072700_rpillar_a2_a2/logs/train_20260727-032549.log
+[2026-07-27 03:25:49] rpillar_a2 PID=1360203 LOG=output/train_log/vod/2026072700_rpillar_a2_a2/logs/train_20260727-032549.log OR=output/train_log/vod/2026072700_rpillar_a2_a2
+[2026-07-27 05:18:54] rpillar_a2 epoch80 ckpt 出现，训练完成
+[2026-07-27 05:18:54] rpillar_a2 autofinish 开始（GPU 末20ep val + pickbest + record + resbag）
+[2026-07-27 06:23:29] rpillar_a2 autofinish exit=1
+[2026-07-27 06:23:29] rpillar_a2 WARN: model_store.yaml 缺失，查 output/train_log/vod/2026072700_rpillar_a2_a2/autofinish.log
+[2026-07-27 06:23:29] ==================== LAUNCH rpillar_a3 (tag=a3) ====================
+[train] 使用 conda env: base
+log=output/train_log/vod/2026072700_rpillar_a3_a3/logs/train_20260727-062330.log
+PID=1408030, log=output/train_log/vod/2026072700_rpillar_a3_a3/logs/train_20260727-062330.log
+跟踪: tail -f output/train_log/vod/2026072700_rpillar_a3_a3/logs/train_20260727-062330.log
+[2026-07-27 06:23:30] rpillar_a3 PID=1408030 LOG=output/train_log/vod/2026072700_rpillar_a3_a3/logs/train_20260727-062330.log OR=output/train_log/vod/2026072700_rpillar_a3_a3
+[2026-07-27 08:22:34] rpillar_a3 epoch80 ckpt 出现，训练完成
+[2026-07-27 08:22:34] rpillar_a3 autofinish 开始（GPU 末20ep val + pickbest + record + resbag）
+[2026-07-27 09:26:42] rpillar_a3 autofinish exit=1
+[2026-07-27 09:26:42] rpillar_a3 WARN: model_store.yaml 缺失，查 output/train_log/vod/2026072700_rpillar_a3_a3/autofinish.log
+[2026-07-27 09:26:42] ==================== ALL a0/a2/a3 DONE ====================

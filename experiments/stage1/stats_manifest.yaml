@@ -1,0 +1,26 @@
+stage: 1
+models:
+  - name: a0
+    attention: None(直连)
+    cfg: experiments/YAML/a0.yaml
+    best_epoch: 73
+    best_ckpt: output/train_log/vod/2026072700_rpillar_a0_a0/ckpt/checkpoint_epoch_73.pth
+    results_json: /home/admin/projects/RadarPillar/experiments/stage1/a0_reeval/eval/epoch_73/val/default/results.json
+  - name: a1
+    attention: PillarAttention(=baseline,复用)
+    cfg: tools/cfgs/model/vod_models/radarpillar/vod_radarpillar_rot.yaml
+    best_epoch: 60
+    best_ckpt: model_store/baseline_radarpillar/best.pth
+    results_json: experiments/stage0/radarpillar_val/eval/epoch_no_number/val/default/results.json
+  - name: a2
+    attention: SEBlock
+    cfg: experiments/YAML/a2.yaml
+    best_epoch: 80
+    best_ckpt: output/train_log/vod/2026072700_rpillar_a2_a2/ckpt/checkpoint_epoch_80.pth
+    results_json: /home/admin/projects/RadarPillar/experiments/stage1/a2_reeval/eval/epoch_80/val/default/results.json
+  - name: a3
+    attention: SEDWConv
+    cfg: experiments/YAML/a3.yaml
+    best_epoch: 76
+    best_ckpt: output/train_log/vod/2026072700_rpillar_a3_a3/ckpt/checkpoint_epoch_76.pth
+    results_json: /home/admin/projects/RadarPillar/experiments/stage1/a3_reeval/eval/epoch_76/val/default/results.json

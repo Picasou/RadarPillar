@@ -1,0 +1,5 @@
+model,attention,best_epoch,Car_R40,Ped_R40,Cyc_R40,mAP_R40,Car_R11,Ped_R11,Cyc_R11,mAP_R11,Params,FLOPs,best_ckpt
+a0,None(直连),73,37.69,31.70,66.92,45.43,40.83,35.85,66.17,47.62,177704,N/A,output/train_log/vod/2026072700_rpillar_a0_a0/ckpt/checkpoint_epoch_73.pth
+a1,"PillarAttention(=baseline,复用)",60,36.18,40.75,69.20,48.71,39.27,42.34,68.65,50.09,184168,N/A,model_store/baseline_radarpillar/best.pth
+a2,SEBlock,80,36.56,31.84,65.26,44.55,39.07,35.83,65.59,46.83,178216,N/A,output/train_log/vod/2026072700_rpillar_a2_a2/ckpt/checkpoint_epoch_80.pth
+a3,SEDWConv,76,37.07,33.96,64.43,45.16,39.25,37.20,64.84,47.10,179592,N/A,output/train_log/vod/2026072700_rpillar_a3_a3/ckpt/checkpoint_epoch_76.pth

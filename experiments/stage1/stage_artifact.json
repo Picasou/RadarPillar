@@ -1,0 +1,38 @@
+{
+  "stage": 1,
+  "ts": "20260727-093520",
+  "A_star": "a0",
+  "A_star_attention": "None (BACKBONE_3D=null, PillarVFE->Scatter 直连)",
+  "adjudication": {
+    "criterion": "Car 3D AP R40 moderate (D13 主判)",
+    "ranking_car_r40": ["a0(37.69)", "a3(37.07)", "a2(36.56)", "a1(36.18)"],
+    "top2_margin_pp": 0.61,
+    "tie": true,
+    "tie_break": "Params 更省: a0=177704 < a3=179592（且 a0 无注意力模块结构最简）",
+    "decision": "A*=a0"
+  },
+  "models": [
+    {"name": "a0", "attention": "None", "cfg": "experiments/YAML/a0.yaml", "best_epoch": 73,
+     "best_ckpt": "output/train_log/vod/2026072700_rpillar_a0_a0/ckpt/checkpoint_epoch_73.pth",
+     "reeval_dir": "experiments/stage1/a0_reeval", "car_r40": 37.69, "mAP_r40": 45.43, "mAP_r11": 47.62, "params": 177704},
+    {"name": "a1", "attention": "PillarAttention(=baseline 复用)", "cfg": "tools/cfgs/model/vod_models/radarpillar/vod_radarpillar_rot.yaml", "best_epoch": 60,
+     "best_ckpt": "model_store/baseline_radarpillar/best.pth",
+     "reeval_dir": "experiments/stage0/radarpillar_val", "car_r40": 36.18, "mAP_r40": 48.71, "mAP_r11": 50.09, "params": 184168},
+    {"name": "a2", "attention": "SEBlock", "cfg": "experiments/YAML/a2.yaml", "best_epoch": 80,
+     "best_ckpt": "output/train_log/vod/2026072700_rpillar_a2_a2/ckpt/checkpoint_epoch_80.pth",
+     "reeval_dir": "experiments/stage1/a2_reeval", "car_r40": 36.56, "mAP_r40": 44.55, "mAP_r11": 46.83, "params": 178216},
+    {"name": "a3", "attention": "SEDWConv", "cfg": "experiments/YAML/a3.yaml", "best_epoch": 76,
+     "best_ckpt": "output/train_log/vod/2026072700_rpillar_a3_a3/ckpt/checkpoint_epoch_76.pth",
+     "reeval_dir": "experiments/stage1/a3_reeval", "car_r40": 37.07, "mAP_r40": 45.16, "mAP_r11": 47.10, "params": 179592}
+  ],
+  "outputs": {
+    "stage_stats_md": "experiments/stage1/stage_stats.md",
+    "stage_stats_csv": "experiments/stage1/stage_stats.csv",
+    "stats_manifest": "experiments/stage1/stats_manifest.yaml",
+    "report": "experiments/stage1/20260727-093520_stage1_report.md",
+    "next_stage_cfg": "experiments/stage1/next_stage_cfg/"
+  },
+  "next_stage_fixed": {"BACKBONE_3D": "null (A*=a0, 无注意力)"},
+  "hard_boundary": "选完 A* 即停，禁入阶段 2",
+  "self_heal_note": "skill pickbest 路径错位（eval 落 output/YAML/a*/a*/），自有解析器直选 best epoch + test_cpu 复评绕过，未改 skill"
+}

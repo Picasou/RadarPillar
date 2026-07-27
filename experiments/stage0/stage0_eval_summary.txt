@@ -1,0 +1,15 @@
+==================== [stage0] val radarnext_fpn ====================
+  cfg=store/baseline_radarnext_fpn/resbag/cfg.yaml
+  ckpt=store/baseline_radarnext_fpn/resbag/best.pth
+[radarnext_fpn] test_cpu.py exit=0
+[radarnext_fpn] results.json=experiments/stage0/radarnext_fpn_val/eval/epoch_no_number/val/default/results.json
+  moderate_R40: {'Car_3d/moderate_R40': 31.0012, 'Cyclist_3d/moderate_R40': 69.0403, 'Pedestrian_3d/moderate_R40': 34.2302}
+  moderate_R11: {}
+==================== [stage0] val radarnext_mdfen ====================
+  cfg=store/baseline_radarnext-mdfen/resbag/cfg.yaml
+  ckpt=store/baseline_radarnext-mdfen/resbag/best.pth
+[radarnext_mdfen] test_cpu.py exit=0
+[radarnext_mdfen] results.json=experiments/stage0/radarnext_mdfen_val/eval/epoch_no_number/val/default/results.json
+  moderate_R40: {'Car_3d/moderate_R40': 32.5628, 'Cyclist_3d/moderate_R40': 68.5493, 'Pedestrian_3d/moderate_R40': 35.2762}
+  moderate_R11: {}
+===== DONE: radarnext_fpn radarnext_mdfen =====
