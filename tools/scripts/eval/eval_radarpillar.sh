@@ -61,7 +61,7 @@ TRAIN_LOG_DIR="${OUTPUT_ROOT}"  # 含 logs/ 与 tensorboard/ 的目录
 # ════════════════════════════════════════════════════════════════
 #  执行
 # ════════════════════════════════════════════════════════════════
-cd "$(dirname "$0")/../../.."
+cd "$(dirname "$0")/../.."
 # conda 自探测（不写死 /home/xxx），env=angle
 if command -v conda >/dev/null 2>&1; then
     source "$(conda info --base)/etc/profile.d/conda.sh"

@@ -67,7 +67,7 @@ OUTPUT_ROOT="output/train_log/vod/$(date +%Y%m%d%H%M)_radarpiller_bs8"
 # ============================================================
 # train.py 自适应脚本
 # ============================================================
-cd "$(dirname "$0")/../../.."
+cd "$(dirname "$0")/../.."
 # conda 自探测（不写死 /home/xxx），env=angle
 if command -v conda >/dev/null 2>&1; then
     source "$(conda info --base)/etc/profile.d/conda.sh"

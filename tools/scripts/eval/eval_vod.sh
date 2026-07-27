@@ -69,7 +69,7 @@ TRAIN_LOG_DIR="${OUTPUT_ROOT}"  # 含 logs/ 与 tensorboard/ 的目录
 # ════════════════════════════════════════════════════════════════
 #  执行
 # ════════════════════════════════════════════════════════════════
-cd "$(dirname "$0")/../../.."
+cd "$(dirname "$0")/../.."
 source /home/admin/anaconda3/etc/profile.d/conda.sh
 conda activate base
 export CUDA_VISIBLE_DEVICES="$GPU"
