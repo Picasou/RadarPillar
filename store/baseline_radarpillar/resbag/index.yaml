@@ -1,0 +1,31 @@
+version: 1
+folder: radarpillar_base
+tag: stage0_base_rpillar
+dataset: vod
+map_r40:
+  car: 36.18
+  pedestrian: 40.76
+  cyclist: 69.22
+  mean: 48.72
+map_r11:
+  car: null
+  pedestrian: null
+  cyclist: null
+  mean: null
+params_m: 0.1866
+trainable_m: 0.1866
+flops_g: 70.5
+metric_caliber:
+  map: moderate
+  recall: R40
+  iou:
+    car: 0.5
+    ped_cyc: 0.25
+  filter: EAA
+seed: 'False'
+optimizer: adam_onecycle | LR=0.003 | WD=0.01 | decay=[35, 45]
+commit: fe5fe64
+ts: '2026-07-24'
+status: done
+note: best.pth=ep60；map_r40 取 README §4 锚点值（ep56 early_stop，源数据 ep56/ep60 不一致）；eval_results.json
+  由 README §4 重建（原 results.json 随训练机丢失）

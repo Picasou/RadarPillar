@@ -1,0 +1,30 @@
+version: 1
+folder: 2026072222_radarnext_mdfen_0722_paper
+tag: 0722_paper
+dataset: vod
+map_r40:
+  car: 32.55
+  pedestrian: 35.24
+  cyclist: 68.58
+  mean: 45.46
+map_r11:
+  car: null
+  pedestrian: null
+  cyclist: null
+  mean: null
+params_m: 1.6401
+trainable_m: 1.6401
+flops_g: 113.222
+metric_caliber:
+  map: moderate
+  recall: R40
+  iou:
+    car: 0.5
+    ped_cyc: 0.25
+  filter: EAA
+seed: 'False'
+optimizer: adamw | LR=0.003 | WD=0.01 | decay=[35, 45]
+commit: c2201e2
+ts: '2026-07-24'
+status: done
+note: best.pth=ep80

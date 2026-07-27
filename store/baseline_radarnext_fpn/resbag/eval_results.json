@@ -1,0 +1,30 @@
+{
+  "ret_dict": {
+    "recall/roi_0.3": 0.0,
+    "recall/rcnn_0.3": 0.0,
+    "recall/roi_0.5": 0.0,
+    "recall/rcnn_0.5": 0.0,
+    "recall/roi_0.7": 0.0,
+    "recall/rcnn_0.7": 0.0,
+    "Car_3d/easy_R40": 30.959825270574896,
+    "Car_3d/moderate_R40": 30.959825270574896,
+    "Car_3d/hard_R40": 30.959825270574896,
+    "Car_bev/easy_R40": 44.02736427959017,
+    "Car_bev/moderate_R40": 44.02736427959017,
+    "Car_bev/hard_R40": 44.02736427959017,
+    "Pedestrian_3d/easy_R40": 34.2312566471016,
+    "Pedestrian_3d/moderate_R40": 34.2312566471016,
+    "Pedestrian_3d/hard_R40": 34.2312566471016,
+    "Pedestrian_bev/easy_R40": 42.300207077101454,
+    "Pedestrian_bev/moderate_R40": 42.300207077101454,
+    "Pedestrian_bev/hard_R40": 42.300207077101454,
+    "Cyclist_3d/easy_R40": 69.04562180665805,
+    "Cyclist_3d/moderate_R40": 69.04562180665805,
+    "Cyclist_3d/hard_R40": 69.04562180665805,
+    "Cyclist_bev/easy_R40": 73.16358175061339,
+    "Cyclist_bev/moderate_R40": 73.16358175061339,
+    "Cyclist_bev/hard_R40": 73.16358175061339
+  },
+  "summary_str": "",
+  "epoch_id": "61"
+}

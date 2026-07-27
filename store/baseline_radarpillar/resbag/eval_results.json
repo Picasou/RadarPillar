@@ -1,0 +1,11 @@
+{
+  "_provenance": "reconstructed from store/baseline_radarpillar/README.md §4 (original results.json lost with training machine dministrator1); values = 3D/BEV moderate_R40 anchor @ ep56 early_stop",
+  "ret_dict": {
+    "Car_3d/moderate_R40": 36.18,
+    "Pedestrian_3d/moderate_R40": 40.76,
+    "Cyclist_3d/moderate_R40": 69.22,
+    "Car_bev/moderate_R40": 49.18,
+    "Pedestrian_bev/moderate_R40": 50.96,
+    "Cyclist_bev/moderate_R40": 73.19
+  }
+}
