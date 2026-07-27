@@ -1,5 +1,6 @@
 from .pointnet2_backbone import PointNet2Backbone, PointNet2MSG
 from .pillar_attention import PillarAttention
+from .pillar_attention_res import PillarAttentionRes
 # RPiN 阶段1 注意力候选（A2/A3）
 from .se_block import SEBlock
 from .se_dwconv import SEDWConv
@@ -17,6 +18,7 @@ __all__ = {
     'PointNet2Backbone': PointNet2Backbone,
     'PointNet2MSG': PointNet2MSG,
     'PillarAttention': PillarAttention,
+    'PillarAttentionRes': PillarAttentionRes,
     'SEBlock': SEBlock,
     'SEDWConv': SEDWConv,
     'VoxelResBackBone8x': VoxelResBackBone8x,

@@ -126,15 +126,12 @@ MODEL:
       anchor_sizes:
       - - 1.76
         - 0.6
-        - 1.4
-      - - 1.76
-        - 0.6
-        - 1.78
+        - 1.73
       anchor_rotations:
       - 0
       - 1.57
       anchor_bottom_heights:
-      - -0.72
+      - -0.6
       align_center: false
       feature_map_stride: 2
       matched_threshold: 0.5

@@ -54,12 +54,13 @@ MODEL:
     NUM_FILTERS:
     - 32
   BACKBONE_3D:
-    NAME: PillarAttention
+    NAME: PillarAttentionRes
     ATTN_CHANNELS: 32
     NUM_HEADS: 1
     DROPOUT: 0.0
     FFN_CHANNELS: 32
     USE_LAYER_NORM: true
+    RES_SHORTCUT: true
   MAP_TO_BEV:
     NAME: PointPillarScatter
     NUM_BEV_FEATURES: 32
