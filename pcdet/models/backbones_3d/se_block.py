@@ -21,11 +21,18 @@ def build_se_bottleneck(channels: int, reduction: int = 4) -> nn.Sequential:
 
 
 class SEBlock(nn.Module):
-    """A2：纯通道注意力，BEV-GAP ≡ pillar 集均值（差常数因子，被 FC 权重吸收）。"""
+    """A2：纯通道注意力（BEV 域）。scatter→BEV-GAP（逐样本）→SE 门→scatter 回 pillar。
+
+    squeeze 用 `bev.mean(dim=(2,3))`（≡ RadarNeXt SEBlock 的 F.avg_pool2d），是逐样本
+    (B,C) 门——与 A3(SEDWConv) 对齐，输出不随 batch 组合变化。A3 = 本模块 + DWConv 分支 + 残差。
+    """
 
     def __init__(self, model_cfg, input_channels, **kwargs):
         super().__init__()
         self.model_cfg = model_cfg
+        grid_size = kwargs.get('grid_size')
+        assert grid_size is not None, 'SEBlock 需要 grid_size（detector build 会传）'
+        self.nx, self.ny = int(grid_size[0]), int(grid_size[1])
         attn_channels = int(model_cfg.get('ATTN_CHANNELS', input_channels))
         reduction = int(model_cfg.get('REDUCTION', 4))
         self.num_point_features = attn_channels
@@ -35,8 +42,18 @@ class SEBlock(nn.Module):
         self.bottleneck = build_se_bottleneck(attn_channels, reduction)
 
     def forward(self, batch_dict):
-        pf = batch_dict['pillar_features']        # (M, C_in)
-        h = self.pre_mlp(pf)                      # (M, C_attn)
-        w = self.bottleneck(h.mean(dim=0, keepdim=True))   # (1, C_attn)
-        batch_dict['pillar_features'] = h * w
+        pf = batch_dict['pillar_features']           # (M, C_in)
+        coords = batch_dict['voxel_coords']           # (M, 4) [b, z, y, x]
+        batch_size = int(coords[:, 0].max().int().item()) + 1
+
+        # scatter → BEV（z 维恒 0，(b,y,x) 唯一 — voxelization 保证），与 SEDWConv 同款
+        bev = pf.new_zeros((batch_size, self.num_point_features, self.ny, self.nx))
+        b = coords[:, 0].long()
+        y = coords[:, 2].long().clamp(0, self.ny - 1)
+        x = coords[:, 3].long().clamp(0, self.nx - 1)
+        bev[b, :, y, x] = self.pre_mlp(pf)            # (M, C_attn)
+
+        w = self.bottleneck(bev.mean(dim=(2, 3)))     # (B, C_attn) 逐样本门 ≡ avg_pool2d
+        out = bev * w.unsqueeze(-1).unsqueeze(-1)     # (B, C_attn, H, W) 通道重标定（无残差）
+        batch_dict['pillar_features'] = out[b, :, y, x]   # 还原 (M, C_attn)
         return batch_dict

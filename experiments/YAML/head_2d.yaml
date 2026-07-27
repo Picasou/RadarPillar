@@ -40,7 +40,7 @@ DATA_CONFIG:
       - 0.95
       - 1.05
 MODEL:
-  NAME: PointPillar
+  NAME: CenterPoint
   VFE:
     NAME: PillarVFE
     WITH_DISTANCE: false
@@ -172,6 +172,7 @@ MODEL:
     - 1.0
     - 1.0
     - 1.0
+    - 1.0
     COMMON_HEADS:
       reg: &id001
       - 2
@@ -182,7 +183,6 @@ MODEL:
       dim:
       - 3
       - 2
-      vel: *id001
       rot: *id001
     WEIGHT: 1.0
     IOU_WEIGHT: 1.0

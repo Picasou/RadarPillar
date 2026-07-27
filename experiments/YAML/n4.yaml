@@ -52,17 +52,17 @@ MODEL:
     USE_VELOCITY_OFFSET: false
     USE_REL_VELOCITY_OFFSET: false
     NUM_FILTERS:
-    - 64
+    - 32
   BACKBONE_3D:
     NAME: PillarAttention
-    ATTN_CHANNELS: 64
+    ATTN_CHANNELS: 32
     NUM_HEADS: 1
     DROPOUT: 0.0
-    FFN_CHANNELS: 64
+    FFN_CHANNELS: 32
     USE_LAYER_NORM: true
   MAP_TO_BEV:
     NAME: PointPillarScatter
-    NUM_BEV_FEATURES: 64
+    NUM_BEV_FEATURES: 32
   BACKBONE_2D:
     NAME: RepDWCNoneBackbone
     LAYER_NUMS:
@@ -73,10 +73,6 @@ MODEL:
     - 2
     - 2
     - 2
-    NUM_FILTERS:
-    - 32
-    - 32
-    - 32
     OUT_CHANNELS:
     - 64
     - 128

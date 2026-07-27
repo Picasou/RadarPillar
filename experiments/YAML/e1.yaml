@@ -4,6 +4,20 @@ CLASS_NAMES:
 - Cyclist
 DATA_CONFIG:
   _BASE_CONFIG_: tools/cfgs/dataset/vod_dataset_radar.yaml
+  POINT_FEATURE_ENCODING:
+    encoding_type: absolute_coordinates_encoding
+    used_feature_list:
+    - x
+    - y
+    - z
+    - rcs
+    - v_r
+    src_feature_list:
+    - x
+    - y
+    - z
+    - rcs
+    - v_r
   POINT_CLOUD_RANGE:
   - 0
   - -25.6

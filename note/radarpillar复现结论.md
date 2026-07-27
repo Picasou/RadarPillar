@@ -21,7 +21,7 @@
 | 项 | 内容 |
 |---|---|
 | CFG | `tools/cfgs/model/vod_models/radarpillar/vod_radarpillar.yaml` |
-| 训练脚本 | `tools/scripts/train_radarpillar.sh`（bs=16, 80ep, fromzero, fix_seed 默认 False） |
+| 训练脚本 | `tools/scripts/train/train_radarpillar.sh`（bs=16, 80ep, fromzero, fix_seed 默认 False） |
 | 数据 | VoD Public (`view_of_delft_PUBLIC/radar_5frames`)，train/val 标准 split，FOV_POINTS_ONLY=True |
 | 训练目录 | `output/train_log/vod/radarpillar_base` |
 | eval | **仅 ep56 单点 eval**（`eval/epoch_56/val/default/`，eval_tag=default, NMS_THRESH=0.15） |
@@ -170,7 +170,7 @@
 ![radarpillar frame 08480](asset/radarpillar/radarpillar_frames/frame_08480.png)
 
 ### 配置 / 脚本
-- 训练脚本：[`tools/scripts/train_radarpillar.sh`](tools/scripts/train_radarpillar.sh)
+- 训练脚本：[`tools/scripts/train/train_radarpillar.sh`](tools/scripts/train/train_radarpillar.sh)
 - 模型 CFG：[`tools/cfgs/model/vod_models/radarpillar/vod_radarpillar.yaml`](tools/cfgs/model/vod_models/radarpillar/vod_radarpillar.yaml)
 - 数据 CFG：[`tools/cfgs/dataset/vod_dataset_radar.yaml`](tools/cfgs/dataset/vod_dataset_radar.yaml)
 - 参数量自检：[`tools/param_check/radarpillar.py`](tools/param_check/radarpillar.py)

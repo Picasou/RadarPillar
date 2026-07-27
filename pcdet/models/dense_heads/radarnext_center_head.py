@@ -431,11 +431,17 @@ class RadarNeXtCenterHead(nn.Module):
 
             target_box = anno_boxes[task_id]
             # Reconstruct the anno_box from multiple reg heads.
-            # RPiN 前置修复：与 get_targets_single 7-cat 对齐（去掉 height / vel），
-            # 让 pred (reg + dim + rot = 7) 与 target 一致；vel 头仍参与前向但不影响 7-cat 回归。
-            preds_dict['anno_box'] = torch.cat((preds_dict['reg'],
-                                                preds_dict['dim'],
-                                                preds_dict['rot']), dim=1)
+            # 8-cat (reg2 + height1 + dim3 + rot2)，与 ground-truth RadarNeXt_Head、本文件
+            # docstring(:21) 及 code_weights(len=8) 一致，height 由 L1 回归直接监督。
+            # 7b3a121 曾误删 height 改 7-cat（致 height 头零梯度 + code_weights=8 的 FPN/MDFEN
+            # cfg 在 target 赋值/loc_loss 广播处崩溃）；此处恢复 92af058 原版。
+            if 'vel' in preds_dict:
+                preds_dict['anno_box'] = torch.cat((preds_dict['reg'], preds_dict['height'],
+                                                    preds_dict['dim'], preds_dict['vel'],
+                                                    preds_dict['rot']), dim=1)
+            else:
+                preds_dict['anno_box'] = torch.cat((preds_dict['reg'], preds_dict['height'],
+                                                    preds_dict['dim'], preds_dict['rot']), dim=1)
 
             # Regression loss for dimension, offset, height, rotation.
             box_loss = self.crit_reg(
@@ -668,12 +674,12 @@ class RadarNeXtCenterHead(nn.Module):
                     rot = task_boxes[idx][k][6]
                     box_dim = task_boxes[idx][k][3:6]
                     box_dim = box_dim.log()
-                    # RPiN 前置计划修复：parent 漏掉 z 不写 7-col anno_box，
-                    # 与 code_weights=7 + bbox_code_size=7 不一致 → 首个非空目标即崩。
-                    # 改为 7-cat：dx, dy, log(dx), log(dy), log(dz), sin, cos。
+                    # 8-cat 目标：dx, dy, z, log(dx), log(dy), log(dz), sin, cos。
+                    # z(height) 必须在内，与 code_weights(len=8) 及 ground-truth 92af058 一致，
+                    # 否则 height 头零监督、预测 z 随机、3D AP 塌陷。
                     anno_box[new_idx] = torch.cat([
                         center - torch.tensor([x, y], device=device),
-                        box_dim,
+                        z.unsqueeze(0), box_dim,
                         torch.sin(rot).unsqueeze(0),
                         torch.cos(rot).unsqueeze(0)
                     ])

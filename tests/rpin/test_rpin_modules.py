@@ -12,14 +12,33 @@ from tests.rpin import _load_model_cfg
 # ---------------------------------------------------------------------------
 # A2 SEBlock / A3 SEDWConv：BACKBONE_3D 契约
 # ---------------------------------------------------------------------------
+def _bev_coords(M, nxy=320, batch_idx=0):
+    """构造 (M,4) voxel_coords [b,z,y,x]，(b,y,x) 唯一（z 恒 0）。"""
+    ys = torch.randperm(nxy)[:M].float() if M <= nxy else torch.randint(0, nxy, (M,)).float()
+    xs = torch.randperm(nxy)[:M].float() if M <= nxy else torch.randint(0, nxy, (M,)).float()
+    return torch.stack([torch.full((M,), float(batch_idx)), torch.zeros(M), ys, xs], dim=1)
+
+
 def test_seblock_contract():
     from pcdet.models.backbones_3d.se_block import SEBlock
     mcfg = _load_model_cfg('a2').BACKBONE_3D
     m = SEBlock(mcfg, input_channels=32, grid_size=[320, 320, 1])
+    m.eval()
     assert m.num_point_features == 32
-    bd = {'pillar_features': torch.randn(200, 32)}
+    M = 200
+    bd = {'pillar_features': torch.randn(M, 32), 'voxel_coords': _bev_coords(M)}
     out = m(bd)
-    assert out['pillar_features'].shape == (200, 32)   # 就地重标定，shape 不变
+    assert out['pillar_features'].shape == (M, 32)   # 就地重标定，shape 不变
+
+    # 逐样本门回归：同样本输出不随 batch 组合变化（A2 不得是 batch 全局门）
+    torch.manual_seed(0)
+    pf_a, pf_b = torch.randn(64, 32), torch.randn(80, 32)
+    with torch.no_grad():
+        alone = m({'pillar_features': pf_a.clone(), 'voxel_coords': _bev_coords(64, batch_idx=0)})
+        paired = m({'pillar_features': torch.cat([pf_a, pf_b], 0),
+                    'voxel_coords': torch.cat([_bev_coords(64, batch_idx=0),
+                                               _bev_coords(80, batch_idx=1)], 0)})
+    assert torch.allclose(alone['pillar_features'], paired['pillar_features'][:64], atol=1e-5)
 
 
 def test_sedwconv_contract():

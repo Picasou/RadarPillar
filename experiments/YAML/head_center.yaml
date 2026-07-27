@@ -40,7 +40,7 @@ DATA_CONFIG:
       - 0.95
       - 1.05
 MODEL:
-  NAME: PointPillar
+  NAME: CenterPoint
   VFE:
     NAME: PillarVFE
     WITH_DISTANCE: false
@@ -165,6 +165,7 @@ MODEL:
       - Pedestrian
       - Cyclist
     CODE_WEIGHTS:
+    - 1.0
     - 1.0
     - 1.0
     - 1.0
