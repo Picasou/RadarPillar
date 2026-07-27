@@ -9,7 +9,7 @@ set -e
 #  F2 修复(2026-07-23 rpin 审查): 全部改 :="${VAR:=default}" 形式，
 #  让 autofinish 的 env 注入能覆盖默认值（旧硬赋值会吞掉 env）。
 # ════════════════════════════════════════════════════════════════
-: "${CFG_FILE:=tools/cfgs/model/vod_models/radarpillar/vod_radarpillar.yaml}"
+: "${CFG_FILE:=experiments/YAML/a0.yaml}"
 : "${BATCH_SIZE:=4}"
 : "${WORKERS:=2}"
 : "${GPU:=0}"

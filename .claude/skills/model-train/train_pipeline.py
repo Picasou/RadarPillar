@@ -30,6 +30,10 @@ ROOT = Path(__file__).resolve().parents[3]
 SCRIPTS_DIR = Path(__file__).resolve().parent
 # SHELLS_DIR = 训练/评测壳产物落点（与 CLAUDE.md「训练/测试脚本放 tools/scripts/」对齐）
 SHELLS_DIR = ROOT / 'tools' / 'scripts'
+# 子目录分类（方案 B）：train_*.sh → train/，eval_*.sh → eval/。
+# 所有 shell 路径【必须】经 _shell_path/_eval_shell_path 解析，禁止字面量硬编码。
+TRAIN_DIR = SHELLS_DIR / 'train'
+EVAL_DIR = SHELLS_DIR / 'eval'
 # 模板：去模型语义命名；落到 templates/ 子目录避免被误当执行入口
 TEMPLATE = SCRIPTS_DIR / 'templates' / 'template.sh'
 TEMPLATE_EVAL = SCRIPTS_DIR / 'templates' / 'template_eval.sh'
@@ -48,11 +52,13 @@ def _validate_model_name(model: str) -> None:
 
 
 def _shell_path(model: str) -> Path:
-    return SHELLS_DIR / f'train_{model}.sh'
+    """train 壳唯一路径真相源 → tools/scripts/train/train_<model>.sh"""
+    return TRAIN_DIR / f'train_{model}.sh'
 
 
 def _eval_shell_path(model: str) -> Path:
-    return SHELLS_DIR / f'eval_{model}.sh'
+    """eval 壳唯一路径真相源 → tools/scripts/eval/eval_<model>.sh"""
+    return EVAL_DIR / f'eval_{model}.sh'
 
 
 # ════════════════════════════════════════════════════════════════
@@ -128,6 +134,8 @@ def cmd_make_shell(args):
             print(f'[make_shell] 已备份 -> {bk.relative_to(ROOT)}')
 
     SHELLS_DIR.mkdir(parents=True, exist_ok=True)
+    TRAIN_DIR.mkdir(parents=True, exist_ok=True)
+    EVAL_DIR.mkdir(parents=True, exist_ok=True)
 
     # 1) train 壳
     _render_template(TEMPLATE, train_out, args.cfg_file, label='train')
@@ -203,7 +211,7 @@ def cmd_gen(args):
 
     # 可视化写在 .sh 里（对齐 temp.md 第 6 点）：训练本身不 viz，留 eval 阶段开关注释指引
     if args.visualize:
-        text += f'\n# [可视化] 训练后 eval 请设 RUN_VIZ=True，详见 tools/scripts/eval_{args.model}.sh\n'
+        text += f'\n# [可视化] 训练后 eval 请设 RUN_VIZ=True，详见 {_eval_shell_path(args.model).relative_to(ROOT)}\n'
 
     out_sh.write_text(text, encoding='utf-8')
     print(f'[gen] 已生成 {out_sh.relative_to(ROOT)}')
@@ -508,7 +516,7 @@ def _self_heal(output_root: Path, model: str, log: Path,
     # 脚本写在 .tmp/.../reduce_batch_and_resume.sh,用户自己看自己跑
     if output_root and last_ckpt != 'N/A':
         ckpt_path = output_root / 'ckpt' / last_ckpt
-        sh = ROOT / 'tools' / 'scripts' / f'train_{model}.sh'
+        sh = _shell_path(model)  # 唯一路径真相源（tools/scripts/train/train_<model>.sh）
         new_bs_str = None
         if sh.exists():
             try:
@@ -532,16 +540,16 @@ def _self_heal(output_root: Path, model: str, log: Path,
             f'cd {ROOT}',
             '',
             '# 1) 备份当前 shell',
-            f'cp tools/scripts/train_{model}.sh tools/scripts/train_{model}.sh.bak.{datetime.now(CST).strftime("%Y%m%d%H%M%S")}',
+            f'cp {_shell_path(model).relative_to(ROOT)} {_shell_path(model).relative_to(ROOT)}.bak.{datetime.now(CST).strftime("%Y%m%d%H%M%S")}',
             '',
             f'# 2) 改 BATCH_SIZE={new_bs_str or "??"} (原 batch / 2,下限 2)',
-            f'sed -i "s/^BATCH_SIZE=.*/BATCH_SIZE={new_bs_str or "4"}/" tools/scripts/train_{model}.sh',
+            f'sed -i "s/^BATCH_SIZE=.*/BATCH_SIZE={new_bs_str or "4"}/" {_shell_path(model).relative_to(ROOT)}',
             '',
             '# 3) 杀掉旧 train.py 进程(若还活着)',
             f'pkill -f "tools/train.py" || true',
             '',
             f'# 4) 续 ckpt 重启(用 {last_ckpt})',
-            f'CKPT="{ckpt_path}" bash tools/scripts/train_{model}.sh',
+            f'CKPT="{ckpt_path}" bash {_shell_path(model).relative_to(ROOT)}',
             '',
             f'echo "[self-heal] 已重启,新 batch={new_bs_str or "??"},续 ckpt={ckpt_path}"',
             f'echo "[self-heal] 监控: tail -f {log}"',
