@@ -27,7 +27,7 @@ export OUTPUT_ROOT
 #   - 设为 True: 使用 tools/test_cpu.py (CPU-only test, 跳过 .cuda())
 #   - 设为 False: 使用 tools/test.py (GPU 模式)
 # ════════════════════════════════════════════════════════════════
-: "${CPU_EVAL:=True}"
+: "${CPU_EVAL:=False}"
 
 # ════════════════════════════════════════════════════════════════
 #  评估模式
@@ -68,6 +68,7 @@ TRAIN_LOG_DIR="${OUTPUT_ROOT}"  # 含 logs/ 与 tensorboard/ 的目录
 # F-fix 2026-07-28: shell 落点 tools/scripts/eval/ 时，dirname/../.. 落到 tools/ 而非工程根，
 # 内部 python -u tools/test.py 会找不到（变 tools/tools/test.py）。
 # 修法：硬 cd 到 bash 启动时继承的 cwd（autofinish subprocess cwd=ROOT）—— 不走相对路径。
+export PYTHONNOUSERSITE=1
 cd "$PWD"
 
 # conda 自探测（不写死 /home/xxx）

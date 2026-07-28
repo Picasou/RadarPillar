@@ -69,6 +69,7 @@ OUTPUT_ROOT="output/train_log/vod/$(date +%Y%m%d%H%M)_rpillar_a4_rezero_rezero"
 # F1 修复(2026-07-23 rpin 审查): 壳落点为 tools/scripts/（SHELLS_DIR），
 # 到仓库根是 2 级 ../..；旧 4 级 ../../../.. 会 cd 到 /home 造成静默假启动。
 # ============================================================
+export PYTHONNOUSERSITE=1
 cd "$(dirname "$0")/../.."
 
 # conda 自探测（不写死 /home/xxx）

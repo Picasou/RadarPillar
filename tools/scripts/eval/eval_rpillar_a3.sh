@@ -27,7 +27,7 @@ export OUTPUT_ROOT
 #   - 设为 True: 使用 tools/test_cpu.py (CPU-only test, 跳过 .cuda())
 #   - 设为 False: 使用 tools/test.py (GPU 模式)
 # ════════════════════════════════════════════════════════════════
-: "${CPU_EVAL:=True}"
+: "${CPU_EVAL:=False}"
 
 # ════════════════════════════════════════════════════════════════
 #  评估模式
@@ -65,6 +65,7 @@ TRAIN_LOG_DIR="${OUTPUT_ROOT}"  # 含 logs/ 与 tensorboard/ 的目录
 # ════════════════════════════════════════════════════════════════
 #  执行
 # ════════════════════════════════════════════════════════════════
+export PYTHONNOUSERSITE=1
 cd "$(dirname "$0")/../.."
 
 # conda 自探测（不写死 /home/xxx）

@@ -31,3 +31,6 @@ doc/
 # 临时训练状态
 .tmp/
 .vscode/
+
+# Claude auto-managed per-user memory (会话级，不入库)
+.claude/projects/

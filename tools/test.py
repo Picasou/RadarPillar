@@ -17,6 +17,20 @@ from pcdet.datasets import build_dataloader
 from pcdet.models import build_network
 from pcdet.utils import common_utils
 
+# =====================================================================
+# [P0 GPU-eval 提速] 用 pcdet.ops.iou3d_nms 替代 numba rotate_iou_gpu_eval。
+# numba 0.59.1 在 WSL2 + CUDA 596.36 上从 cuda.to_device 就 SIGSEGV；
+# iou3d_nms 的 .so 已在仓库编译好，rotated polygon BEV IoU 语义等价。
+# install 失败则静默回落到原 numba CPU 兜底路径（不致命）。
+# =====================================================================
+try:
+    from pcdet.datasets.kitti.kitti_object_eval_python.rotate_iou_pcdet import (
+        install as _install_pcdet_rotate_iou,
+    )
+    _install_pcdet_rotate_iou()
+except Exception as _e:
+    print(f'[warn] pcdet-cuda rotate_iou patch 未装上，落回原 CPU 路径: {_e}', flush=True)
+
 
 def apply_reparam_if_rep(model, logger=None):
     """对含 RepDWC/MobileOne 多分支的模型，融合成推理单分支。
