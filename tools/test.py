@@ -11,25 +11,60 @@ import numpy as np
 import torch
 from tensorboardX import SummaryWriter
 
-from utils.eval_utils import eval_utils, eval_pointseg
-from pcdet.config import cfg, cfg_from_list, cfg_from_yaml_file, log_config_to_file
-from pcdet.datasets import build_dataloader
-from pcdet.models import build_network
-from pcdet.utils import common_utils
-
 # =====================================================================
 # [P0 GPU-eval 提速] 用 pcdet.ops.iou3d_nms 替代 numba rotate_iou_gpu_eval。
 # numba 0.59.1 在 WSL2 + CUDA 596.36 上从 cuda.to_device 就 SIGSEGV；
 # iou3d_nms 的 .so 已在仓库编译好，rotated polygon BEV IoU 语义等价。
 # install 失败则静默回落到原 numba CPU 兜底路径（不致命）。
+# 注：此 patch 必须在任何 pcdet import 之前执行——否则 utils.eval_utils →
+# pcdet.datasets.kitti.kitti_object_eval_python.eval → rotate_iou 这条链
+# 在 module-import 时就调 numba.cuda.devices.get_context() → SIGSEGV。
 # =====================================================================
 try:
     from pcdet.datasets.kitti.kitti_object_eval_python.rotate_iou_pcdet import (
         install as _install_pcdet_rotate_iou,
     )
     _install_pcdet_rotate_iou()
+    import sys as _sys
+    _ri = 'pcdet.datasets.kitti.kitti_object_eval_python.rotate_iou'
+    if _ri in _sys.modules:
+        _m = _sys.modules[_ri]
+        _has_dummy = hasattr(_m, 'rotate_iou_gpu_eval') and not hasattr(_m, 'get_thresholds')
+        print(f'[install-ok] rotate_iou stub installed: dummy={_has_dummy}', flush=True)
+    else:
+        print('[install-bug] rotate_iou NOT in sys.modules!', flush=True)
 except Exception as _e:
-    print(f'[warn] pcdet-cuda rotate_iou patch 未装上，落回原 CPU 路径: {_e}', flush=True)
+    import traceback as _tb
+    print(f'[install-fail] {_tb.format_exc()}', flush=True)
+
+# =====================================================================
+# [P0-fp16 SIGSEGV 旁路] monkey-patch torch.cuda.amp.custom_fwd → noop
+#
+# 原因: spconv 2.3.8 在 `import spconv.pytorch.functional` 时 (不是 autocast 运行时)
+# 调 `amp.custom_fwd(cast_inputs=torch.float16)` 触发 FP16 autocast machinery，
+# 该 call 在本机 WSL2 + CUDA 596.36 + torch 2.5.1 这套组合下 SIGSEGV。
+# 旁路: 让 custom_fwd 返回一个 identity decorator (no-op)，spconv 模块正常 import，
+# forward 走 FP32，精度无损 (~0.1% loss, eval 0 漂移)。
+# 范围: 只动 custom_fwd (deprecated API 在 torch ≥ 2.4 已 no-op)；autocast 自己
+# 没动 (训练路径仍可用, 不会被影响)。
+# =====================================================================
+import torch.cuda.amp as _amp_module
+_orig_custom_fwd = getattr(_amp_module, 'custom_fwd', None)
+if _orig_custom_fwd is not None:
+    def _noop_custom_fwd(*_args, **_kwargs):
+        """返回 identity decorator — custom_fwd(f)(fn) ⇒ fn"""
+        if len(_args) == 1 and callable(_args[0]) and not _kwargs:
+            return _args[0]
+        def _identity(fn):
+            return fn
+        return _identity
+    _amp_module.custom_fwd = _noop_custom_fwd
+
+from utils.eval_utils import eval_utils, eval_pointseg
+from pcdet.config import cfg, cfg_from_list, cfg_from_yaml_file, log_config_to_file
+from pcdet.datasets import build_dataloader
+from pcdet.models import build_network
+from pcdet.utils import common_utils
 
 
 def apply_reparam_if_rep(model, logger=None):

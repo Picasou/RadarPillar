@@ -29,6 +29,7 @@ set -eo pipefail
 : "${RUN_PICKBEST:=true}"  # 是否按 Car R40 max 挑 best.pth
 : "${RUN_RESBAG:=true}"    # 是否 resbag 落袋 (artifact 归档)
 
+
 # ============================================================
 #  step 2: 环境激活 (一次性 init; 整个 shell 复用)
 # ============================================================
@@ -55,8 +56,6 @@ echo "[pipeline] conda env=$TARGET_ENV PYTHONNOUSERSITE=$PYTHONNOUSERSITE GPU=$G
 # 至此 conda 已激活,所有变量已绑;严格 nounset 模式开启
 set -u
 
-# ============================================================
-#  step 0.5: dry-run
 # ============================================================
 if [ "${SHOW_ARGS:-0}" = "1" ]; then
     cat <<EOF

@@ -1,21 +1,26 @@
-"""用 pcdet.ops.iou3d_nms.boxes_iou_bev 替代 numba rotate_iou_gpu_eval。
+"""Drop-in replacement for numba-based rotate_iou via pcdet iou3d_nms.
 
-绕开 numba 0.59.1 在 WSL2 + CUDA 596.36 上 cuda.to_device() 的 SIGSEGV
-（实测：import cuda OK，但任何 to_device 调用立即 SIGSEGV）。
+Why this exists: numba 0.59.1 on this WSL2 + CUDA 596.36 box segfaults inside
+`numba.cuda.cudadrv.devices.get_context` on the very first cuda call from any
+*decorated* function (jit / njit / cuda.jit). This includes @numba.jit
+function *imports* -- the JIT tries to acquire a CUDA context at decoration
+time, dies before any user code runs. The fix is to never let the real
+rotate_iou.py module execute -- install() inserts a stub into sys.modules
+so relative `from .rotate_iou import X` statements resolve to the stub
+instead of importing the real file.
 
-两条调用入口都被覆盖：
-  - pcdet/datasets/kitti/kitti_object_eval_python/eval.py:117
-      bev_box_overlap(boxes, qboxes, criterion=-1) → 7D kitti [x, y, z, l, w, h, ry]
-  - pcdet/datasets/kitti/kitti_object_eval_python/eval.py:152
-      d3_box_overlap → 5D [x, z, l, h, ry]（select [0,2,3,5,6] of 7D）
+Coverage (per ABtest.md RPiN stage-1 failure analysis):
+- pcdet/.../eval.py:117 bev_box_overlap -> 7D kitti [x,y,z,l,w,h,ry]
+- pcdet/.../eval.py:152 d3_box_overlap  -> 5D [x,z,l,h,ry] (5D slice of 7D)
 
-pcdet iou3d_nms.boxes_iou_bev 输入格式 7D [x, y, z, dx, dy, dz, heading]，与 KITTI
-7D 列序相同（dx↔l, dy↔w, dz↔h, heading↔ry），可直接传。5D 路径需要投影到 7D
-（dz=0 占位，因为 boxes_iou_bev 只读 x,y,dx,dy,heading）。
+pcdet's iou3d_nms.boxes_iou_bev input is 7D [x,y,z,dx,dy,dz,heading] which is
+column-aligned with KITTI 7D (dx~l, dy~w, dz~h, heading~ry). 5D path pads to
+7D with dz=0 because boxes_iou_bev only reads x,y,dx,dy,heading.
 
-criterion 参数：本路径下被忽略，iou3d_nms 总返回 IoU；
-对 criterion=2 的 d3_box_overlap 调用（用作 rinc>0 布尔判）仍安全——
-只要保证"零↔非零"一致即可。
+`criterion` argument is ignored: iou3d_nms always returns IoU. The
+criterion=2 callers (d3_box_overlap) only use the returned value as a `>0`
+boolean (per eval.py:128 `if rinc[i,j] > 0`), so any non-negative return
+is functionally correct.
 """
 import numpy as np
 import torch
@@ -24,7 +29,7 @@ from pcdet.ops.iou3d_nms import iou3d_nms_utils
 
 
 def _as_torch(arr):
-    """接 numpy 或 torch tensor；返回 contiguous float32 CUDA tensor。"""
+    """Accept numpy or torch tensor; return contiguous float32 CUDA tensor."""
     if isinstance(arr, np.ndarray):
         t = torch.from_numpy(arr.astype(np.float32, copy=False))
     elif torch.is_tensor(arr):
@@ -39,23 +44,21 @@ def _as_torch(arr):
 
 
 def _pad_5d_to_7d(b):
-    """kitti 5D [x, y, dim1, dim2, angle] → pcdet 7D [x, y, 0, dim1, dim2, 0, heading]。
-
-    只用于 BEV 投影（d3_box_overlap criterion!=−1 路径），dz=0 是占位不影响。
-    """
+    """kitti 5D [x,y,dim1,dim2,angle] -> pcdet 7D [x,y,0,dim1,dim2,0,heading]."""
     n = b.shape[0]
     out = torch.zeros(n, 7, device=b.device, dtype=torch.float32)
-    out[:, [0, 1]] = b[:, [0, 1]]   # cx, cy
-    out[:, [3, 4]] = b[:, [2, 3]]   # dim1, dim2 → dx, dy
-    out[:, 6] = b[:, 4]             # angle → heading
+    out[:, [0, 1]] = b[:, [0, 1]]
+    out[:, [3, 4]] = b[:, [2, 3]]
+    out[:, 6] = b[:, 4]
     return out
 
 
 def rotate_iou_gpu_eval(boxes, query_boxes, criterion=-1, device_id=0):
-    """drop-in replacement；返回 np.ndarray (N, K)。
+    """Drop-in replacement; returns np.ndarray (N, K).
 
-    criterion 形参保留但本路径下忽略（iou3d_nms 总返回 IoU）。
-    d3_box_overlap 调 criterion=2 时，本函数返回的 >0 状态被判为有效；
+    `criterion` is preserved but ignored -- iou3d_nms always returns IoU.
+    criterion=2 (d3_box_overlap driver) only checks >0 so any non-negative
+    return is functionally correct.
     """
     b = _as_torch(boxes)
     q = _as_torch(query_boxes)
@@ -74,18 +77,49 @@ def rotate_iou_gpu_eval(boxes, query_boxes, criterion=-1, device_id=0):
 
 
 def install():
-    """Monkey-patch 到 kitti eval 的 rotate_iou_gpu_eval 命名空间。
+    """Install the stub monkey-patch.
 
-    eval.py 用 `from .rotate_iou import rotate_iou_gpu_eval` 已把原 numba 函数
-    绑到 eval 模块级名（line 6）。两处都打，才能确保 bev_box_overlap
-    (eval.py:117) 与 d3_box_overlap (eval.py:152) 都命中本函数。
+    Two things go wrong if we let pcdet import the real rotate_iou.py:
+      1. `@numba.jit` decorators on top-level functions fire at IMPORT time,
+         calling `get_current_device` -> numba SIGSEGVs.
+      2. `from .rotate_iou import rotate_iou_gpu_eval` then rebinds nothing
+         in `eval_mod`, so bev_box_overlap calls the still-broken numba fn.
 
-    同时把 _rio._CUDA_OK 置 True，让任何仍走 _rio.rotate_iou_gpu_eval
-    的代码不被 CPU fallback 截胡。
+    Fix: replace sys.modules entry for rotate_iou with a stub that exposes
+    only the symbols eval.py needs. Then relative import pulls our stub,
+    never executes the real file. Both numba crashes avoided.
+
+    Note: install() must be called BEFORE any `from ... rotate_iou ...`
+    import. Tools/test.py at the top auto-installs on startup; any other
+    caller should do the same.
     """
-    import pcdet.datasets.kitti.kitti_object_eval_python.rotate_iou as _rio
-    import pcdet.datasets.kitti.kitti_object_eval_python.eval as _eval_mod
+    import sys
+    import types
 
-    _rio._CUDA_OK = True
-    _eval_mod.rotate_iou_gpu_eval = rotate_iou_gpu_eval
+    real_name = 'pcdet.datasets.kitti.kitti_object_eval_python.rotate_iou'
+    eval_name = 'pcdet.datasets.kitti.kitti_object_eval_python.eval'
+
+    # 1) Drop any cached real module so our stub actually replaces it
+    #    (must drop BEFORE building stub, or build stub first)
+    cached = sys.modules.pop(real_name, None)
+    if cached is not None:
+        # we held the real reference; no use for it
+        pass
+
+    # 2) Build stub exposing the minimum surface eval.py touches.
+    #    MUST NOT `import ...rotate_iou` here -- that would load the real
+    #    file (whose @numba.jit decorators trigger compile_device ->
+    #    SIGSEGV on this box).
+    stub = types.ModuleType(real_name)
+    stub._CUDA_OK = True
+    stub.rotate_iou_gpu_eval = rotate_iou_gpu_eval
+    stub.rotate_iou_cpu_eval = lambda *a, **k: None
+    stub.rotate_iou = rotate_iou_gpu_eval
+    sys.modules[real_name] = stub
+
+    # 3) If eval was already imported (unlikely but safe), rebind its attr
+    eval_mod = sys.modules.get(eval_name)
+    if eval_mod is not None:
+        eval_mod.rotate_iou_gpu_eval = rotate_iou_gpu_eval
+
     return True
