@@ -1,23 +1,28 @@
 #!/bin/bash
-# train_rpillar_b8.sh — 训练入口 (auto-generated from train.sh.template)
+# train.sh.template — 训练入口模板（29 个 train_rpillar_*.sh 都 source 此壳）
 #
-# 公共模板: .claude/skills/model-train/templates/train.sh.template
-# 想改: 先改模板, 再 regen 全部 train_rpillar_*.sh
+# 用法:
+#   MODEL=rpillar_a4_lnpost bash train.sh.template   # 显式
+#   bash train.sh.template                            # MODEL 必须已 export
 #
-# 用法 (前台):
-#   bash experiments/SH/train_rpillar_b8.sh
-# 用法 (后台):
-#   nohup bash experiments/SH/train_rpillar_b8.sh > /tmp/b8.log 2>&1 &
+# 必调环境变量:
+#   MODEL       模型 slug (默认=rpillar_a4_lnpost)
+#   CFG_FILE    cfg YAML（默认从 MODEL 派生 = experiments/YAML/<MODEL>.yaml）
+#   EXTRA_TAG   tag (默认=MODEL)
+#   OUTPUT_ROOT (默认时间戳派生)
+#
+# 可选:
+#   CKPT, PRETRAINED_MODEL, FIX_RANDOM_SEED, LAUNCHER, TCP_PORT, LOCAL_RANK, SYNC_BN,
+#   CKPT_SAVE_INTERVAL, MAX_CKPT_SAVE_NUM, MERGE_ALL_ITERS_TO_ONE_EPOCH, START_EPOCH,
+#   MAX_WAITING_MINS, SAVE_TO_FILE, USE_WANDB, SKIP_EVAL, RUN_MODE, SET_CFGS,
+#   BATCH_SIZE, WORKERS, EPOCHS, GPU
 
 # ============================================================
 #  默认值 (env 覆盖优先)
 # ============================================================
-# ============================================================
-#  默认值 (env 覆盖优先)
-# ============================================================
 : "${MODEL:=rpillar_a4_lnpost}"
-: "${CFG_FILE:=experiments/YAML/b8.yaml}"
-: "${EXTRA_TAG:=rp_base_0716}"
+: "${CFG_FILE:=experiments/YAML/${MODEL}.yaml}"
+: "${EXTRA_TAG:=${MODEL}}"
 : "${BATCH_SIZE:=16}"
 : "${WORKERS:=2}"
 : "${EPOCHS:=80}"

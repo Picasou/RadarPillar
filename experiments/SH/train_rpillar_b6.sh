@@ -1,77 +1,43 @@
 #!/bin/bash
-
-#  eg. bash tools/scripts/train_<模型>.sh
-
-# —— 可选 ——
-# [续训]
-# CKPT="output/.../ckpt/checkpoint_epoch_12.pth"
-
-# [预训练]
-# PRETRAINED_MODEL="path/to/pretrained.pth"
-
-# [固定种子]
-# FIX_RANDOM_SEED=True
-
-# [分布式]
-# LAUNCHER="pytorch"
-# TCP_PORT=18888
-# LOCAL_RANK=0
-# SYNC_BN=True
-
-# [ckpt 保存间隔]
-# CKPT_SAVE_INTERVAL=1
-
-# [最多 ckpt 数]
-# MAX_CKPT_SAVE_NUM=30
-
-# [iter 合并 1 epoch]
-# MERGE_ALL_ITERS_TO_ONE_EPOCH=True
-
-# [起始 epoch]
-# START_EPOCH=0
-
-# [数据加载超时(分)]
-# MAX_WAITING_MINS=0
-
-# [保存 metric]
-# SAVE_TO_FILE=True
-
-# [wandb]
-# USE_WANDB=True
-
-# [跳过评估]
-SKIP_EVAL=True
-
-# [运行模式]
-# foreground: 前台运行 + tee，终端实时打印，日志同时落盘
-# background: nohup + disown 放后台，仅打印 PID，日志在文件
-RUN_MODE="background"
-
-# [关掉训练期 eval] — early_stop.enabled=False → eval_loader=None → 训练期不 eval
-# [no warmup] — 对齐 0709 reference (LR_WARMUP=False)
-SET_CFGS=("OPTIMIZATION.early_stop.enabled" "False" "OPTIMIZATION.LR_WARMUP" "False")
-
-# [cfg 覆盖]
-# —— 必改 ——
-CFG_FILE="experiments/YAML/b6.yaml"
-BATCH_SIZE=16
-WORKERS=2
-EPOCHS=80
-GPU=0
-EXTRA_TAG="rp_base_0716"
-
-# [output 覆写: 让 train/test 直接写到 output/train_log/vod/<datetime>_rp_base_0716_paper-bs8/]
-OUTPUT_ROOT="output/train_log/vod/$(date +%Y%m%d%H%M)_radarpiller_bs8"
-
+# train_rpillar_b6.sh — 训练入口 (auto-generated from train.sh.template)
+#
+# 公共模板: .claude/skills/model-train/templates/train.sh.template
+# 想改: 先改模板, 再 regen 全部 train_rpillar_*.sh
+#
+# 用法 (前台):
+#   bash experiments/SH/train_rpillar_b6.sh
+# 用法 (后台):
+#   nohup bash experiments/SH/train_rpillar_b6.sh > /tmp/b6.log 2>&1 &
 
 # ============================================================
-# train.py 自适应脚本
-# F1 修复(2026-07-23 rpin 审查): 壳落点为 tools/scripts/（SHELLS_DIR），
-# 到仓库根是 2 级 ../..；旧 4 级 ../../../.. 会 cd 到 /home 造成静默假启动。
+#  默认值 (env 覆盖优先)
 # ============================================================
-cd "$(dirname "$0")/../.."
+# ============================================================
+#  默认值 (env 覆盖优先)
+# ============================================================
+: "${MODEL:=rpillar_a4_lnpost}"
+: "${CFG_FILE:=experiments/YAML/b6.yaml}"
+: "${EXTRA_TAG:=rp_base_0716}"
+: "${BATCH_SIZE:=16}"
+: "${WORKERS:=2}"
+: "${EPOCHS:=80}"
+: "${GPU:=0}"
+: "${OUTPUT_ROOT:=output/train_log/vod/$(date +%Y%m%d%H%M)_${EXTRA_TAG}_${EXTRA_TAG}}"
 
-# conda 自探测（不写死 /home/xxx）
+# 训练期不 eval (交由 unified pipeline 末 step 跑); warmup 关
+SKIP_EVAL=${SKIP_EVAL:-True}
+: "${RUN_MODE:=background}"
+SET_CFGS=(${SET_CFGS[@]:-"OPTIMIZATION.early_stop.enabled" "False" "OPTIMIZATION.LR_WARMUP" "False"})
+
+# ============================================================
+#  env activation
+# ============================================================
+export PYTHONNOUSERSITE=1  # 屏蔽 user-local 坏 torch (见 memory: torch-user-local-mask)
+
+# 自动 cd 到仓库根 (此模板在 .claude/skills/model-train/templates/, 三级之上)
+cd "$(dirname "$0")/../../../.."
+
+# conda 自探测 (不写死)
 if command -v conda >/dev/null 2>&1; then
     source "$(conda info --base)/etc/profile.d/conda.sh"
 else
@@ -80,37 +46,26 @@ else
     done
 fi
 
-# P0-1 修复: conda env fallback helper — 不再写死 angle
-# 探测顺序: ${DESIRED_ENV:-angle} -> angle -> base
-# 外部覆盖: DESIRED_ENV=myenv bash train_xxx.sh
 find_conda_env() {
     local try_envs=("${DESIRED_ENV:-angle}" "angle" "base")
-    local installed
-    installed="$(conda env list 2>/dev/null | awk 'NF && $1 != "#" {print $1}')"
+    local installed; installed="$(conda env list 2>/dev/null | awk 'NF && $1 != "#" {print $1}')"
     for env in "${try_envs[@]}"; do
-        if echo "$installed" | grep -qx "$env"; then
-            echo "$env"; return 0
-        fi
-    done
-    return 1
+        if echo "$installed" | grep -qx "$env"; then echo "$env"; return 0; fi
+    done; return 1
 }
-TARGET_ENV="$(find_conda_env)" || {
-    echo "[ERROR] 无可用 conda env (尝试过: ${DESIRED_ENV:-angle} -> angle -> base)"
-    echo "[ERROR] 请先创建 env: conda create -n angle python=3.x && conda activate angle && pip install -r requirements.txt"
-    exit 1
-}
-echo "[train] 使用 conda env: $TARGET_ENV"
+TARGET_ENV="$(find_conda_env)" || { echo "[ERROR] 无可用 conda env"; exit 1; }
 conda activate "$TARGET_ENV"
+echo "[train] MODEL=$MODEL conda=$TARGET_ENV"
 
 export CUDA_VISIBLE_DEVICES="$GPU"
 
+# ============================================================
+#  ARGS + launch
+# ============================================================
 ARGS=(
     --cfg_file "$CFG_FILE"
-    --batch_size "$BATCH_SIZE"
-    --workers "$WORKERS"
-    --epochs "$EPOCHS"
-    --extra_tag "$EXTRA_TAG"
-    --output_root "$OUTPUT_ROOT"
+    --batch_size "$BATCH_SIZE" --workers "$WORKERS" --epochs "$EPOCHS"
+    --extra_tag "$EXTRA_TAG" --output_root "$OUTPUT_ROOT"
 )
 [ -n "$CKPT" ]                    && ARGS+=(--ckpt "$CKPT")
 [ -n "$PRETRAINED_MODEL" ]        && ARGS+=(--pretrained_model "$PRETRAINED_MODEL")
@@ -129,10 +84,9 @@ ARGS=(
 
 LOG_DIR="${OUTPUT_ROOT}/logs"
 mkdir -p "$LOG_DIR"
-LOG="$LOG_DIR/train_$(date +%Y%m%d-%H%M%S).log"
+LOG="${LOG_DIR}/train_$(date +%Y%m%d-%H%M%S).log"
 
-# 前台运行 + tee：终端实时打印，同时落盘到日志文件
-echo "log=$LOG"
+echo "[train] cfg=$CFG_FILE epochs=$EPOCHS bs=$BATCH_SIZE log=$LOG"
 if [ "$RUN_MODE" = "background" ]; then
     nohup python -u tools/train.py "${ARGS[@]}" > "$LOG" 2>&1 &
     disown
@@ -142,10 +96,3 @@ if [ "$RUN_MODE" = "background" ]; then
 else
     python -u tools/train.py "${ARGS[@]}" 2>&1 | tee "$LOG"
 fi
-
-# ============================================================
-# P1-9 修复: USER_CUSTOMIZED 标记 — 若用户在模板底部手动改过内容并加此标记,
-# gen 时会检测到此标记并拒绝覆盖。如果你想让 gen 重新覆盖整个壳,
-# 请先删除此标记(或用 --force-make_shell)。
-# ============================================================
-# USER_CUSTOMIZED
