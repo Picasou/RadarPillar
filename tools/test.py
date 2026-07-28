@@ -4,8 +4,24 @@ import glob
 import json
 import os
 import re
+import sys
 import time
 from pathlib import Path
+
+# [WIP] workaround for WSL2 + CUDA 596.36 + numba 0.59.1 SIGSEGV:
+# `compile_device` calls cuDeviceGet via WSL2's CUDA forwarding layer and
+# gets a dead pointer back. Setting NUMBA_DISABLE_CUDA=1 at process start
+# short-circuits `safe_cuda_api_call` to return None without touching the
+# driver; @numba.jit decorators run as no-ops instead of compiling.
+# iou3d_nms.boxes_iou_bev (our GPU IoU path) does NOT depend on numba CUDA
+# — it uses ctypes to call the pre-built .so directly — so GPU eval still
+# runs end-to-end. Only the @jit-decorated functions lose JIT compilation.
+os.environ.setdefault('NUMBA_DISABLE_CUDA', '1')
+
+# Ensure RadarPillar (which holds `pcdet/`) is importable regardless of CWD.
+# `python tools/test.py` makes `tools/` sys.path[0], which hides the project's
+# own `pcdet/` and friends. Inserting ROOT keeps `from pcdet.X import` working.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import numpy as np
 import torch
