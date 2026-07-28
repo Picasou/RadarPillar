@@ -28,12 +28,19 @@ CST = timezone(timedelta(hours=8))  # UTC+8
 ROOT = Path(__file__).resolve().parents[3]
 # SCRIPTS_DIR = 本 skill 的脚本目录（仅 skill 资产 + templates/ 模板）
 SCRIPTS_DIR = Path(__file__).resolve().parent
-# SHELLS_DIR = 训练/评测壳产物落点（与 CLAUDE.md「训练/测试脚本放 tools/scripts/」对齐）
+# 训练/评测脚本默认落点（可被 --sh_dir / --eval_dir 覆盖）：
+#   - 训练脚本 → experiments/SH/（27 个实验壳的既有存放点：a*/b*/e*/f*/n*/head_*）
+#   - 评测脚本 → tools/scripts/eval/（eval 壳独立分类）
 SHELLS_DIR = ROOT / 'tools' / 'scripts'
-# 子目录分类（方案 B）：train_*.sh → train/，eval_*.sh → eval/。
-# 所有 shell 路径【必须】经 _shell_path/_eval_shell_path 解析，禁止字面量硬编码。
-TRAIN_DIR = SHELLS_DIR / 'train'
+TRAIN_DIR = ROOT / 'experiments' / 'SH'
 EVAL_DIR = SHELLS_DIR / 'eval'
+
+
+def _resolve_dirs(args):
+    """从 args 解析训练/eval 壳目录（外部可控）。未传时用默认常量。"""
+    sh = Path(args.sh_dir) if getattr(args, 'sh_dir', None) else TRAIN_DIR
+    ev = Path(args.eval_dir) if getattr(args, 'eval_dir', None) else EVAL_DIR
+    return sh, ev
 # 模板：去模型语义命名；落到 templates/ 子目录避免被误当执行入口
 TEMPLATE = SCRIPTS_DIR / 'templates' / 'template.sh'
 TEMPLATE_EVAL = SCRIPTS_DIR / 'templates' / 'template_eval.sh'
@@ -51,14 +58,16 @@ def _validate_model_name(model: str) -> None:
         )
 
 
-def _shell_path(model: str) -> Path:
-    """train 壳唯一路径真相源 → tools/scripts/train/train_<model>.sh"""
-    return TRAIN_DIR / f'train_{model}.sh'
+def _shell_path(model: str, sh_dir: Path | None = None) -> Path:
+    """train 壳路径。sh_dir 由调用方传入（外部可控），缺省用默认 TRAIN_DIR。"""
+    base = Path(sh_dir) if sh_dir else TRAIN_DIR
+    return base / f'train_{model}.sh'
 
 
-def _eval_shell_path(model: str) -> Path:
-    """eval 壳唯一路径真相源 → tools/scripts/eval/eval_<model>.sh"""
-    return EVAL_DIR / f'eval_{model}.sh'
+def _eval_shell_path(model: str, eval_dir: Path | None = None) -> Path:
+    """eval 壳路径。eval_dir 由调用方传入（外部可控），缺省用默认 EVAL_DIR。"""
+    base = Path(eval_dir) if eval_dir else EVAL_DIR
+    return base / f'eval_{model}.sh'
 
 
 # ════════════════════════════════════════════════════════════════
@@ -1226,6 +1235,8 @@ def main():
     p_make.add_argument('--dataset', required=True, help='数据集名（仅用于一致性提示）')
     p_make.add_argument('--cfg_file', required=True, help='目标 cfg 路径（替换模板里的 CFG_FILE 默认值）')
     p_make.add_argument('--force', action='store_true', help='已存在时强制覆盖')
+    p_make.add_argument('--sh_dir', help='训练壳落点目录（默认 experiments/SH）')
+    p_make.add_argument('--eval_dir', help='eval 壳落点目录（默认 tools/scripts/eval）')
     p_make.set_defaults(func=cmd_make_shell)
 
     p_gen = sub.add_parser('gen', help='从模板渲染 tools/scripts/train_<模型>.sh（壳缺时自动调 make_shell）')
@@ -1239,7 +1250,9 @@ def main():
     p_gen.add_argument('--tag', required=True, help='OUTPUT_ROOT 备注')
     p_gen.add_argument('--visualize', action='store_true')
     p_gen.add_argument('--no_auto_make_shell', dest='auto_make_shell', action='store_false',
-                       help='禁用自动造壳；壳缺则 fail')
+                        help='禁用自动造壳；壳缺则 fail')
+    p_gen.add_argument('--sh_dir', help='训练壳落点目录（默认 experiments/SH）')
+    p_gen.add_argument('--eval_dir', help='eval 壳落点目录（默认 tools/scripts/eval）')
     p_gen.set_defaults(auto_make_shell=True)
     p_gen.set_defaults(func=cmd_gen)
 

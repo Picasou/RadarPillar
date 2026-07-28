@@ -9,7 +9,7 @@ set -e
 #  F2 修复(2026-07-23 rpin 审查): 全部改 :="${VAR:=default}" 形式，
 #  让 autofinish 的 env 注入能覆盖默认值（旧硬赋值会吞掉 env）。
 # ════════════════════════════════════════════════════════════════
-: "${CFG_FILE:=experiments/YAML/a4.yaml}"
+: "${CFG_FILE:=experiments/YAML/b3.yaml}"
 : "${BATCH_SIZE:=4}"
 : "${WORKERS:=2}"
 : "${GPU:=0}"
@@ -65,7 +65,10 @@ TRAIN_LOG_DIR="${OUTPUT_ROOT}"  # 含 logs/ 与 tensorboard/ 的目录
 # ════════════════════════════════════════════════════════════════
 #  执行
 # ════════════════════════════════════════════════════════════════
-cd "$(dirname "$0")/../../.."
+# F-fix 2026-07-28: shell 落点 tools/scripts/eval/ 时，dirname/../.. 落到 tools/ 而非工程根，
+# 内部 python -u tools/test.py 会找不到（变 tools/tools/test.py）。
+# 修法：硬 cd 到 bash 启动时继承的 cwd（autofinish subprocess cwd=ROOT）—— 不走相对路径。
+cd "$PWD"
 
 # conda 自探测（不写死 /home/xxx）
 if command -v conda >/dev/null 2>&1; then

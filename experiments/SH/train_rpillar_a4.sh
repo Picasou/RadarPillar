@@ -58,10 +58,10 @@ BATCH_SIZE=16
 WORKERS=2
 EPOCHS=80
 GPU=0
-EXTRA_TAG="a4"
+EXTRA_TAG="rp_base_0716"
 
 # [output 覆写: 让 train/test 直接写到 output/train_log/vod/<datetime>_rp_base_0716_paper-bs8/]
-OUTPUT_ROOT="output/train_log/vod/2026072714_rpillar_a4_a4"
+OUTPUT_ROOT="output/train_log/vod/$(date +%Y%m%d%H%M)_radarpiller_bs8"
 
 
 # ============================================================

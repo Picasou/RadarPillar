@@ -1,0 +1,13 @@
+[2026-07-28 10:56:03] ==================== b1 (bs=16) ====================
+[2026-07-28 10:56:03] b1 已训完（ep80 exists @ /home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1/），跳过训练
+[2026-07-28 10:56:03] b1 ep80 落盘，开始 autofinish
+[2026-07-28 12:11:56] b1 autofinish exit=0
+[2026-07-28 12:11:56] b1 resbag OK: /home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1//model_store.yaml
+[2026-07-28 12:11:56] ==================== b2 (bs=16) ====================
+[2026-07-28 12:11:56] b2 已训完（ep80 exists @ /home/admin/projects/RadarPillar/output/train_log/vod/202607280000_radarpillar_b2/），跳过训练
+[2026-07-28 12:11:56] b2 ep80 落盘，开始 autofinish
+[2026-07-28 13:02:36] b2 autofinish exit=0
+[2026-07-28 13:02:36] b2 resbag OK: /home/admin/projects/RadarPillar/output/train_log/vod/202607280000_radarpillar_b2//model_store.yaml
+[2026-07-28 13:02:36] ==================== b3 (bs=8) ====================
+[2026-07-28 13:02:36] b3 已训完（ep80 exists @ /home/admin/projects/RadarPillar/output/train_log/vod/202607280213_radarpillar_b3/），跳过训练
+[2026-07-28 13:02:36] b3 ep80 落盘，开始 autofinish

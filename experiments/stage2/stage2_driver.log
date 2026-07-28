@@ -1,0 +1,124 @@
+[2026-07-27 21:56:18] ==================== LAUNCH b1 (sh=experiments/SH/train_rpillar_b1.sh) ====================
+[rpin:b1] log=output/train_log/vod/202607272156_radarpillar_b1/train_20260727-215619.log  bs=16  output_root=output/train_log/vod/202607272156_radarpillar_b1
+PID=1776299
+[2026-07-27 21:56:19] b1 PID=1776299 LOG=output/train_log/vod/202607272156_radarpillar_b1/train_20260727-215619.log OR=output/train_log/vod/202607272156_radarpillar_b1 BS=16
+[2026-07-28 00:00:54] b1 epoch80 ckpt 出现，训练完成
+[2026-07-28 00:00:54] b1 autofinish 开始（GPU reeval + pickbest + record + resbag）
+[2026-07-28 00:00:54] b1 autofinish exit=0
+[2026-07-28 00:00:54] b1 WARN: model_store.yaml 缺失，查 output/train_log/vod/202607272156_radarpillar_b1/autofinish.log
+[2026-07-28 00:00:54] ==================== LAUNCH b2 (sh=experiments/SH/train_rpillar_b2.sh) ====================
+[rpin:b2] log=output/train_log/vod/202607280000_radarpillar_b2/train_20260728-000055.log  bs=16  output_root=output/train_log/vod/202607280000_radarpillar_b2
+PID=1821420
+[2026-07-28 00:00:55] b2 PID=1821420 LOG=output/train_log/vod/202607280000_radarpillar_b2/train_20260728-000055.log OR=output/train_log/vod/202607280000_radarpillar_b2 BS=16
+[2026-07-28 02:13:30] b2 epoch80 ckpt 出现，训练完成
+[2026-07-28 02:13:30] b2 autofinish 开始（GPU reeval + pickbest + record + resbag）
+[2026-07-28 02:13:30] b2 autofinish exit=0
+[2026-07-28 02:13:30] b2 WARN: model_store.yaml 缺失，查 output/train_log/vod/202607280000_radarpillar_b2/autofinish.log
+[2026-07-28 02:13:30] ==================== LAUNCH b3 (sh=experiments/SH/train_rpillar_b3.sh) ====================
+[rpin:b3] log=output/train_log/vod/202607280213_radarpillar_b3/train_20260728-021330.log  bs=8  output_root=output/train_log/vod/202607280213_radarpillar_b3
+PID=1853372
+[2026-07-28 02:13:30] b3 PID=1853372 LOG=output/train_log/vod/202607280213_radarpillar_b3/train_20260728-021330.log OR=output/train_log/vod/202607280213_radarpillar_b3 BS=8
+[2026-07-28 05:17:42] b3 epoch80 ckpt 出现，训练完成
+[2026-07-28 05:17:42] b3 autofinish 开始（GPU reeval + pickbest + record + resbag）
+[2026-07-28 05:17:42] b3 autofinish exit=0
+[2026-07-28 05:17:42] b3 WARN: model_store.yaml 缺失，查 output/train_log/vod/202607280213_radarpillar_b3/autofinish.log
+[2026-07-28 05:17:42] ==================== LAUNCH b4 (sh=experiments/SH/train_rpillar_b4.sh) ====================
+[rpin:b4] log=output/train_log/vod/202607280517_radarpillar_b4/train_20260728-051742.log  bs=8  output_root=output/train_log/vod/202607280517_radarpillar_b4
+PID=1896709
+[2026-07-28 05:17:42] b4 PID=1896709 LOG=output/train_log/vod/202607280517_radarpillar_b4/train_20260728-051742.log OR=output/train_log/vod/202607280517_radarpillar_b4 BS=8
+[2026-07-28 07:44:22] b4 epoch80 ckpt 出现，训练完成
+[2026-07-28 07:44:22] b4 autofinish 开始（GPU reeval + pickbest + record + resbag）
+[2026-07-28 07:44:22] b4 autofinish exit=0
+[2026-07-28 07:44:22] b4 WARN: model_store.yaml 缺失，查 output/train_log/vod/202607280517_radarpillar_b4/autofinish.log
+[2026-07-28 07:44:22] ==================== LAUNCH b5 (sh=experiments/SH/train_rpillar_b5.sh) ====================
+[rpin:b5] log=output/train_log/vod/202607280744_radarpillar_b5/train_20260728-074422.log  bs=16  output_root=output/train_log/vod/202607280744_radarpillar_b5
+PID=1934014
+[2026-07-28 07:44:22] b5 PID=1934014 LOG=output/train_log/vod/202607280744_radarpillar_b5/train_20260728-074422.log OR=output/train_log/vod/202607280744_radarpillar_b5 BS=16
+[2026-07-28 09:45:27] b5 epoch80 ckpt 出现，训练完成
+[2026-07-28 09:45:27] b5 autofinish 开始（GPU reeval + pickbest + record + resbag）
+[2026-07-28 09:45:27] b5 autofinish exit=0
+[2026-07-28 09:45:27] b5 WARN: model_store.yaml 缺失，查 output/train_log/vod/202607280744_radarpillar_b5/autofinish.log
+[2026-07-28 09:45:27] ==================== LAUNCH b6 (sh=experiments/SH/train_rpillar_b6.sh) ====================
+[rpin:b6] log=output/train_log/vod/202607280945_radarpillar_b6/train_20260728-094528.log  bs=16  output_root=output/train_log/vod/202607280945_radarpillar_b6
+PID=1963641
+[2026-07-28 09:45:28] b6 PID=1963641 LOG=output/train_log/vod/202607280945_radarpillar_b6/train_20260728-094528.log OR=output/train_log/vod/202607280945_radarpillar_b6 BS=16
+[2026-07-28 10:03:43] b1 recover START: OR=/home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1/ BS=
+[2026-07-28 10:03:43] b1 recover exit=0
+[2026-07-28 10:03:43] b1 WARN: recover 后 resbag 仍缺，查 /home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1//autofinish_recover.log
+[2026-07-28 10:03:43] b2 recover START: OR=/home/admin/projects/RadarPillar/output/train_log/vod/202607280000_radarpillar_b2/ BS=
+[2026-07-28 10:03:43] b2 recover exit=0
+[2026-07-28 10:03:43] b2 WARN: recover 后 resbag 仍缺，查 /home/admin/projects/RadarPillar/output/train_log/vod/202607280000_radarpillar_b2//autofinish_recover.log
+[2026-07-28 10:03:43] b3 recover START: OR=/home/admin/projects/RadarPillar/output/train_log/vod/202607280213_radarpillar_b3/ BS=
+[2026-07-28 10:03:43] b3 recover exit=0
+[2026-07-28 10:03:43] b3 WARN: recover 后 resbag 仍缺，查 /home/admin/projects/RadarPillar/output/train_log/vod/202607280213_radarpillar_b3//autofinish_recover.log
+[2026-07-28 10:03:43] b4 recover START: OR=/home/admin/projects/RadarPillar/output/train_log/vod/202607280517_radarpillar_b4/ BS=
+[2026-07-28 10:03:43] b4 recover exit=0
+[2026-07-28 10:03:43] b4 WARN: recover 后 resbag 仍缺，查 /home/admin/projects/RadarPillar/output/train_log/vod/202607280517_radarpillar_b4//autofinish_recover.log
+[2026-07-28 10:03:43] b5 recover START: OR=/home/admin/projects/RadarPillar/output/train_log/vod/202607280744_radarpillar_b5/ BS=
+[2026-07-28 10:03:43] b5 recover exit=0
+[2026-07-28 10:03:43] b5 WARN: recover 后 resbag 仍缺，查 /home/admin/projects/RadarPillar/output/train_log/vod/202607280744_radarpillar_b5//autofinish_recover.log
+[2026-07-28 10:03:43] ==================== b1-b5 recover DONE ====================
+[2026-07-28 10:04:23] b1 recover START: OR=/home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1/ BS=16
+[2026-07-28 10:04:24] b1 recover exit=0
+[2026-07-28 10:04:24] b1 WARN: recover 后 resbag 仍缺，查 /home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1//autofinish_recover.log
+[2026-07-28 10:04:24] b2 recover START: OR=/home/admin/projects/RadarPillar/output/train_log/vod/202607280000_radarpillar_b2/ BS=16
+[2026-07-28 10:04:26] b2 recover exit=0
+[2026-07-28 10:04:26] b2 WARN: recover 后 resbag 仍缺，查 /home/admin/projects/RadarPillar/output/train_log/vod/202607280000_radarpillar_b2//autofinish_recover.log
+[2026-07-28 10:04:26] b3 recover START: OR=/home/admin/projects/RadarPillar/output/train_log/vod/202607280213_radarpillar_b3/ BS=8
+[2026-07-28 10:04:27] b3 recover exit=0
+[2026-07-28 10:04:27] b3 WARN: recover 后 resbag 仍缺，查 /home/admin/projects/RadarPillar/output/train_log/vod/202607280213_radarpillar_b3//autofinish_recover.log
+[2026-07-28 10:04:27] b4 recover START: OR=/home/admin/projects/RadarPillar/output/train_log/vod/202607280517_radarpillar_b4/ BS=8
+[2026-07-28 10:04:29] b4 recover exit=0
+[2026-07-28 10:04:29] b4 WARN: recover 后 resbag 仍缺，查 /home/admin/projects/RadarPillar/output/train_log/vod/202607280517_radarpillar_b4//autofinish_recover.log
+[2026-07-28 10:04:29] b5 recover START: OR=/home/admin/projects/RadarPillar/output/train_log/vod/202607280744_radarpillar_b5/ BS=16
+[2026-07-28 10:04:30] b5 recover exit=0
+[2026-07-28 10:04:30] b5 WARN: recover 后 resbag 仍缺，查 /home/admin/projects/RadarPillar/output/train_log/vod/202607280744_radarpillar_b5//autofinish_recover.log
+[2026-07-28 10:04:30] ==================== b1-b5 recover DONE ====================
+[2026-07-28 10:07:53] b1 recover START: OR=/home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1/ BS=16
+[2026-07-28 10:09:18] ==================== LAUNCH b1 (sh=experiments/SH/train_rpillar_b1.sh) ====================
+[2026-07-28 10:09:18] b1 already done（ep80 ckpt 已存在 @ /home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1/）→ 跳过训练，进入 autofinish
+[2026-07-28 10:09:18] b1 PID=SKIP LOG=/home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1//log_train_20260727-215626.txt OR=/home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1/ BS=
+[2026-07-28 10:10:26] ==================== LAUNCH b1 (sh=experiments/SH/train_rpillar_b1.sh bs=16) ====================
+[2026-07-28 10:10:26] b1 already done（ep80 ckpt 已存在 @ /home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1/）→ 跳过训练，进入 autofinish
+[2026-07-28 10:10:26] b1 PID=SKIP LOG=/home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1//log_train_20260727-215626.txt OR=/home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1/ BS=16
+[2026-07-28 10:10:45] ==================== LAUNCH b1 (sh=experiments/SH/train_rpillar_b1.sh bs=16) ====================
+[2026-07-28 10:10:45] b1 already done（ep80 ckpt 已存在 @ /home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1/）→ 跳过训练，进入 autofinish
+[2026-07-28 10:10:45] b1 PID=SKIP LOG=/home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1//log_train_20260727-215626.txt OR=/home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1/ BS=16
+[2026-07-28 10:10:45] b1 FAIL: sh 启动失败（未捕获 PID/OR），原始输出：
+[2026-07-28 10:11:03] ==================== LAUNCH b1 (sh=experiments/SH/train_rpillar_b1.sh bs=16) ====================
+[2026-07-28 10:11:03] b1 already done（ep80 ckpt 已存在 @ /home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1/）→ 跳过训练，进入 autofinish
+[2026-07-28 10:11:03] b1 PID=SKIP LOG=/home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1//log_train_20260727-215626.txt OR=/home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1/ BS=16
+[2026-07-28 10:11:03] b1 epoch80 ckpt 出现，训练完成
+[2026-07-28 10:11:03] b1 autofinish 开始（GPU reeval + pickbest + record + resbag）
+[2026-07-28 10:11:03] b1 autofinish exit=0
+[2026-07-28 10:11:03] b1 WARN: model_store.yaml 缺失，查 /home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1//autofinish.log
+[2026-07-28 10:11:03] ==================== LAUNCH b2 (sh=experiments/SH/train_rpillar_b2.sh bs=16) ====================
+[2026-07-28 10:11:03] b2 already done（ep80 ckpt 已存在 @ /home/admin/projects/RadarPillar/output/train_log/vod/202607280000_radarpillar_b2/）→ 跳过训练，进入 autofinish
+[2026-07-28 10:11:03] b2 PID=SKIP LOG=/home/admin/projects/RadarPillar/output/train_log/vod/202607280000_radarpillar_b2//log_train_20260728-000058.txt OR=/home/admin/projects/RadarPillar/output/train_log/vod/202607280000_radarpillar_b2/ BS=16
+[2026-07-28 10:11:03] b2 epoch80 ckpt 出现，训练完成
+[2026-07-28 10:11:03] b2 autofinish 开始（GPU reeval + pickbest + record + resbag）
+[2026-07-28 10:15:47] ==================== LAUNCH b1 (sh=experiments/SH/train_rpillar_b1.sh bs=16) ====================
+[2026-07-28 10:15:47] b1 already done（ep80 ckpt 已存在 @ /home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1/）→ 跳过训练，进入 autofinish
+[2026-07-28 10:15:47] b1 PID=SKIP LOG=/home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1//log_train_20260727-215626.txt OR=/home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1/ BS=16
+[2026-07-28 10:15:47] b1 epoch80 ckpt 出现，训练完成
+[2026-07-28 10:15:47] b1 autofinish 开始（GPU reeval + pickbest + record + resbag）
+[2026-07-28 10:19:59] b1 autofinish exit=0
+[2026-07-28 10:19:59] b1 WARN: model_store.yaml 缺失，查 /home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1//autofinish.log
+[2026-07-28 10:19:59] ==================== LAUNCH b2 (sh=experiments/SH/train_rpillar_b2.sh bs=16) ====================
+[2026-07-28 10:19:59] b2 already done（ep80 ckpt 已存在 @ /home/admin/projects/RadarPillar/output/train_log/vod/202607280000_radarpillar_b2/）→ 跳过训练，进入 autofinish
+[2026-07-28 10:19:59] b2 PID=SKIP LOG=/home/admin/projects/RadarPillar/output/train_log/vod/202607280000_radarpillar_b2//log_train_20260728-000058.txt OR=/home/admin/projects/RadarPillar/output/train_log/vod/202607280000_radarpillar_b2/ BS=16
+[2026-07-28 10:19:59] b2 epoch80 ckpt 出现，训练完成
+[2026-07-28 10:19:59] b2 autofinish 开始（GPU reeval + pickbest + record + resbag）
+[2026-07-28 10:56:03] ==================== b1 (bs=16) ====================
+[2026-07-28 10:56:03] b1 已训完（ep80 exists @ /home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1/），跳过训练
+[2026-07-28 10:56:03] b1 ep80 落盘，开始 autofinish
+[2026-07-28 12:11:56] b1 autofinish exit=0
+[2026-07-28 12:11:56] b1 resbag OK: /home/admin/projects/RadarPillar/output/train_log/vod/202607272156_radarpillar_b1//model_store.yaml
+[2026-07-28 12:11:56] ==================== b2 (bs=16) ====================
+[2026-07-28 12:11:56] b2 已训完（ep80 exists @ /home/admin/projects/RadarPillar/output/train_log/vod/202607280000_radarpillar_b2/），跳过训练
+[2026-07-28 12:11:56] b2 ep80 落盘，开始 autofinish
+[2026-07-28 13:02:36] b2 autofinish exit=0
+[2026-07-28 13:02:36] b2 resbag OK: /home/admin/projects/RadarPillar/output/train_log/vod/202607280000_radarpillar_b2//model_store.yaml
+[2026-07-28 13:02:36] ==================== b3 (bs=8) ====================
+[2026-07-28 13:02:36] b3 已训完（ep80 exists @ /home/admin/projects/RadarPillar/output/train_log/vod/202607280213_radarpillar_b3/），跳过训练
+[2026-07-28 13:02:36] b3 ep80 落盘，开始 autofinish

@@ -303,6 +303,25 @@ _rotate_iou_mod.rotate_iou_gpu_eval = _rotate_iou_cpu_eval_fast
 _rotate_iou_mod.rotate_iou_cpu_eval = _rotate_iou_cpu_eval_fast
 
 
+def apply_reparam_if_rep(model, logger=None):
+    """对含 RepDWC/MobileOne 多分支的模型，融合成推理单分支（CPU 路径）。
+
+    与 tools/test.py 行为一致；reparameterize_model 对无 reparameterize 方法的模块自动跳过，
+    非 RepDWC 模型（a*/b1-b4/RadarNeXt-FPN/MDFEN/AnchorHead 等）保持原状，AP 严格 bit-exact。
+    返回深拷贝，**不污染**原 model（与 test.py:152 行为对齐）。
+    """
+    import copy
+    from pcdet.models.backbones_2d.mobileone_blocks import reparameterize_model
+    has_rep = any(hasattr(m, 'reparameterize') for m in model.modules())
+    if not has_rep:
+        return model  # 非 RepDWC 模型，原样返回
+    # reparameterize_model 内部已 deepcopy；这里再 deepcopy 一次确保与原 model 完全隔离
+    fused = copy.deepcopy(reparameterize_model(model))
+    if logger is not None:
+        logger.info('[reparam] RepDWC 多分支已融合为推理单分支（CPU 路径）')
+    return fused
+
+
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser (CPU eval)')
     parser.add_argument('--cfg_file', type=str, default=None, help='specify the config for training')
@@ -324,6 +343,8 @@ def parse_config():
     parser.add_argument('--eval_all', action='store_true', default=False, help='whether to evaluate all checkpoints')
     parser.add_argument('--ckpt_dir', type=str, default=None, help='specify a ckpt directory to be evaluated if needed')
     parser.add_argument('--save_to_file', action='store_true', default=False, help='')
+    parser.add_argument('--reparam', action=argparse.BooleanOptionalAction, default=True,
+                        help='推理前融合 RepDWC 多分支为单分支（默认开；非 RepDWC 模型自动跳过）')
 
     args = parser.parse_args()
 
@@ -346,13 +367,18 @@ def eval_single_ckpt_cpu(model, test_loader, args, eval_output_dir, logger, epoc
       - load_params_from_file(to_cpu=True) so checkpoint lands on CPU.
       - No model.cuda() call (model is already on CPU after construction).
       - load_data_to_gpu is patched globally to a CPU variant.
+      - RepDWC 多分支融合：eval 前对含 RepDWC 的模型调 apply_reparam_if_rep（深拷贝不污染原 model）；
+        与 tools/test.py:152 行为一致，非 RepDWC 模型无影响，AP bit-exact。
     """
     # load checkpoint onto CPU
     model.load_params_from_file(filename=args.ckpt, logger=logger, to_cpu=True)
 
+    # RepDWC 多分支融合（如有）— 与 tools/test.py 对齐，CPU reval 评估推理态成本与精度
+    eval_model = apply_reparam_if_rep(model, logger=logger) if getattr(args, 'reparam', True) else model
+
     # eval on CPU
     ret_dict = _eval_utils_mod.eval_one_epoch(
-        cfg, model, test_loader, epoch_id, logger, dist_test=dist_test,
+        cfg, eval_model, test_loader, epoch_id, logger, dist_test=dist_test,
         result_dir=eval_output_dir, save_to_file=args.save_to_file
     )
 
