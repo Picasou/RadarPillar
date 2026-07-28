@@ -912,8 +912,8 @@ def cmd_autofinish(args):
     output_root = Path(args.output_root)
     epochs = args.epochs
 
-    # P0-4 修复: epochs < 20 时 start_epoch 不能为负
-    start_epoch = max(0, epochs - 20)
+    # P0-4 修复: epochs < last_n 时 start_epoch 不能为负
+    start_epoch = max(0, epochs - getattr(args, 'last_n_eval', 20))
 
     # P0-4 修复: lockfile 防并发 cron 触发
     lock = Path(f'/tmp/autofinish_{args.model}.lock')
@@ -962,7 +962,8 @@ def _autofinish_locked(args, output_root: Path, epochs: int, start_epoch: int):
             return
         max_ep = max(int(re.search(r'checkpoint_epoch_(\d+)', c.name).group(1)) for c in cks)
         epochs = max_ep
-        start_epoch = max(0, max_ep - 19)
+        _n = getattr(args, 'last_n_eval', 20)
+        start_epoch = max(0, max_ep - _n + 1)
         (output_root / 'FINISHED_PARTIAL').write_text(
             f'max_epoch={max_ep}\nstart_epoch={start_epoch}\n', encoding='utf-8')
         print(f'[autofinish] 训练已死且 ckpt 停更 >2h → 部分收尾 (max_epoch={max_ep}, start={start_epoch})')
@@ -998,7 +999,7 @@ def _autofinish_locked(args, output_root: Path, epochs: int, start_epoch: int):
     # timeout 按 ckpt 数缩放（每档预留 15min，下限 2h）
     _n_cks = max(1, epochs - start_epoch + 1)
     _val_timeout = max(7200, 900 * _n_cks)
-    print(f'[autofinish] 1/3 末 20 epoch val (start_epoch={start_epoch}, GPU eval, timeout={_val_timeout}s)')
+    print(f'[autofinish] 1/3 末 {getattr(args, "last_n_eval", 20)} epoch val (start_epoch={start_epoch}, GPU eval, timeout={_val_timeout}s)')
     try:
         r = subprocess.run(['bash', str(eval_sh)],
                            env=eval_env, cwd=ROOT, timeout=_val_timeout)
@@ -1298,6 +1299,8 @@ def main():
     p_af.add_argument('--tag', required=True)
     p_af.add_argument('--output_root', required=True)
     p_af.add_argument('--log', help='训练日志路径（可选，用于判定结束）')
+    p_af.add_argument('--last_n_eval', type=int, default=20,
+                       help='训练完后跑多少个 ckpt 的 val（默认 20，本跑改成 10）')
     p_af.set_defaults(func=cmd_autofinish)
 
     # P0-3 修复: 新增 register_cron / unregister_cron / list_cron 子命令
