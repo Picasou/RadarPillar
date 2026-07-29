@@ -1,7 +1,6 @@
-# RPiN 阶段2 补强：RepDWC 容量扫描（无 neck）。
-# 对齐 standard 块 b4（NUM_FILTERS=[64, 64, 64]）；本档 OUT_CHANNELS=[64, 64, 64]。
-# 口径：RepDWC 深度可分离，同档参数量显著小于 standard；前端 VFE/NUM_BEV 锁 32（RepDWC 输入硬约束），
-#       首层 OUT=64 时靠 PW 升维 32->64，不随 standard b4 升 64。横比以 stage_stats 实测 Params/FLOPs 为准。
+# RPiN 阶段2 补强：RepDWC concat 公平对照（deblock+concat，对齐 standard 多尺度融合）。
+# 小容量 C0 档：OUT_CHANNELS=[16, 16, 16]，与 b1 同拓扑但更小容量，验证 RepDWC 在小容量+concat 下表现。
+# 公平对照口径：与 b1-b4（BaseBEVBackbone）仅 block 类型（RepBlock vs 标准 3×3 Conv）不同，deblock/concat/通道全一致。
 
 CLASS_NAMES:
 - Car
@@ -79,17 +78,17 @@ MODEL:
     - 2
     - 2
     OUT_CHANNELS:
-    - 64
-    - 64
-    - 64
+    - 16
+    - 16
+    - 16
     UPSAMPLE_STRIDES:
     - 1
     - 2
     - 4
     NUM_UPSAMPLE_FILTERS:
-    - 64
-    - 64
-    - 64
+    - 16
+    - 16
+    - 16
     NUM_OUTPUTS: 3
     INFERENCE_MODE: false
     USE_SE: false

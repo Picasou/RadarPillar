@@ -85,16 +85,16 @@ def test_ppmdfen_fused_shape():
     assert tuple(sf2d.shape[1:]) == (384, 80, 80)       # MDFEN 融合到 80×80（忠实原版）
 
 
-def test_repdwcnone_outs0_design():
-    """n4 设计裁决：取 outs[0]=160×160（与 n1 同分辨率，隔离块类型消融变量）。"""
+def test_repdwcnone_concat_design():
+    """n4: RepBlock 多尺度 → deblock → concat（替代旧的首层直出）。"""
     from pcdet.models.backbones_2d.repdwc_none import RepDWCNoneBackbone
     mcfg = _load_model_cfg('n4').BACKBONE_2D
     in_ch = int(_load_model_cfg('n4').MAP_TO_BEV.NUM_BEV_FEATURES)
     m = RepDWCNoneBackbone(mcfg, input_channels=in_ch)
-    assert m.num_bev_features == list(mcfg.OUT_CHANNELS)[0] == 64
+    assert m.num_bev_features == 448                       # sum([64,128,256])
     bd = {'spatial_features': torch.randn(1, in_ch, 320, 320)}
     sf2d = m(bd)['spatial_features_2d']
-    assert tuple(sf2d.shape[1:]) == (64, 160, 160)      # 首层 64ch@160×160
+    assert tuple(sf2d.shape[1:]) == (448, 160, 160)        # 3 层 concat
 
 
 # ---------------------------------------------------------------------------
