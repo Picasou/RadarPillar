@@ -35,7 +35,7 @@ SET_CFGS=(${SET_CFGS[@]:-"OPTIMIZATION.early_stop.enabled" "False" "OPTIMIZATION
 export PYTHONNOUSERSITE=1  # 屏蔽 user-local 坏 torch (见 memory: torch-user-local-mask)
 
 # 自动 cd 到仓库根 (此模板在 .claude/skills/model-train/templates/, 三级之上)
-cd "$(dirname "$0")/../../../.."
+cd "$(dirname "$0")/../.."
 
 # conda 自探测 (不写死)
 if command -v conda >/dev/null 2>&1; then
