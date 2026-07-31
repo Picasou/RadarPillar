@@ -56,22 +56,33 @@ def _pad_5d_to_7d(b):
 def rotate_iou_gpu_eval(boxes, query_boxes, criterion=-1, device_id=0):
     """Drop-in replacement; returns np.ndarray (N, K).
 
-    `criterion` is preserved but ignored -- iou3d_nms always returns IoU.
-    criterion=2 (d3_box_overlap driver) only checks >0 so any non-negative
-    return is functionally correct.
+    criterion=-1 (bev_box_overlap): 返回 IoU。
+    criterion=2  (d3_box_overlap)  : 返回 BEV 重叠【面积】(intersection area)，
+        因为 eval.py d3_box_overlap_kernel 用 `inc = iw * rinc[i,j]` 计算 3D 体积，
+        rinc 必须是面积而非 IoU。此前误返回 IoU 导致 3D IoU 被低估 ~box面积倍，
+        Car(0.5阈值) 全 miss → Car_3d=0。
+        由 IoU 反推面积: inter = IoU * (a1 + a2) / (1 + IoU)。
     """
     b = _as_torch(boxes)
     q = _as_torch(query_boxes)
 
     if b.shape[1] == q.shape[1] == 7:
         iou_t = iou3d_nms_utils.boxes_iou_bev(b, q)
+        a1 = b[:, 3] * b[:, 4]   # 7D [x,y,z,dx,dy,dz,h] -> dx*dy
+        a2 = q[:, 3] * q[:, 4]
     elif b.shape[1] == q.shape[1] == 5:
         iou_t = iou3d_nms_utils.boxes_iou_bev(_pad_5d_to_7d(b), _pad_5d_to_7d(q))
+        a1 = b[:, 2] * b[:, 3]   # 5D [x,z,l,w,ry] -> l*w
+        a2 = q[:, 2] * q[:, 3]
     else:
         raise ValueError(
             f"rotate_iou_gpu_eval: shape mismatch boxes={tuple(b.shape)} "
             f"query_boxes={tuple(q.shape)} (expected both 7 or both 5)"
         )
+
+    if criterion == 2:
+        # IoU -> intersection area: inter = IoU*(a1+a2)/(1+IoU)
+        iou_t = iou_t * (a1[:, None] + a2[None, :]) / (1.0 + iou_t)
 
     return iou_t.detach().cpu().numpy()
 

@@ -90,6 +90,14 @@ python -u tools/train.py \
     --set "OPTIMIZATION.early_stop.enabled" "False" "OPTIMIZATION.LR_WARMUP" "False" 2>&1 | tee "$LOG"
 echo "[step 3/6] train done @ $(date)"
 
+# NaN/inf 守卫: train.py 无 NaN 检测, 若 loss 变 nan 仍会以 exit 0 结束,
+# 后续会用全 nan 烂权重产出 best.pth/resbag。此处检查 train log 尾部 loss,
+# 命中 nan/inf 则中止该模型 pipeline (被上层 driver 捕获 -> 标失败跳过)。
+if grep -aiE "loss=nan|loss=inf|nan,|nan loss|nan value" "$LOG" | tail -5 | grep -qaiE "nan|inf"; then
+    echo "[step 3/6] FATAL: train log 检测到 nan/inf, 中止该模型 (避免落袋烂权重)"
+    exit 1
+fi
+
 # ============================================================
 #  step 4: eval 末 N ckpt (in-process, no separate shell file)
 # ============================================================
@@ -100,11 +108,13 @@ for ep in $(seq $START_EPOCH $((EPOCHS - 1))); do
     CKPT="${OUTPUT_ROOT}/ckpt/checkpoint_epoch_${ep}.pth"
     [ -f "$CKPT" ] || { echo "[eval] skip ep${ep}: ckpt missing"; continue; }
     echo "[step 4/6] eval ep${ep}  ckpt=$CKPT"
+    # 单 ckpt eval 失败 (CUDA glitch/坏帧) 仅记 log, 不中止该模型后续 ckpt/eval
+    # GPU 由 step2 的 CUDA_VISIBLE_DEVICES 控制; test.py 无 --gpu 参数
     python -u tools/test.py \
         --cfg_file "$CFG_FILE" --ckpt "$CKPT" \
-        --batch_size 4 --workers "$WORKERS" --gpu "$GPU" \
+        --batch_size 4 --workers "$WORKERS" \
         --extra_tag "${MODEL}_ep${ep}" --eval_tag default \
-        --output_root "$OUTPUT_ROOT" 2>&1 | tee "${LOG_DIR}/eval_ep${ep}.log"
+        --output_root "$OUTPUT_ROOT" 2>&1 | tee "${LOG_DIR}/eval_ep${ep}.log" || true
 
     if [ "$RUN_VIZ" = "true" ]; then
         EVAL_DIR=$(ls -td "${OUTPUT_ROOT}/eval/epoch_${ep}/val/default" 2>/dev/null | head -1)
@@ -186,8 +196,18 @@ fi
 # ============================================================
 if [ "$RUN_RESBAG" = "true" ]; then
     echo "[step 6/6] resbag"
-    python .claude/skills/resbag/scripts/resbag.py make --output_root "$OUTPUT_ROOT" \
-        2>&1 | tee "${LOG_DIR}/resbag.log" || true
+    # resbag.py 实际在 .claude/skills/resbag/resbag.py (无 scripts/ 子目录);
+    # make 需 6 必填参 (--output_root/--dataset/--tag/--model/--cfg_file/--batch_size)
+    python .claude/skills/resbag/resbag.py make \
+        --output_root "$OUTPUT_ROOT" \
+        --dataset vod \
+        --tag "$EXTRA_TAG" \
+        --model "$MODEL" \
+        --cfg_file "$CFG_FILE" \
+        --batch_size "$BATCH_SIZE" \
+        2>&1 | tee "${LOG_DIR}/resbag.log"
+    # resbag 落袋是本流程核心交付物, 失败不再静默吞掉 (去掉旧 || true)
+    [ -f "${OUTPUT_ROOT}/model_store.yaml" ] || { echo "[step 6/6] ERROR: model_store.yaml 未落盘, resbag 失败"; exit 1; }
 fi
 
 echo "[pipeline] ALL DONE  OUTPUT_ROOT=$OUTPUT_ROOT  $(date)"
