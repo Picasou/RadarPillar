@@ -1,0 +1,118 @@
+stage: 3
+note: >
+  阶段3 neck 扫描 — 2 块类型 × 3 neck（无/FPN/MDFEN）= 6 格点 + n7（C3 容量补测，planned）。
+  底座 A*=a1（BACKBONE_3D=PillarAttention, 7 cfg 一致）。
+  standard 块（n1/n2/n3）容量 C1[32,32,32]（= stage2 standard 最优 b1）；
+  RepDWC 块（n4/n5/n6）容量 C4[64,64,64]（= stage2 RepDWC 最优 b8）；
+  n7: RepDWC C3[64,128,256] + MDFEN（= stage0 baseline 容量, planned）。
+  块内三点容量一致、只变 neck（§8.3），块内 neck 对比干净。
+protocol: VoD 5f EAA, IoU Car=0.5/Ped·Cyc=0.25, 3D AP moderate R40
+adjudication_criterion: Car 3D AP R40 moderate (D13 主判); Params/FLOPs 成本参考
+eval_protocol: 末 10 ckpt (ep70-79) GPU eval + pickbest (median of Car R40) + resbag 落袋
+pickbest_protocol_note: median (修复前为 max, 2026-08-02 改, 避免 cherry-pick 离群 epoch)
+models:
+  - name: n1
+    block: standard (BaseBEVBackbone)
+    cap: C1[32,32,32]
+    neck: 无
+    bs: 16
+    cfg: experiments/YAML/n1.yaml
+    best_epoch: 78
+    best_ckpt: output/train_log/vod/202608010053_rpillar_n1_n1/best.pth
+    model_store: output/train_log/vod/202608010053_rpillar_n1_n1/model_store.yaml
+    car_r40: 39.68
+    ped_r40: 36.78
+    cyc_r40: 68.68
+    mAP_r40: 48.38
+    params: 186600
+    flops_g: 70.5
+  - name: n2
+    block: standard (PPFPNBackbone)
+    cap: C1[32,32,32]
+    neck: FPN (SecondFPN)
+    bs: 16
+    cfg: experiments/YAML/n2.yaml
+    best_epoch: 72
+    best_ckpt: output/train_log/vod/202608010053_rpillar_n2_n2/best.pth
+    model_store: output/train_log/vod/202608010053_rpillar_n2_n2/model_store.yaml
+    car_r40: 34.96
+    ped_r40: 30.03
+    cyc_r40: 60.99
+    mAP_r40: 41.99
+    params: 230100
+    flops_g: 60.433
+  - name: n3
+    block: standard (PPMDFENBackbone)
+    cap: C1[32,32,32]
+    neck: MDFEN
+    bs: 8
+    cfg: experiments/YAML/n3.yaml
+    best_epoch: 72
+    best_ckpt: output/train_log/vod/202608010053_rpillar_n3_n3/best.pth
+    model_store: output/train_log/vod/202608010053_rpillar_n3_n3/model_store.yaml
+    car_r40: 37.16
+    ped_r40: 30.20
+    cyc_r40: 56.70
+    mAP_r40: 41.35
+    params: 844700
+    flops_g: 93.254
+  - name: n4
+    block: RepDWC (RepDWCNoneBackbone)
+    cap: C4[64,64,64]
+    neck: 无
+    bs: 16
+    cfg: experiments/YAML/n4.yaml
+    best_epoch: 74
+    best_ckpt: output/train_log/vod/202608010053_rpillar_n4_n4/best.pth
+    model_store: output/train_log/vod/202608010053_rpillar_n4_n4/model_store.yaml
+    car_r40: 36.71
+    ped_r40: 34.31
+    cyc_r40: 65.96
+    mAP_r40: 45.66
+    params: 178900
+    flops_g: 106.093
+  - name: n5
+    block: RepDWC (RadarNeXtFPNBackbone)
+    cap: C4[64,64,64]
+    neck: FPN (SecondFPN)
+    bs: 16
+    cfg: experiments/YAML/n5.yaml
+    best_epoch: 76
+    best_ckpt: output/train_log/vod/202608010053_rpillar_n5_n5/best.pth
+    model_store: output/train_log/vod/202608010053_rpillar_n5_n5/model_store.yaml
+    car_r40: 36.62
+    ped_r40: 29.87
+    cyc_r40: 62.76
+    mAP_r40: 43.08
+    params: 185400
+    flops_g: 42.863
+  - name: n6
+    block: RepDWC (RadarNeXtMDFENBackbone)
+    cap: C4[64,64,64]
+    neck: MDFEN
+    bs: 8
+    cfg: experiments/YAML/n6.yaml
+    best_epoch: 79
+    best_ckpt: output/train_log/vod/202608010053_rpillar_n6_n6/best.pth
+    model_store: output/train_log/vod/202608010053_rpillar_n6_n6/model_store.yaml
+    car_r40: 36.71
+    ped_r40: 30.20
+    cyc_r40: 62.37
+    mAP_r40: 43.09
+    params: 792600
+    flops_g: 89.875
+  - name: n7
+    block: RepDWC (RadarNeXtMDFENBackbone)
+    cap: C3[64,128,256]
+    neck: MDFEN
+    bs: 8
+    cfg: experiments/YAML/n7.yaml
+    best_epoch: 71
+    best_ckpt: output/train_log/vod/202608022326_rpillar_n7_n7/best.pth
+    model_store: output/train_log/vod/202608022326_rpillar_n7_n7/model_store.yaml
+    car_r40: 34.71
+    ped_r40: 32.60
+    cyc_r40: 62.73
+    mAP_r40: 43.35
+    params: 1175700
+    flops_g: 105.384

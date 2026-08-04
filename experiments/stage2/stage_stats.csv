@@ -1,0 +1,9 @@
+model,attention,bestEp,Car_R40,Ped_R40,Cyc_R40,mAP_R40,Car_R11,Ped_R11,Cyc_R11,mAP_R11,Params,FLOPs,best_ckpt
+b1,BaseBEVBackbone_C1,80,38.63,30.98,64.93,44.85,0.00,0.00,0.00,0.00,186600,70.5G,output/train_log/vod/202607272156_radarpillar_b1/ckpt/checkpoint_epoch_80.pth
+b2,BaseBEVBackbone_C2,80,35.38,24.83,62.54,40.92,0.00,0.00,0.00,0.00,1361900,361.545G,output/train_log/vod/202607280000_radarpillar_b2/ckpt/checkpoint_epoch_80.pth
+b3,BaseBEVBackbone_C3,80,37.93,29.46,62.03,43.14,0.00,0.00,0.00,0.00,5396300,703.857G,output/train_log/vod/202607280213_radarpillar_b3/ckpt/checkpoint_epoch_80.pth
+b4,BaseBEVBackbone_C4,80,37.85,30.89,65.05,44.60,0.00,0.00,0.00,0.00,723200,132.528G,output/train_log/vod/202607280517_radarpillar_b4/ckpt/checkpoint_epoch_80.pth
+b5,RepDWCNone_C1,80,12.40,30.58,56.69,33.22,0.00,0.00,0.00,0.00,31700,9.843G,output/train_log/vod/202607280744_radarpillar_b5/ckpt/checkpoint_epoch_80.pth
+b6,RepDWCNone_C2,80,10.30,36.36,59.65,35.44,0.00,0.00,0.00,0.00,124400,17.501G,output/train_log/vod/202607280945_radarpillar_b6/ckpt/checkpoint_epoch_80.pth
+b7,RepDWCNone_C3,80,14.85,32.49,59.12,35.49,0.00,0.00,0.00,0.00,429500,52.727G,output/train_log/vod/202607281804_radarpillar_b7/ckpt/checkpoint_epoch_80.pth
+b8,RepDWCNone_C4,80,15.12,30.75,53.32,33.06,0.00,0.00,0.00,0.00,80200,24.933G,output/train_log/vod/202607282129_radarpillar_b8/ckpt/checkpoint_epoch_80.pth

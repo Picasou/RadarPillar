@@ -1,33 +1,32 @@
 #!/bin/bash
-# train.sh.template — 训练入口模板（29 个 train_rpillar_*.sh 都 source 此壳）
+# train_rpillar_n7.sh — 训练入口 (auto-generated from train.sh.template)
 #
-# 用法:
-#   MODEL=rpillar_a4_lnpost bash train.sh.template   # 显式
-#   bash train.sh.template                            # MODEL 必须已 export
+# 公共模板: .claude/skills/model-train/templates/train.sh.template
+# 想改: 先改模板, 再 regen 全部 train_rpillar_*.sh
 #
-# 必调环境变量:
-#   MODEL       模型 slug (默认=rpillar_a4_lnpost)
-#   CFG_FILE    cfg YAML（默认从 MODEL 派生 = experiments/YAML/<MODEL>.yaml）
-#   EXTRA_TAG   tag (默认=MODEL)
-#   OUTPUT_ROOT (默认时间戳派生)
+# 用法 (前台):
+#   bash experiments/SH/train_rpillar_n7.sh
+# 用法 (后台):
+#   nohup bash experiments/SH/train_rpillar_n7.sh > /tmp/n7.log 2>&1 &
 #
-# 可选:
-#   CKPT, PRETRAINED_MODEL, FIX_RANDOM_SEED, LAUNCHER, TCP_PORT, LOCAL_RANK, SYNC_BN,
-#   CKPT_SAVE_INTERVAL, MAX_CKPT_SAVE_NUM, MERGE_ALL_ITERS_TO_ONE_EPOCH, START_EPOCH,
-#   MAX_WAITING_MINS, SAVE_TO_FILE, USE_WANDB, SKIP_EVAL, RUN_MODE, SET_CFGS,
-#   BATCH_SIZE, WORKERS, EPOCHS, GPU
+# n7 = PillarAttn + RepDWC[64,128,256] + MDFEN (paper baseline 容量 C3)
+# 与 stage0 baseline_radarnext_mdfen 唯一区别: 底座 PillarAttention (a1) 而非 None (a0)
+# 目的: 在论文容量下验证 "PillarAttn + RepDWC + MDFEN" 是否达到/超过预期
 
 # ============================================================
 #  默认值 (env 覆盖优先)
 # ============================================================
-: "${MODEL:=rpillar_a4_lnpost}"
-: "${CFG_FILE:=experiments/YAML/${MODEL}.yaml}"
-: "${EXTRA_TAG:=${MODEL}}"
-: "${BATCH_SIZE:=16}"
+# ============================================================
+#  默认值 (env 覆盖优先)
+# ============================================================
+: "${MODEL:=rpillar_n7}"
+: "${CFG_FILE:=experiments/YAML/n7.yaml}"
+: "${EXTRA_TAG:=n7}"
+: "${BATCH_SIZE:=8}"   # n7=RepDWC C3[64,128,256]+MDFEN 最重, bs=16 显存爆满; bs=8 与 n3/n6 对齐
 : "${WORKERS:=2}"
 : "${EPOCHS:=80}"
 : "${GPU:=0}"
-: "${OUTPUT_ROOT:=output/train_log/vod/$(date +%Y%m%d%H%M)_${EXTRA_TAG}_${EXTRA_TAG}}"
+: "${OUTPUT_ROOT:=output/train_log/vod/$(date +%Y%m%d%H%M)_rpillar_${EXTRA_TAG}}"
 
 # 训练期不 eval (交由 unified pipeline 末 step 跑); warmup 关
 SKIP_EVAL=${SKIP_EVAL:-True}
@@ -40,7 +39,7 @@ SET_CFGS=(${SET_CFGS[@]:-"OPTIMIZATION.early_stop.enabled" "False" "OPTIMIZATION
 export PYTHONNOUSERSITE=1  # 屏蔽 user-local 坏 torch (见 memory: torch-user-local-mask)
 
 # 自动 cd 到仓库根 (此模板在 .claude/skills/model-train/templates/, 三级之上)
-cd "$(dirname "$0")/../../../.."
+cd "$(dirname "$0")/../.."
 
 # conda 自探测 (不写死)
 if command -v conda >/dev/null 2>&1; then
@@ -52,7 +51,7 @@ else
 fi
 
 find_conda_env() {
-    local try_envs=("${DESIRED_ENV:-angle}" "angle" "base")
+    local try_envs=("${DESIRED_ENV:-base}" "base")
     local installed; installed="$(conda env list 2>/dev/null | awk 'NF && $1 != "#" {print $1}')"
     for env in "${try_envs[@]}"; do
         if echo "$installed" | grep -qx "$env"; then echo "$env"; return 0; fi

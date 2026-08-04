@@ -1,0 +1,82 @@
+stage: 2
+models:
+  - name: b1
+    attention: BaseBEVBackbone
+    cap: C1[32,32,32]
+    bs: 16
+    cfg: experiments/YAML/b1.yaml
+    best_epoch: 80
+    best_ckpt: output/train_log/vod/202607272156_radarpillar_b1/ckpt/checkpoint_epoch_80.pth
+    results_json: output/train_log/vod/202607272156_radarpillar_b1/resbag/eval_results.json
+    params: 186600
+    flops_g: 70.5
+  - name: b2
+    attention: BaseBEVBackbone
+    cap: C2[32,64,128]
+    bs: 16
+    cfg: experiments/YAML/b2.yaml
+    best_epoch: 80
+    best_ckpt: output/train_log/vod/202607280000_radarpillar_b2/ckpt/checkpoint_epoch_80.pth
+    results_json: output/train_log/vod/202607280000_radarpillar_b2/resbag/eval_results.json
+    params: 1361900
+    flops_g: 361.545
+  - name: b3
+    attention: BaseBEVBackbone
+    cap: C3[64,128,256]
+    bs: 8
+    cfg: experiments/YAML/b3.yaml
+    best_epoch: 80
+    best_ckpt: output/train_log/vod/202607280213_radarpillar_b3/ckpt/checkpoint_epoch_80.pth
+    results_json: output/train_log/vod/202607280213_radarpillar_b3/resbag/eval_results.json
+    params: 5396300
+    flops_g: 703.857
+  - name: b4
+    attention: BaseBEVBackbone
+    cap: C4[64,64,64]
+    bs: 8
+    cfg: experiments/YAML/b4.yaml
+    best_epoch: 80
+    best_ckpt: output/train_log/vod/202607280517_radarpillar_b4/ckpt/checkpoint_epoch_80.pth
+    results_json: output/train_log/vod/202607280517_radarpillar_b4/resbag/eval_results.json
+    params: 723200
+    flops_g: 132.528
+  - name: b5
+    attention: RepDWCNoneBackbone
+    cap: C1_OUT[32,32,32]
+    bs: 16
+    cfg: experiments/YAML/b5.yaml
+    best_epoch: 80
+    best_ckpt: output/train_log/vod/202607280744_radarpillar_b5/ckpt/checkpoint_epoch_80.pth
+    results_json: output/train_log/vod/202607280744_radarpillar_b5/resbag/eval_results.json
+    params: 31700
+    flops_g: 9.843
+  - name: b6
+    attention: RepDWCNoneBackbone
+    cap: C2_OUT[32,64,128]
+    bs: 16
+    cfg: experiments/YAML/b6.yaml
+    best_epoch: 80
+    best_ckpt: output/train_log/vod/202607280945_radarpillar_b6/ckpt/checkpoint_epoch_80.pth
+    results_json: output/train_log/vod/202607280945_radarpillar_b6/resbag/eval_results.json
+    params: 124400
+    flops_g: 17.501
+  - name: b7
+    attention: RepDWCNoneBackbone
+    cap: C3_OUT[64,128,256]
+    bs: 16
+    cfg: experiments/YAML/b7.yaml
+    best_epoch: 80
+    best_ckpt: output/train_log/vod/202607281804_radarpillar_b7/ckpt/checkpoint_epoch_80.pth
+    results_json: output/train_log/vod/202607281804_radarpillar_b7/resbag/eval_results.json
+    params: 429500
+    flops_g: 52.727
+  - name: b8
+    attention: RepDWCNoneBackbone
+    cap: C4_OUT[64,64,64]
+    bs: 16
+    cfg: experiments/YAML/b8.yaml
+    best_epoch: 80
+    best_ckpt: output/train_log/vod/202607282129_radarpillar_b8/ckpt/checkpoint_epoch_80.pth
+    results_json: output/train_log/vod/202607282129_radarpillar_b8/resbag/eval_results.json
+    params: 80200
+    flops_g: 24.933

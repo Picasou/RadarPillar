@@ -15,14 +15,14 @@
 # ============================================================
 #  默认值 (env 覆盖优先)
 # ============================================================
-: "${MODEL:=rpillar_a4_lnpost}"
+: "${MODEL:=rpillar_n5}"
 : "${CFG_FILE:=experiments/YAML/n5.yaml}"
 : "${EXTRA_TAG:=n5}"
 : "${BATCH_SIZE:=16}"
 : "${WORKERS:=2}"
 : "${EPOCHS:=80}"
 : "${GPU:=0}"
-: "${OUTPUT_ROOT:=output/train_log/vod/$(date +%Y%m%d%H%M)_${EXTRA_TAG}_${EXTRA_TAG}}"
+: "${OUTPUT_ROOT:=output/train_log/vod/$(date +%Y%m%d%H%M)_rpillar_${EXTRA_TAG}}"
 
 # 训练期不 eval (交由 unified pipeline 末 step 跑); warmup 关
 SKIP_EVAL=${SKIP_EVAL:-True}
@@ -47,7 +47,7 @@ else
 fi
 
 find_conda_env() {
-    local try_envs=("${DESIRED_ENV:-angle}" "angle" "base")
+    local try_envs=("${DESIRED_ENV:-base}" "base")
     local installed; installed="$(conda env list 2>/dev/null | awk 'NF && $1 != "#" {print $1}')"
     for env in "${try_envs[@]}"; do
         if echo "$installed" | grep -qx "$env"; then echo "$env"; return 0; fi

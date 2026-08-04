@@ -60,7 +60,7 @@ for i in $(seq 0 $((N-1))); do
     EPOCHS=80 BATCH_SIZE=16 GPU=0 \
     LAST_N_EVAL=10 RUN_VIZ=false \
     RUN_PICKBEST=true RUN_RESBAG=true \
-        bash .claude/skills/model-train/scripts/unified_rpillar_pipeline.sh
+        bash .claude/skills/model-train/scripts/pipeline.sh
     RC=$?
     set -e 2>/dev/null || true   # 恢复 (本脚本顶层未设 -e, 此行 no-op)
 

@@ -11,3 +11,17 @@
 [2026-07-28 13:02:36] ==================== b3 (bs=8) ====================
 [2026-07-28 13:02:36] b3 已训完（ep80 exists @ /home/admin/projects/RadarPillar/output/train_log/vod/202607280213_radarpillar_b3/），跳过训练
 [2026-07-28 13:02:36] b3 ep80 落盘，开始 autofinish
+[2026-07-28 15:16:09] b4 autofinish exit=0
+[2026-07-28 15:16:09] b4 resbag OK: /home/admin/projects/RadarPillar/output/train_log/vod/202607280517_radarpillar_b4//model_store.yaml
+[2026-07-28 15:16:09] ==================== b5 (bs=16) ====================
+[2026-07-28 15:16:09] b5 已训完（ep80 exists @ /home/admin/projects/RadarPillar/output/train_log/vod/202607280744_radarpillar_b5/），跳过训练
+[2026-07-28 15:16:09] b5 ep80 落盘，开始 autofinish
+[2026-07-28 16:30:09] b5 autofinish exit=0
+[2026-07-28 16:30:09] b5 resbag OK: /home/admin/projects/RadarPillar/output/train_log/vod/202607280744_radarpillar_b5//model_store.yaml
+[2026-07-28 16:30:09] ==================== b6 (bs=16) ====================
+[2026-07-28 16:30:09] b6 已训完（ep80 exists @ /home/admin/projects/RadarPillar/output/train_log/vod/202607280945_radarpillar_b6/），跳过训练
+[2026-07-28 16:30:09] b6 ep80 落盘，开始 autofinish
+[2026-07-28 17:37:54] b6 autofinish exit=0
+[2026-07-28 17:37:54] b6 resbag OK: /home/admin/projects/RadarPillar/output/train_log/vod/202607280945_radarpillar_b6//model_store.yaml
+[2026-07-28 17:37:54] ==================== b7 (bs=16) ====================
+[cleanup] 清 lockfile + 杀所有 autofinish 残留（rc=2）

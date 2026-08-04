@@ -1,4 +1,9 @@
 #!/bin/bash
+# ============================================================
+# 本格点为 §8.3「确定性复用 stage2 胜者」：n4=b8（standard C1[32,32,32]）
+# 不重训；stage3 stage_stats 直接复用 stage2 产物（ckpt/eval）。
+# 此脚本仅作模板保留——执行它将重训一个等价模型。
+# ============================================================
 # train_rpillar_n4.sh — 训练入口 (auto-generated from train.sh.template)
 #
 # 公共模板: .claude/skills/model-train/templates/train.sh.template
@@ -15,14 +20,14 @@
 # ============================================================
 #  默认值 (env 覆盖优先)
 # ============================================================
-: "${MODEL:=rpillar_a4_lnpost}"
+: "${MODEL:=rpillar_n4}"
 : "${CFG_FILE:=experiments/YAML/n4.yaml}"
 : "${EXTRA_TAG:=n4}"
 : "${BATCH_SIZE:=16}"
 : "${WORKERS:=2}"
 : "${EPOCHS:=80}"
 : "${GPU:=0}"
-: "${OUTPUT_ROOT:=output/train_log/vod/$(date +%Y%m%d%H%M)_${EXTRA_TAG}_${EXTRA_TAG}}"
+: "${OUTPUT_ROOT:=output/train_log/vod/$(date +%Y%m%d%H%M)_rpillar_${EXTRA_TAG}}"
 
 # 训练期不 eval (交由 unified pipeline 末 step 跑); warmup 关
 SKIP_EVAL=${SKIP_EVAL:-True}
@@ -47,7 +52,7 @@ else
 fi
 
 find_conda_env() {
-    local try_envs=("${DESIRED_ENV:-angle}" "angle" "base")
+    local try_envs=("${DESIRED_ENV:-base}" "base")
     local installed; installed="$(conda env list 2>/dev/null | awk 'NF && $1 != "#" {print $1}')"
     for env in "${try_envs[@]}"; do
         if echo "$installed" | grep -qx "$env"; then echo "$env"; return 0; fi

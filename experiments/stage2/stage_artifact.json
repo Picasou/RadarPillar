@@ -1,0 +1,76 @@
+{
+  "stage": 2,
+  "ts": "20260729-005658",
+  "A_star": "a0 (BACKBONE_3D=null, PillarVFE->Scatter 直连, 继承 stage1)",
+  "C_star": "b1 (standard BaseBEVBackbone, C1[32,32,32], bs=16)",
+  "C_star_block": "BaseBEVBackbone (standard block, NOT RepDWC)",
+  "adjudication": {
+    "criterion": "Car 3D AP R40 moderate (D13 主判)",
+    "ranking_car_r40": ["b1(38.63)", "b3(37.93)", "b4(37.85)", "b2(35.38)", "b8(15.12)", "b7(14.85)", "b5(12.40)", "b6(10.30)"],
+    "top2_margin_pp": 0.78,
+    "tie": true,
+    "tie_break": "Params 更省: b1 是 standard block 最小容量档（C1[32,32,32]），RepDWC 全组出局（Car R40 均值 13.17 < standard 37.45，差距 -24.28 pp 远超平手阈值，无需 Params tie 即可判 RepDWC 全劣）",
+    "decision": "C*=b1"
+  },
+  "block_dimension_finding": {
+    "standard_mean_car_r40": 37.45,
+    "rep_dwc_mean_car_r40": 13.17,
+    "gap_pp": -24.28,
+    "interpretation": "BACKBONE_2D 维度上，RepDWC 全面劣于 standard BaseBEVBackbone，尤其 Car 类崩盘（-24 pp）。验证 stage1 a4 (PillarAttentionRes) 失败的同一根因（RepDWC reparam 路径）。stage2 决策：永远不选 RepDWC"
+  },
+  "models": [
+    {"name": "b1", "attention": "BaseBEVBackbone", "cap": "C1[32,32,32]", "bs": 16, "cfg": "experiments/YAML/b1.yaml", "best_epoch": 80,
+     "best_ckpt": "output/train_log/vod/202607272156_radarpillar_b1/ckpt/checkpoint_epoch_80.pth",
+     "car_r40": 38.63, "ped_r40": 30.98, "cyc_r40": 64.93, "mAP_r40": 44.85, "params": 186600, "flops_g": 70.5},
+    {"name": "b2", "attention": "BaseBEVBackbone", "cap": "C2[32,64,128]", "bs": 16, "cfg": "experiments/YAML/b2.yaml", "best_epoch": 80,
+     "best_ckpt": "output/train_log/vod/202607280000_radarpillar_b2/ckpt/checkpoint_epoch_80.pth",
+     "car_r40": 35.38, "ped_r40": 24.83, "cyc_r40": 62.54, "mAP_r40": 40.92, "params": 1361900, "flops_g": 361.545},
+    {"name": "b3", "attention": "BaseBEVBackbone", "cap": "C3[64,128,256]", "bs": 8, "cfg": "experiments/YAML/b3.yaml", "best_epoch": 80,
+     "best_ckpt": "output/train_log/vod/202607280213_radarpillar_b3/ckpt/checkpoint_epoch_80.pth",
+     "car_r40": 37.93, "ped_r40": 29.46, "cyc_r40": 62.03, "mAP_r40": 43.14, "params": 5396300, "flops_g": 703.857},
+    {"name": "b4", "attention": "BaseBEVBackbone", "cap": "C4[64,64,64]", "bs": 8, "cfg": "experiments/YAML/b4.yaml", "best_epoch": 80,
+     "best_ckpt": "output/train_log/vod/202607280517_radarpillar_b4/ckpt/checkpoint_epoch_80.pth",
+     "car_r40": 37.85, "ped_r40": 30.89, "cyc_r40": 65.05, "mAP_r40": 44.60, "params": 723200, "flops_g": 132.528},
+    {"name": "b5", "attention": "RepDWCNoneBackbone", "cap": "C1_OUT[32,32,32]", "bs": 16, "cfg": "experiments/YAML/b5.yaml", "best_epoch": 80,
+     "best_ckpt": "output/train_log/vod/202607280744_radarpillar_b5/ckpt/checkpoint_epoch_80.pth",
+     "car_r40": 12.40, "ped_r40": 30.58, "cyc_r40": 56.69, "mAP_r40": 33.22, "params": 31700, "flops_g": 9.843},
+    {"name": "b6", "attention": "RepDWCNoneBackbone", "cap": "C2_OUT[32,64,128]", "bs": 16, "cfg": "experiments/YAML/b6.yaml", "best_epoch": 80,
+     "best_ckpt": "output/train_log/vod/202607280945_radarpillar_b6/ckpt/checkpoint_epoch_80.pth",
+     "car_r40": 10.30, "ped_r40": 36.36, "cyc_r40": 59.65, "mAP_r40": 35.44, "params": 124400, "flops_g": 17.501},
+    {"name": "b7", "attention": "RepDWCNoneBackbone", "cap": "C3_OUT[64,128,256]", "bs": 16, "cfg": "experiments/YAML/b7.yaml", "best_epoch": 80,
+     "best_ckpt": "output/train_log/vod/202607281804_radarpillar_b7/ckpt/checkpoint_epoch_80.pth",
+     "car_r40": 14.85, "ped_r40": 32.49, "cyc_r40": 59.12, "mAP_r40": 35.49, "params": 429500, "flops_g": 52.727},
+    {"name": "b8", "attention": "RepDWCNoneBackbone", "cap": "C4_OUT[64,64,64]", "bs": 16, "cfg": "experiments/YAML/b8.yaml", "best_epoch": 80,
+     "best_ckpt": "output/train_log/vod/202607282129_radarpillar_b8/ckpt/checkpoint_epoch_80.pth",
+     "car_r40": 15.12, "ped_r40": 30.75, "cyc_r40": 53.32, "mAP_r40": 33.06, "params": 80200, "flops_g": 24.933}
+  ],
+  "outputs": {
+    "stage_stats_md": "experiments/stage2/stage_stats.md",
+    "stage_stats_csv": "experiments/stage2/stage_stats.csv",
+    "stats_manifest": "experiments/stage2/stats_manifest.yaml",
+    "report": "experiments/stage2/20260729-005658_stage2_report.md",
+    "next_stage_cfg": "experiments/stage2/next_stage_cfg/"
+  },
+  "next_stage_fixed": {
+    "BACKBONE_3D": "null (A*=a0, 继承 stage1)",
+    "BACKBONE_2D.NAME": "BaseBEVBackbone (C*=b1, standard block)",
+    "BACKBONE_2D.LAYER_NUMS": "[3, 5, 5]",
+    "BACKBONE_2D.LAYER_STRIDES": "[2, 2, 2]",
+    "BACKBONE_2D.NUM_FILTERS": "[32, 32, 32] (C1)",
+    "BACKBONE_2D.UPSAMPLE_STRIDES": "[1, 2, 4]",
+    "BACKBONE_2D.NUM_UPSAMPLE_FILTERS": "[32, 32, 32]",
+    "BATCH_SIZE_PER_GPU": 16
+  },
+  "protocol_deviation_vs_stage1": "R11 未计（stage2 train 用 --eval_all 模式仅产 R40，未做 R11 复评；stage3 入口按需补 R11）",
+  "hard_boundary": "选完 C* 即停，禁入阶段 3",
+  "self_heal_note": "stage2 v3 driver 在 b6 resbag 落袋后异常退出（rc=2, 未 launch b7），由 setsid b7_watcher.sh + 手动 nohup 接管 b7/b8 训练 + autofinish；整链完成时间 2026-07-29 00:56 CST，与 STAGE2_TRAIN_DONE marker 一致",
+
+  "bs_8_compromise": {
+    "trigger": "b3 (C3[64,128,256]) / b4 (C4[64,64,64]) standard block 容量档大，bs=16 在 3070Ti 8GB 上 OOM/危险",
+    "decision": "driver case 分支强制 b3/b4 用 bs=8，其他 task bs=16。RepDWC 同档因压缩（depthwise + reparam）显存低，b7/b8 bs=16 仍宽裕",
+    "executed_at": "stage2 v1 driver 启动时（2026-07-27 22:00）",
+    "missed_sanity_check": "Claude 未在 stage2 启动前跑 1-epoch dry run / 显存预估验证 bs 决策。这是 stage2 plan 设计时已知妥协，但 stage_stats.md 与 stage_artifact.json 在用户 2026-07-29 反馈后才补记",
+    "impact": "b3/b4 训练用 bs=8（小 batch 噪声大），但与 bs=16 同档相比 Car R40 仍保持 37.85-37.93 区间（与 b1 38.63 接近），**说明 bs 妥协未影响 stage2 整体裁决**（C*=b1 仍胜出）"
+  },
+  "execution_failure": "Claude 整链完成后未通过 ScheduleWakeup 主动汇报（违反 skill §④），导致用户 09:59 CST 才被告知整链完成（延误 9h05min）"
+}

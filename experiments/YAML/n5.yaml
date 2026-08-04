@@ -52,36 +52,24 @@ MODEL:
     USE_VELOCITY_OFFSET: false
     USE_REL_VELOCITY_OFFSET: false
     NUM_FILTERS:
-    - 64
+    - 32
   BACKBONE_3D:
     NAME: PillarAttention
-    ATTN_CHANNELS: 64
+    ATTN_CHANNELS: 32
     NUM_HEADS: 1
     DROPOUT: 0.0
-    FFN_CHANNELS: 64
+    FFN_CHANNELS: 32
     USE_LAYER_NORM: true
   MAP_TO_BEV:
     NAME: PointPillarScatter
-    NUM_BEV_FEATURES: 64
+    NUM_BEV_FEATURES: 32
   BACKBONE_2D:
     NAME: RadarNeXtFPNBackbone
-    LAYER_NUMS:
-    - 3
-    - 5
-    - 5
-    LAYER_STRIDES:
-    - 2
-    - 2
-    - 2
-    NUM_FILTERS:
-    - 32
-    - 32
-    - 32
     REP_DWC:
       OUT_CHANNELS:
       - 64
-      - 128
-      - 256
+      - 64
+      - 64
       LAYER_NUMS:
       - 3
       - 5
@@ -99,16 +87,17 @@ MODEL:
     SECOND_FPN:
       IN_CHANNELS:
       - 64
-      - 128
-      - 256
+      - 64
+      - 64
       OUT_CHANNELS:
       - 128
       - 128
       - 128
       UPSAMPLE_STRIDES:
+      - 0.5
       - 1
       - 2
-      - 4
+      USE_CONV_FOR_NO_STRIDE: true
   DENSE_HEAD:
     NAME: AnchorHeadSingle
     CLASS_AGNOSTIC: false
@@ -128,7 +117,7 @@ MODEL:
       anchor_bottom_heights:
       - -1.78
       align_center: false
-      feature_map_stride: 2
+      feature_map_stride: 4
       matched_threshold: 0.6
       unmatched_threshold: 0.45
     - class_name: Pedestrian
@@ -142,7 +131,7 @@ MODEL:
       anchor_bottom_heights:
       - -0.6
       align_center: false
-      feature_map_stride: 2
+      feature_map_stride: 4
       matched_threshold: 0.5
       unmatched_threshold: 0.35
     - class_name: Cyclist
@@ -159,7 +148,7 @@ MODEL:
       anchor_bottom_heights:
       - -0.72
       align_center: false
-      feature_map_stride: 2
+      feature_map_stride: 4
       matched_threshold: 0.5
       unmatched_threshold: 0.35
     TARGET_ASSIGNER_CONFIG:
@@ -197,8 +186,8 @@ MODEL:
       NMS_PRE_MAXSIZE: 4096
       NMS_POST_MAXSIZE: 500
 OPTIMIZATION:
-  FIX_RANDOM_SEED: false
-  BATCH_SIZE_PER_GPU: 16
+  FIX_RANDOM_SEED: true
+  BATCH_SIZE_PER_GPU: 8
   NUM_EPOCHS: 80
   eval_interval: 80
   early_stop:

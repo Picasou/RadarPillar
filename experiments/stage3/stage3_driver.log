@@ -1,0 +1,19 @@
+[2026-08-01 00:53:43] ==================== LAUNCH n1 (cfg=experiments/YAML/n1.yaml bs=16) ====================
+[2026-08-01 00:53:43] n1 OR=output/train_log/vod/202608010053_rpillar_n1_n1
+[2026-08-01 03:02:11] n1 DONE: best.pth + model_store.yaml 落袋
+[2026-08-01 03:02:11] ==================== LAUNCH n2 (cfg=experiments/YAML/n2.yaml bs=16) ====================
+[2026-08-01 03:02:11] n2 OR=output/train_log/vod/202608010053_rpillar_n2_n2
+[2026-08-01 04:46:36] n2 DONE: best.pth + model_store.yaml 落袋
+[2026-08-01 04:46:36] ==================== LAUNCH n3 (cfg=experiments/YAML/n3.yaml bs=8) ====================
+[2026-08-01 04:46:36] n3 OR=output/train_log/vod/202608010053_rpillar_n3_n3
+[2026-08-01 07:46:20] n3 DONE: best.pth + model_store.yaml 落袋
+[2026-08-01 07:46:20] ==================== LAUNCH n4 (cfg=experiments/YAML/n4.yaml bs=16) ====================
+[2026-08-01 07:46:20] n4 OR=output/train_log/vod/202608010053_rpillar_n4_n4
+[2026-08-01 10:19:28] n4 DONE: best.pth + model_store.yaml 落袋
+[2026-08-01 10:19:28] ==================== LAUNCH n5 (cfg=experiments/YAML/n5.yaml bs=16) ====================
+[2026-08-01 10:19:28] n5 OR=output/train_log/vod/202608010053_rpillar_n5_n5
+[2026-08-01 12:28:15] n5 DONE: best.pth + model_store.yaml 落袋
+[2026-08-01 12:28:15] ==================== LAUNCH n6 (cfg=experiments/YAML/n6.yaml bs=8) ====================
+[2026-08-01 12:28:15] n6 OR=output/train_log/vod/202608010053_rpillar_n6_n6
+[2026-08-01 16:11:40] n6 DONE: best.pth + model_store.yaml 落袋
+[2026-08-01 16:11:40] ==================== ALL n1-n6 DONE ====================

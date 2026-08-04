@@ -1,86 +1,109 @@
 ---
 name: model-train
-description: Use when the user asks to train a RadarPillar model ("训练 X", "跑 X"). Triggers .claude/skills/model-train/scripts/unified_rpillar_pipeline.sh — one shell does train → eval ×N → viz → pickbest → resbag, with cron progress reporting via .claude/skills/model-train/scripts/brief.sh.
+description: Use when the user asks to train models ("训练 X", "跑 X"). Generates a per-task workflow script with retry + endpoint verification, spawned in tmux (parent=/init, survives Claude session sleep). Generic — works for any training command + done-marker.
 ---
 
 # model-train
 
-训练 RadarPillar 模型——**两脚本即够用**：
+泛化训练任务编排 skill。用户给任务列表 → 生成 workflow 脚本 → 在 tmux 内跑 → 4 类保护 + 5 类硬化自动生效。
 
-## 入口：`unified_rpillar_pipeline.sh`
+## 入口
 
 ```bash
-# 一行启动（前台；可 nohup 后台跑）
-bash .claude/skills/model-train/scripts/unified_rpillar_pipeline.sh
+# 命令行 (单/多任务)
+bash scripts/generate_workflow.sh \
+    --tasks "tag1|cmd1|marker1,tag2|cmd2|marker2" \
+    --max-retry 3
 
-# 自定义（env var 覆盖）
-MODEL=rpillar_a4_rezero \
-CFG_FILE=experiments/YAML/a4_rezero.yaml \
-LAST_N_EVAL=10 \
-  bash .claude/skills/model-train/scripts/unified_rpillar_pipeline.sh
-
-# 干跑一遍：只看参数不启动训练
-SHOW_ARGS=1 bash .claude/skills/model-train/scripts/unified_rpillar_pipeline.sh
+# 文件 (每行: tag<TAB>cmd<TAB>marker)
+bash scripts/generate_workflow.sh --tasks-file tasks.tsv
 ```
 
-**流程**（同 shell 内串行，`set -euo pipefail`）：
+参数:
+- `--tasks` / `--tasks-file` 必填
+- `--max-retry` 每任务重试次数 (默认 3)
+- `--gpu-limit` MiB 阈值, brief 超此值告警 (默认 7000)
+- `--no-gpu` 关 GPU 监听
+- `--task` 自定义任务名
 
+输出: `workflow_<tags>.sh` (skill 默认放项目根)
+
+## skill 调用方 (agent) 的下一步
+
+```bash
+SKILL=/path/to/.claude/skills/model-train
+WORKFLOW=/path/to/workflow_<task>.sh
+
+# 1. tmux 启动 (parent=/init)
+bash $SKILL/helpers/tmux_spawn.sh rpillar_<TASK> /path/to/project \
+    "bash $WORKFLOW 2>&1 | tee /tmp/<TASK>.log"
+
+# 2. cron 装 brief + watchdog (错开 30s)
+echo '*/10 * * * * bash $SKILL/scripts/brief.sh <TASK>' | crontab -
+echo '*/10 * * * * sleep 30 && bash $SKILL/helpers/watchdog.sh <TASK> <WORKFLOW>' >> crontab -l
 ```
-step 1  参数配置 (env vars; :="${VAR:=default}")
-step 2  环境激活 (PYTHONNOUSERSITE=1 + conda angle + GPU)
-step 3  train (前端训练, --skip_eval, ~1h10m)
-step 4  eval × N (末 LAST_N_EVAL=10 个 ckpt; 每 ~2.5 min GPU)
-step 5  pickbest (Car_3d/moderate_R40 max → best.pth; inline)
-step 6  resbag (artifact 落袋)
-```
 
-## 参数一览
+## 4 类保护机制
 
-| 变量 | 默认 | 说明 |
+| 机制 | 文件 | 作用 |
 |---|---|---|
-| `MODEL` | `rpillar_a4_lnpost` | 模型 slug |
-| `CFG_FILE` | `experiments/YAML/a4_lnpost.yaml` | 训练 cfg |
-| `EPOCHS` | 80 | 总 epoch |
-| `BATCH_SIZE` | 16 | 单 GPU |
-| `WORKERS` | 2 | dataloader |
-| `GPU` | 0 | CUDA_VISIBLE_DEVICES |
-| `OUTPUT_ROOT` | 自动 `output/train_log/vod/<date>_<model>_<tag>/` | |
-| `LAST_N_EVAL` | 10 | 末 N ckpt 跑 eval |
-| `RUN_VIZ` | true | eval 后可视化 |
-| `RUN_PICKBEST` | true | 按 Car R40 挑 best.pth |
-| `RUN_RESBAG` | true | resbag 落袋 |
-| `SHOW_ARGS` | 0 | 设 1 只显示参数 |
+| **tmux_spawn** | `helpers/tmux_spawn.sh` | 进程挂 /init, 跨 Claude session 存活 |
+| **watchdog** | `helpers/watchdog.sh` | driver 死了 → 10min 内 tmux 自动重启 |
+| **brief** | `scripts/brief.sh` | cron 10min 写 ep/loss/ETA + DRIVER 健康 + GPU 显存 |
+| **done_notifier** | `helpers/done_notifier.sh` | 监听完成 + 校验所有 marker + 触发 post-task hook |
 
-## cron：`brief.sh`（进度汇报）
+## 5 类硬化 (H1-H5)
 
-每 10 min cron 跑一次解析训练 log：
+| # | 硬化 | 文件 | 堵盲区 |
+|---|---|---|---|
+| H1 | pipeline.sh 内置 retry N 次 | `scripts/pipeline.sh` | NaN/OOM 偶发, 单任务失败 |
+| H2 | watchdog 启动检查 cron, 死了自动启 | `helpers/watchdog.sh` | cron 守护进程死 |
+| H3 | brief 扫 nvidia-smi, 显存 >7G 告警 | `scripts/brief.sh` | GPU OOM 无痕 |
+| H4 | done_notifier 校验所有 marker 齐才标 complete | `helpers/done_notifier.sh` | 部分任务空洞 |
+| H5 | generate_workflow.sh 末尾 `bash -n` 语法检查 | `scripts/generate_workflow.sh` | 生成脚本有语法 bug |
 
-```cron
-*/10 * * * * /path/to/.claude/skills/model-train/scripts/brief.sh /path/to/train.log /path/to/output_root >> /path/to/brief.out 2>&1
+## 任务 spec 格式
+
+每项 `tag|cmd|marker`:
+- **tag**: 标识符 (用于命名输出 + 日志)
+- **cmd**: 完整 shell 命令 (含 cd / python 调用)
+- **marker**: 成功标志文件 (workflow 跳过 + done_notifier 校验)
+
+示例:
+```bash
+# RadarPillar
+"b1|python tools/train.py --cfg experiments/YAML/b1.yaml --bs 8|output/b1/model_store.yaml"
+
+# 任意
+"exp1|python train.py --data data.h5|output/exp1/done.json"
 ```
 
-输出格式（单行）：
+## 手动操作
+
+```bash
+tmux attach -t rpillar_<TASK>            # 看实时 (Ctrl-b d 退出)
+tmux kill-session -t rpillar_<TASK>      # 杀
+tail -f /tmp/<TASK>.brief.out             # 简报
+bash helpers/watchdog.sh <TASK>           # 手动重启
 ```
-[<time> CST] epN/M | loss=X.X lr=Y.Y | ETA=2h38m ≈完成 07-28 21:34 | nan=0 oom=0
+
+## 任务用完清理
+
+```bash
+crontab -l | grep -v "<TASK>" | crontab -       # 撤 cron
+tmux kill-session -t rpillar_<TASK>             # 杀 tmux
+rm -f /tmp/<TASK>.* /tmp/<TASK>.brief.out       # 清临时
+rm -f workflow_<task>.sh                         # 清 workflow
+# 训练产物 (output/) 保留, 是用户资产
 ```
 
-## 推导：cfg → shell？
+## 不能保证的 (诚实声明)
 
-如果用户给 yaml：unified pipeline 自己 `train.py --cfg_file a4_lnpost.yaml` 起训。
-如果用户给 shell：unified pipeline 仍调 `train.py --cfg_file $CFG_FILE`（cfg 永远在那），shell 是训练配置的统一壳。
+- 训练**收敛**到目标指标 (cfg + 数据 + seed 决定)
+- driver **永不死** (10min 内救)
+- 训练**永不 OOM** (H3 告警 + H1 retry 覆盖大部分, 偶发仍可能)
 
-**不要再生成 eval_rpillar_*.sh**——eval 在 unified pipeline step 4 里 inline 调 `tools/test.py` + 可选 `tools/visualize_eval.py`，不需要独立外壳。
+## Legacy
 
-## 监控/异常
-
-- 训练期：crontab brief 10 min 自动拉进度
-- 异常：unified pipeline `set -euo pipefail` 任一步非 0 退出 → 看 `${OUTPUT_ROOT}/logs/step*.log` 定位
-- 跑完：unified 退出 0 → resbag 已落袋
-
-## 任务用完
-
-```
-crontab -l | grep skill_id=rpillar  # 看当前 A/B 的 brief 条目
-crontab -l | grep -v skill_id=rpillar_<model>_<rand> | crontab -  # 撤某条
-rm -rf .tmp/<date>/<slug>/           # 删临时进度
-```
+- `scripts/run_all_repdwc.sh`: stage2 b5-b9 专用 driver (RadarPillar 项目专用)
+- `实验报告模板.md`: 训练报告写作模板

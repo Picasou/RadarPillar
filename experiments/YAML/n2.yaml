@@ -75,29 +75,22 @@ MODEL:
     - 2
     NUM_FILTERS:
     - 32
-    - 64
-    - 128
-    UPSAMPLE_STRIDES:
-    - 1
-    - 2
-    - 4
-    NUM_UPSAMPLE_FILTERS:
-    - 32
     - 32
     - 32
     SECOND_FPN:
       IN_CHANNELS:
       - 32
-      - 64
-      - 128
+      - 32
+      - 32
       OUT_CHANNELS:
       - 128
       - 128
       - 128
       UPSAMPLE_STRIDES:
+      - 0.5
       - 1
       - 2
-      - 4
+      USE_CONV_FOR_NO_STRIDE: true
   DENSE_HEAD:
     NAME: AnchorHeadSingle
     CLASS_AGNOSTIC: false
@@ -117,7 +110,7 @@ MODEL:
       anchor_bottom_heights:
       - -1.78
       align_center: false
-      feature_map_stride: 2
+      feature_map_stride: 4
       matched_threshold: 0.6
       unmatched_threshold: 0.45
     - class_name: Pedestrian
@@ -131,7 +124,7 @@ MODEL:
       anchor_bottom_heights:
       - -0.6
       align_center: false
-      feature_map_stride: 2
+      feature_map_stride: 4
       matched_threshold: 0.5
       unmatched_threshold: 0.35
     - class_name: Cyclist
@@ -148,7 +141,7 @@ MODEL:
       anchor_bottom_heights:
       - -0.72
       align_center: false
-      feature_map_stride: 2
+      feature_map_stride: 4
       matched_threshold: 0.5
       unmatched_threshold: 0.35
     TARGET_ASSIGNER_CONFIG:
@@ -186,8 +179,8 @@ MODEL:
       NMS_PRE_MAXSIZE: 4096
       NMS_POST_MAXSIZE: 500
 OPTIMIZATION:
-  FIX_RANDOM_SEED: false
-  BATCH_SIZE_PER_GPU: 16
+  FIX_RANDOM_SEED: true
+  BATCH_SIZE_PER_GPU: 8
   NUM_EPOCHS: 80
   eval_interval: 80
   early_stop:

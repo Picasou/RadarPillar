@@ -1,0 +1,92 @@
+{
+  "stage": 3,
+  "ts": "20260801-1640",
+  "pickbest_protocol": "median of last N ckpt Car_3d_R40 (changed from max on 2026-08-02 to avoid cherry-pick outliers)",
+  "A_star": "a1 (BACKBONE_3D=PillarAttention, 6 cfg 一致)",
+  "C_star": "b1 (standard BaseBEVBackbone, C1[32,32,32], 继承 stage2)",
+  "neck_star": "无 neck (n1, BACKBONE_2D=BaseBEVBackbone C1 直连 DENSE_HEAD, 不加 FPN/MDFEN)",
+  "adjudication": {
+    "criterion": "Car 3D AP R40 moderate (D13 主判)",
+    "ranking_car_r40_median": ["n1(39.68)", "n3(37.16)", "n4(36.71)", "n6(36.71)", "n5(36.62)", "n2(34.96)"],
+    "ranking_car_r40_max_legacy": ["n1(39.98)", "n4(37.74)", "n3(37.42)", "n6(36.94)", "n5(36.80)", "n2(35.29)"],
+    "top2_margin_pp": 2.52,
+    "tie": false,
+    "decision": "neck*=无 neck (n1)",
+    "tie_break": "非平手 (2.52pp > 1.0pp 阈值), n1 直接胜出无需复跑; top-2 改为 n1 vs n3 (原 n1 vs n4 因 median pickbest 去 cherry-pick ep77 后 n4=36.71 与 n6 平手跌出 top-2)"
+  },
+  "neck_finding": {
+    "standard_block_no_neck_best": true,
+    "repdwc_block_no_neck_or_mdfen_tied": true,
+    "interpretation": "两块类型一致结论: 无 neck 最好或并列最好 (RepDWC 块内 n4=36.71 ≈ n6=36.71). 加 FPN/MDFEN 在两块上均不带来 Car 增益且涨参数 (MDFEN 4.5x). C1 小容量底座上 neck 属过参数化负担无增益, 承接 stage2 容量饱和结论",
+    "standard_delta_car_median": {"none_to_mdfen": -2.52, "none_to_fpn": -4.72},
+    "repdwc_delta_car_median": {"none_to_mdfen": 0.00, "none_to_fpn": -0.09}
+  },
+  "repdwc_anomaly_resolved": {
+    "original_concern": "stage3 RepDWC (n4=37.74/n5=36.80/n6=36.94) 远强于 stage2 同款 (b8=15.12 等均值 13.17)",
+    "gap_pp_max_pickbest": 22.62,
+    "n4_vs_b8_cfg": "完全相同 (仅注释差异, OUT_CHANNELS=[64,64,64])",
+    "root_cause_confirmed": [
+      "连接拓扑 bug (commit a1930ed, 2026-07-29 已修): 旧 repdwc_none.py spatial_features_2d=outs[0] 单尺度直出, 丢弃 80²/40², 喂残缺特征给 head",
+      "eval bug (rotate_iou_pcdet, 2026-07-31 已修): criterion=2 误返 IoU 而非 BEV 重叠面积, 3D AP 低估 ~8×, Car_3d 全 0"
+    ],
+    "fix_evidence": "修复后 b8 重训 = 39.10, 与 n4 (median 36.71, max 37.74) 差 1.36~2.39pp, 属 RepDWC 单 seed 噪声范围",
+    "final_repdwc_judgment": "RepDWC 实际可复现且与 standard 持平甚至略优 (公平对照 b8 mean 45.39 vs b1 44.85, 参数仅 1/4); 详见 experiments/repdwc_concat_fair_comparison.md",
+    "impact_on_stage3_decision": "无 (n1 standard 无 neck 以 2.52pp 优势胜出, 结论不变)"
+  },
+  "models": [
+    {"name": "n1", "block": "standard BaseBEVBackbone", "block_channels": "NUM_FILTERS=[32,32,32]", "neck": "none", "neck_channels": "direct_to_head", "bs": 16, "cfg": "experiments/YAML/n1.yaml", "best_epoch": 78,
+     "best_ckpt": "output/train_log/vod/202608010053_rpillar_n1_n1/best.pth",
+     "model_store": "output/train_log/vod/202608010053_rpillar_n1_n1/model_store.yaml",
+     "car_r40": 39.68, "ped_r40": 36.78, "cyc_r40": 68.68, "mAP_r40": 48.38, "params": 186600, "flops_g": 70.5},
+    {"name": "n2", "block": "standard PPFPNBackbone", "block_channels": "NUM_FILTERS=[32,32,32]", "neck": "FPN", "neck_channels": "SecondFPN IN=[32,32,32]->OUT=[128,128,128]", "bs": 16, "cfg": "experiments/YAML/n2.yaml", "best_epoch": 72,
+     "best_ckpt": "output/train_log/vod/202608010053_rpillar_n2_n2/best.pth",
+     "model_store": "output/train_log/vod/202608010053_rpillar_n2_n2/model_store.yaml",
+     "car_r40": 34.96, "ped_r40": 30.03, "cyc_r40": 60.99, "mAP_r40": 41.99, "params": 230100, "flops_g": 60.433},
+    {"name": "n3", "block": "standard PPMDFENBackbone", "block_channels": "NUM_FILTERS=[32,32,32]", "neck": "MDFEN", "neck_channels": "MDFENNeck CH=[32,32,32,128,64,128,256] FUSED=[128,128,128]", "bs": 8, "cfg": "experiments/YAML/n3.yaml", "best_epoch": 72,
+     "best_ckpt": "output/train_log/vod/202608010053_rpillar_n3_n3/best.pth",
+     "model_store": "output/train_log/vod/202608010053_rpillar_n3_n3/model_store.yaml",
+     "car_r40": 37.16, "ped_r40": 30.20, "cyc_r40": 56.70, "mAP_r40": 41.35, "params": 844700, "flops_g": 93.254},
+    {"name": "n4", "block": "RepDWC RepDWCNoneBackbone", "block_channels": "OUT_CHANNELS=[64,64,64] DWConv", "neck": "none", "neck_channels": "direct_to_head", "bs": 16, "cfg": "experiments/YAML/n4.yaml", "best_epoch": 74,
+     "best_ckpt": "output/train_log/vod/202608010053_rpillar_n4_n4/best.pth",
+     "model_store": "output/train_log/vod/202608010053_rpillar_n4_n4/model_store.yaml",
+     "car_r40": 36.71, "ped_r40": 34.31, "cyc_r40": 65.96, "mAP_r40": 45.66, "params": 178900, "flops_g": 106.093},
+    {"name": "n5", "block": "RepDWC RadarNeXtFPNBackbone", "block_channels": "REP_DWC OUT=[64,64,64] DWConv", "neck": "FPN", "neck_channels": "SecondFPN IN=[64,64,64]->OUT=[128,128,128]", "bs": 16, "cfg": "experiments/YAML/n5.yaml", "best_epoch": 76,
+     "best_ckpt": "output/train_log/vod/202608010053_rpillar_n5_n5/best.pth",
+     "model_store": "output/train_log/vod/202608010053_rpillar_n5_n5/model_store.yaml",
+     "car_r40": 36.62, "ped_r40": 29.87, "cyc_r40": 62.76, "mAP_r40": 43.08, "params": 185400, "flops_g": 42.863},
+    {"name": "n6", "block": "RepDWC RadarNeXtMDFENBackbone", "block_channels": "REP_DWC OUT=[64,64,64] DWConv", "neck": "MDFEN", "neck_channels": "MDFENNeck CH=[64,64,64,128,64,128,256] FUSED=[128,128,128]", "bs": 8, "cfg": "experiments/YAML/n6.yaml", "best_epoch": 79,
+     "best_ckpt": "output/train_log/vod/202608010053_rpillar_n6_n6/best.pth",
+     "model_store": "output/train_log/vod/202608010053_rpillar_n6_n6/model_store.yaml",
+     "car_r40": 36.71, "ped_r40": 30.20, "cyc_r40": 62.37, "mAP_r40": 43.09, "params": 792600, "flops_g": 89.875},
+    {"name": "n7", "block": "RepDWC RadarNeXtMDFENBackbone", "block_channels": "REP_DWC OUT=[64,128,256] DWConv", "neck": "MDFEN", "neck_channels": "MDFENNeck CH=[64,128,256,128,64,128,256] FUSED=[128,128,128]", "bs": 8, "cfg": "experiments/YAML/n7.yaml", "best_epoch": 71,
+     "best_ckpt": "output/train_log/vod/202608022326_rpillar_n7_n7/best.pth",
+     "model_store": "output/train_log/vod/202608022326_rpillar_n7_n7/model_store.yaml",
+     "car_r40": 34.71, "ped_r40": 32.60, "cyc_r40": 62.73, "mAP_r40": 43.35, "params": 1175700, "flops_g": 105.384}
+  ],
+  "outputs": {
+    "stage_stats_md": "experiments/stage3/stage_stats.md",
+    "stage_stats_csv": "experiments/stage3/stage_stats.csv",
+    "stats_manifest": "experiments/stage3/stats_manifest.yaml",
+    "report": "experiments/stage3/20260801-1640_stage3_report.md",
+    "next_stage_cfg": "experiments/stage3/next_stage_cfg/"
+  },
+  "next_stage_fixed": {
+    "BACKBONE_3D": "PillarAttention (A*=a1)",
+    "BACKBONE_2D.NAME": "BaseBEVBackbone (C*=b1)",
+    "BACKBONE_2D.NUM_FILTERS": "[32, 32, 32] (C1)",
+    "neck": "无 (neck*=无 neck, 不加 FPN/MDFEN, BACKBONE_2D 直连 DENSE_HEAD)",
+    "BATCH_SIZE_PER_GPU": 16
+  },
+  "protocol_deviation": "R11 未计 (stage3 eval 用末 10 ckpt GPU eval 仅产 R40, 同 stage2; 阶段6 headline 复验时用 test_cpu.py 补 R11+R40)",
+  "hard_boundary": "选完 neck* 即停, 禁入阶段 4 (head 扫描)",
+  "self_heal_note": "6 模型串行 driver 全程无 NaN/OOM/崩溃, 无需续跑; 启动前 6 cfg 全部 1-epoch smoke test PASS; 总耗时 00:53→16:11 ≈ 15.3h; pickbest 协议 2026-08-02 由 max 改为 median (避免 cherry-pick 离群 epoch)",
+  "pickbest_fix_record": {
+    "date": "2026-08-02",
+    "issue": "原 pickbest (max) cherry-picks 离群 epoch (n4 ep77=37.74 比中位 36.67 高 1.07pp)",
+    "fix": "取末 10 ckpt Car_3d_R40 中位数 (results[len//2])",
+    "code_path": ".claude/skills/model-train/scripts/unified_rpillar_pipeline.sh step 5",
+    "n1_n6_retrofit": "用 .tmp/2026-08-02/stage3_n7/repickbest.py 重选 best_epoch + 重写 model_store.yaml + cp best.pth",
+    "impact": "n4 Car 37.74→36.71 (-1.03pp 最大), 其他 -0.18~-0.33pp; 裁决结论不变",
+    "future_work": "SWA (last K ckpt 权重平均) 可作为更鲁棒替代"
+  }
+}

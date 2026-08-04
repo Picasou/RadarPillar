@@ -52,17 +52,17 @@ MODEL:
     USE_VELOCITY_OFFSET: false
     USE_REL_VELOCITY_OFFSET: false
     NUM_FILTERS:
-    - 64
+    - 32
   BACKBONE_3D:
     NAME: PillarAttention
-    ATTN_CHANNELS: 64
+    ATTN_CHANNELS: 32
     NUM_HEADS: 1
     DROPOUT: 0.0
-    FFN_CHANNELS: 64
+    FFN_CHANNELS: 32
     USE_LAYER_NORM: true
   MAP_TO_BEV:
     NAME: PointPillarScatter
-    NUM_BEV_FEATURES: 64
+    NUM_BEV_FEATURES: 32
   BACKBONE_2D:
     NAME: PPMDFENBackbone
     LAYER_NUMS:
@@ -74,22 +74,18 @@ MODEL:
     - 2
     - 2
     NUM_FILTERS:
-    - 64
-    - 128
-    - 256
+    - 32
+    - 32
+    - 32
     UPSAMPLE_STRIDES:
     - 1
     - 2
     - 4
-    NUM_UPSAMPLE_FILTERS:
-    - 64
-    - 128
-    - 256
     MDFEN_NECK:
       CHANNELS_LIST:
-      - 64
-      - 128
-      - 256
+      - 32
+      - 32
+      - 32
       - 128
       - 64
       - 128
@@ -100,6 +96,10 @@ MODEL:
       - 1
       - 1
       DCN_LAYER: false
+      DCN_IDS: [2]
+      DCN_INDEX: [1]
+      USE_FFN: false
+      USE_NORM: false
       FORMER: true
       LATTER: false
       GROUP: 4
@@ -201,8 +201,8 @@ MODEL:
       NMS_PRE_MAXSIZE: 4096
       NMS_POST_MAXSIZE: 500
 OPTIMIZATION:
-  FIX_RANDOM_SEED: false
-  BATCH_SIZE_PER_GPU: 16
+  FIX_RANDOM_SEED: true
+  BATCH_SIZE_PER_GPU: 8
   NUM_EPOCHS: 80
   eval_interval: 80
   early_stop:
