@@ -11,7 +11,7 @@
 | b7 | [64,128,256]‡ | 16 | 80 | 14.85 | 32.49 | 59.12 | 35.49 | 0.00 | 429,500 | 52.727 G |
 | b6 | [32,64,128]‡ | 16 | 80 | 10.30 | 36.36 | 59.65 | 35.44 | 0.00 | 124,400 | 17.501 G |
 | b5 | [32,32,32]‡ | 16 | 80 | 12.40 | 30.58 | 56.69 | 33.22 | 0.00 | 31,700 | 9.843 G |
-| b8 | [64,64,64]‡ | 16 | 80 | 15.12 | 30.75 | 53.32 | 33.06 | 0.00 | 80,200 | 24.933 G |
+| b8 | [64,64,64]‡ | 8 | 79 | **36.98** | 34.92 | 67.52 | **46.47** | 0.00 | 178,900 | 53.07 G |
 
 † R11 未计（stage2 train 用 --eval_all 模式仅产 R40，**未做 R11 复评**；stage3 入口按需补 R11）。  
 ‡ = RepDWCNoneBackbone（depthwise reparam），无标记 = BaseBEVBackbone（standard block）。backbone 维度 = `BACKBONE_2D.NUM_FILTERS`（RepDWC 为 out_channels，数值同）。  
@@ -47,3 +47,13 @@ b3/b4 因 standard block 在 C3/C4 容量档显存占用大（3070Ti 8GB 限制�
 **讽刺副作用**：RepDWC 显存/参数压缩极强（参数量 80,200 vs b3 5,396,300，差 67x），所以 b7/b8 可以用 bs=16，**但 Car 检测是死的**——压缩得不偿失，stage2 决策仍 standard block。
 
 **协议偏差**：8 Task 全部用 GPU eval 模式 + --eval_all（仅产 R40），未做 R11 复评（与 stage1 用 test_cpu 复评 R11+R40 不一致）。这是 stage2 默认设置，stage3 入口按需补 R11。
+
+## 8-04 重训更新（b8）
+
+- **触发**：bs 协议统一（16→8）+ 配合 stage3 公平对照。**旧 stage2 b8 (15.12) 是 RepDWC 拓扑 bug 前的早期 run，已弃**。
+- **新 b8**：bs=8, ep79, Car 36.98 / Ped 34.92 / Cyc 67.52 / mAP 46.47, Params 178.9K, FLOPs 53.07G
+- **对比旧**：
+  - vs 原 buggy b8 (15.12) → +21.86 pp Car（拓扑修复后本质改善）
+  - vs 7-31 fair cmp 重训 (bs=16, 39.10) → −2.12 Car / +1.08 mAP（bs 16→8，Ped/Cyc 涨 Car 微降）
+- **对上 b1 (44.85)**：b8 46.47 **+1.62 pp 全面胜出**（Car 36.98 vs 38.63 仍低 1.65，但 Ped/Cyc 涨更多）。stage2 当年 "RepDWC 失败" 结论由拓扑 bug 主导，修复后 RepDWC 实际可与 standard 打平。详见 stage3/comparison_table.md §3。
+- **历史数值未保留**：stage_stats.csv / stats_manifest.yaml 的 b8 行已直接被新 run 替换；如需查旧数据看 `output/train_log/vod/202607282129_radarpillar_b8/` 或 `202607300053_rpillar_b8_b8/`（两份 resbag 都在）。

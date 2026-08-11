@@ -15,14 +15,15 @@ models:
     block: standard (BaseBEVBackbone)
     cap: C1[32,32,32]
     neck: 无
-    bs: 16
+    bs: 8
     cfg: experiments/YAML/n1.yaml
-    best_epoch: 78
-    best_ckpt: output/train_log/vod/202608010053_rpillar_n1_n1/best.pth
-    model_store: output/train_log/vod/202608010053_rpillar_n1_n1/model_store.yaml
-    car_r40: 39.68
-    ped_r40: 36.78
-    cyc_r40: 68.68
+    best_epoch: 72
+    best_ckpt: output/train_log/vod/202608041531_rpillar_n1_n1/best.pth
+    model_store: output/train_log/vod/202608041531_rpillar_n1_n1/model_store.yaml
+    car_r40: 38.76
+    ped_r40: 34.47
+    cyc_r40: 62.11
+    note: 8-04 重训,bs 16→8 统一(seed=True); 旧 run mean=48.38 (bs=16) 已弃, 新 mean=45.11 (bs=8); Cyclist -6.57 待核对 val pkl 聚合口径
     mAP_r40: 48.38
     params: 186600
     flops_g: 70.5
@@ -93,11 +94,12 @@ models:
     bs: 8
     cfg: experiments/YAML/n6.yaml
     best_epoch: 79
-    best_ckpt: output/train_log/vod/202608010053_rpillar_n6_n6/best.pth
-    model_store: output/train_log/vod/202608010053_rpillar_n6_n6/model_store.yaml
-    car_r40: 36.71
-    ped_r40: 30.20
-    cyc_r40: 62.37
+    best_ckpt: output/train_log/vod/202608042231_rpillar_n6_n6/best.pth
+    model_store: output/train_log/vod/202608042231_rpillar_n6_n6/model_store.yaml
+    car_r40: 36.96
+    ped_r40: 31.08
+    cyc_r40: 60.34
+    note: 8-04 重训,seed True(原 seed=False); 同 bs=8 协议, mAP 43.09→42.79 (-0.30)
     mAP_r40: 43.09
     params: 792600
     flops_g: 89.875
@@ -107,12 +109,13 @@ models:
     neck: MDFEN
     bs: 8
     cfg: experiments/YAML/n7.yaml
-    best_epoch: 71
-    best_ckpt: output/train_log/vod/202608022326_rpillar_n7_n7/best.pth
-    model_store: output/train_log/vod/202608022326_rpillar_n7_n7/model_store.yaml
-    car_r40: 34.71
-    ped_r40: 32.60
-    cyc_r40: 62.73
+    best_epoch: 78
+    best_ckpt: output/train_log/vod/202608050216_rpillar_n7_n7/best.pth
+    model_store: output/train_log/vod/202608050216_rpillar_n7_n7/model_store.yaml
+    car_r40: 34.72
+    ped_r40: 30.27
+    cyc_r40: 63.05
+    note: 8-05 重训,seed True(原 seed=False); 同 bs=8 协议, mAP 43.35→42.68 (-0.67)
     mAP_r40: 43.35
     params: 1175700
     flops_g: 105.384

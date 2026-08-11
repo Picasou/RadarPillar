@@ -73,10 +73,12 @@ models:
   - name: b8
     attention: RepDWCNoneBackbone
     cap: C4_OUT[64,64,64]
-    bs: 16
+    bs: 8
     cfg: experiments/YAML/b8.yaml
-    best_epoch: 80
-    best_ckpt: output/train_log/vod/202607282129_radarpillar_b8/ckpt/checkpoint_epoch_80.pth
-    results_json: output/train_log/vod/202607282129_radarpillar_b8/resbag/eval_results.json
-    params: 80200
+    best_epoch: 79
+    best_ckpt: output/train_log/vod/202608041149_rpillar_b8_b8/best.pth
+    results_json: output/train_log/vod/202608041149_rpillar_b8_b8/resbag/eval_results.json
+    params: 178900
+    flops_g: 53.07
+    note: 8-04 重训,bs 16→8 统一(原 buggy run mean=33.06 已弃, 修复后 fair cmp mean=45.39 被本 run 取代, 当前 mean=46.47 为 stage2/3 标准协议)
     flops_g: 24.933
