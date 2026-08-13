@@ -47,7 +47,15 @@ class MsrDataset(DatasetTemplate):
 
         # PointFeatureEncoder 用 src_feature_list = MSR_FEATURE_ORDER(18 列)
         self.radar_feature_order = MSR_FEATURE_ORDER
-        self.selected_feature_list = list(self.dataset_cfg.POINT_FEATURE_ENCODING.used_feature_list)
+        # 基类 PointFeatureEncoder 强制 used 列前 3 必须是 ['x','y','z'](voxel 取 points[:,0:3])。
+        # 所以选列后强制重排:xyz 提到前 3,其余按 used_feature_list 原顺序。yaml 不必把 xyz 写最前。
+        used = list(self.dataset_cfg.POINT_FEATURE_ENCODING.used_feature_list)
+        xyz = [f for f in used if f in ('x', 'y', 'z')]
+        missing = {'x', 'y', 'z'} - set(xyz)
+        if missing:
+            raise ValueError(f'used_feature_list 必须包含 x/y/z,缺: {missing}')
+        rest = [f for f in used if f not in ('x', 'y', 'z')]
+        self.selected_feature_list = ['x', 'y', 'z'] + rest
         self.selected_feature_idx = [self.radar_feature_order.index(x) for x in self.selected_feature_list]
 
         norm_cfg = self.dataset_cfg.get('POINT_FEATURE_NORMALIZATION', None)
