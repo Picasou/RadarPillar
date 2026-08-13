@@ -29,12 +29,14 @@ _TYPE_INFO = {
 }
 
 # 18 列 src_feature_list 顺序(get_radar 产出, PointFeatureEncoder 选列)
+# 原始直传列名以 json 的 output_name 为准(range_m/doppler_mps/ang_rad/elv_rad/exist_confidence);
+# 加工列(x/y/z/dop_*)由本模块计算,自定名。
 MSR_FEATURE_ORDER = [
-    'range', 'doppler', 'azi', 'elv', 'rcs', 'snr',
-    'doppler_anti_amb_confi', 'exist_confi', 'frame', 'beam', 'extra_cnt',  # 原始直传 11
-    'x', 'y', 'z',                                                          # 极坐标→笛卡尔 3
-    'dop_x', 'dop_y',                                                       # 速度分解-雷达系 2
-    'dop_x_gnd', 'dop_y_gnd',                                               # 速度分解-地面系 2
+    'range_m', 'doppler_mps', 'ang_rad', 'elv_rad', 'rcs', 'snr',
+    'doppler_anti_amb_confi', 'exist_confidence', 'frame', 'beam', 'extra_cnt',  # 原始直传 11
+    'x', 'y', 'z',                                                               # 极坐标→笛卡尔 3
+    'dop_x', 'dop_y',                                                            # 速度分解-雷达系 2
+    'dop_x_gnd', 'dop_y_gnd',                                                    # 速度分解-地面系 2
 ]
 
 
@@ -56,17 +58,19 @@ def load_struct_dtype(json_path):
     np_fields = []
     output_names = []
     # 用 type_mapping 的 size 精确累加(不依赖 json 的 offset)
+    # dtype 字段名直接用 output_name(契约名),与 build/parse 的取列名对齐
     field_sum = 0
     for fld in fields:
         np_type, size = _TYPE_INFO[fld['type']]
-        np_fields.append((fld['name'], np_type))
-        output_names.append(fld.get('output_name', fld['name']))
+        out_name = fld.get('output_name', fld['name'])
+        np_fields.append((out_name, np_type))
+        output_names.append(out_name)
         field_sum += size
 
     pad = total_size - field_sum
     if pad > 0:
-        # 数组字段语法:可变长度 padding 对齐磁盘
-        np_fields.append(('_pad', 'u1', pad))
+        # 子数组字段对齐磁盘:用 (dtype, shape) 形式避免 numpy 弃用警告
+        np_fields.append(('_pad', 'u1', (pad,)))
     elif pad < 0:
         raise ValueError(
             f"fields size {field_sum} > total_size {total_size} in {json_path}")
@@ -102,14 +106,14 @@ def build_msr_features(points_raw, output_names, ego_speed=0.0, yaw_rate=0.0):
             f"MSR: output_name '{name}' missing in json, filled with 0")
         return np.zeros(N, dtype=np.float32)
 
-    rg = col('range'); azi = col('azi'); elv = col('elv')
-    doppler = col('doppler')
+    rg = col('range_m'); azi = col('ang_rad'); elv = col('elv_rad')
+    doppler = col('doppler_mps')
 
-    # 原始直传 11 列
+    # 原始直传 11 列(列名以 json output_name 为准)
     feats = [
         rg, doppler, azi, elv,
         col('rcs'), col('snr'),
-        col('doppler_anti_amb_confi'), col('exist_confi'),
+        col('doppler_anti_amb_confi'), col('exist_confidence'),
         col('frame'), col('beam'), col('extra_cnt'),
     ]
 
