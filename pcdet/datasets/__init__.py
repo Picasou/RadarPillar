@@ -9,6 +9,7 @@ from .kitti.kitti_dataset import KittiDataset
 from .nuscenes.nuscenes_dataset import NuScenesDataset
 from .nuscenes.nuscenes_radar_dataset import NuScenesRadarDataset
 from .astyx.astyx_dataset import AstyxDataset
+from .msr.msr_dataset import MsrDataset
 from .vod.vod_dataset import VodDataset
 
 __all__ = {
@@ -17,7 +18,8 @@ __all__ = {
     'NuScenesDataset': NuScenesDataset,
     'NuScenesRadarDataset': NuScenesRadarDataset,
     'AstyxDataset': AstyxDataset,
-    'VodDataset': VodDataset
+    'VodDataset': VodDataset,
+    'MsrDataset': MsrDataset,
 }
 
 
