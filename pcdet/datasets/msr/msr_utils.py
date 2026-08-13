@@ -29,12 +29,12 @@ _TYPE_INFO = {
 }
 
 # 18 列 src_feature_list 顺序(get_radar 产出, PointFeatureEncoder 选列)
-# 原始直传列名以 json 的 output_name 为准(range_m/doppler_mps/ang_rad/elv_rad/exist_confidence);
-# 加工列(x/y/z/dop_*)由本模块计算,自定名。
+# 前 3 列强制 xyz(满足基类 PointFeatureEncoder 的 src_feature_list[0:3]==['x','y','z'] 断言,
+# 也是 voxel 取 points[:,0:3] 的契约)。原始直传列名以 json output_name 为准。
 MSR_FEATURE_ORDER = [
+    'x', 'y', 'z',                                                                # 前 3 强制 xyz
     'range_m', 'doppler_mps', 'ang_rad', 'elv_rad', 'rcs', 'snr',
     'doppler_anti_amb_confi', 'exist_confidence', 'frame', 'beam', 'extra_cnt',  # 原始直传 11
-    'x', 'y', 'z',                                                               # 极坐标→笛卡尔 3
     'dop_x', 'dop_y',                                                            # 速度分解-雷达系 2
     'dop_x_gnd', 'dop_y_gnd',                                                    # 速度分解-地面系 2
 ]
@@ -109,29 +109,27 @@ def build_msr_features(points_raw, output_names, ego_speed=0.0, yaw_rate=0.0):
     rg = col('range_m'); azi = col('ang_rad'); elv = col('elv_rad')
     doppler = col('doppler_mps')
 
-    # 原始直传 11 列(列名以 json output_name 为准)
-    feats = [
-        rg, doppler, azi, elv,
-        col('rcs'), col('snr'),
-        col('doppler_anti_amb_confi'), col('exist_confidence'),
-        col('frame'), col('beam'), col('extra_cnt'),
-    ]
-
     # 极坐标 → 笛卡尔(azi/elv 已是弧度)
     x = rg * np.cos(azi) * np.cos(elv)
     y = rg * np.sin(azi) * np.cos(elv)
     z = rg * np.sin(elv)
-    feats += [x, y, z]
 
     # 径向速度投影到雷达系 x/y
     dop_x = doppler * np.cos(azi)
     dop_y = doppler * np.sin(azi)
-    feats += [dop_x, dop_y]
-
     # 地面系补偿(简化:ego 沿 x 前进;ego_speed=0 时等于 dop_x/dop_y)
     dop_x_gnd = dop_x - ego_speed
     dop_y_gnd = dop_y + ego_speed * np.tan(yaw_rate)
-    feats += [dop_x_gnd, dop_y_gnd]
+
+    # 按 MSR_FEATURE_ORDER 顺序拼接:前 3 是 xyz,然后原始 11 列,然后 dop_*
+    feats = [
+        x, y, z,                                                                    # 前 3 强制 xyz
+        rg, doppler, azi, elv, col('rcs'), col('snr'),
+        col('doppler_anti_amb_confi'), col('exist_confidence'),
+        col('frame'), col('beam'), col('extra_cnt'),                               # 原始直传 11
+        dop_x, dop_y,                                                               # 速度分解-雷达系
+        dop_x_gnd, dop_y_gnd,                                                       # 速度分解-地面系
+    ]
 
     assert len(feats) == 18
     for i, f in enumerate(feats):

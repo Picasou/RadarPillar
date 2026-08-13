@@ -29,8 +29,8 @@ def test_labels_dtype_28B_with_padding():
 
 def test_feature_order_has_18():
     assert len(MSR_FEATURE_ORDER) == 18
-    # 前 4 列以 json output_name 为准
-    assert MSR_FEATURE_ORDER[:4] == ['range_m', 'doppler_mps', 'ang_rad', 'elv_rad']
+    # 前 3 列强制 xyz(满足基类 PointFeatureEncoder 断言)
+    assert MSR_FEATURE_ORDER[:3] == ['x', 'y', 'z']
 
 
 # ---------- Step 8: build_msr_features / parse_label_boxes ----------
@@ -66,12 +66,12 @@ def test_build_features_xyz_correct():
     raw['doppler_mps'] = [1.0]
     names = ['range_m', 'doppler_mps', 'ang_rad', 'elv_rad']
     out = build_msr_features(raw, names)
-    # MSR_FEATURE_ORDER: idx 11=x, 12=y, 13=z, 14=dop_x, 15=dop_y
-    assert abs(out[0, 11] - 10.0) < 1e-4   # x=10*cos0*cos0=10
-    assert abs(out[0, 12] - 0.0) < 1e-4    # y=10*sin0*cos0=0
-    assert abs(out[0, 13] - 0.0) < 1e-4    # z=10*sin0=0
-    assert abs(out[0, 14] - 1.0) < 1e-4    # dop_x=1*cos0=1
-    assert abs(out[0, 15] - 0.0) < 1e-4    # dop_y=1*sin0=0
+    # MSR_FEATURE_ORDER(新序): idx 0=x, 1=y, 2=z, 14=dop_x, 15=dop_y
+    assert abs(out[0, 0] - 10.0) < 1e-4   # x=10*cos0*cos0=10
+    assert abs(out[0, 1] - 0.0) < 1e-4    # y=10*sin0*cos0=0
+    assert abs(out[0, 2] - 0.0) < 1e-4    # z=10*sin0=0
+    assert abs(out[0, 14] - 1.0) < 1e-4   # dop_x=1*cos0=1
+    assert abs(out[0, 15] - 0.0) < 1e-4   # dop_y=1*sin0=0
 
 
 def test_parse_label_cm_to_m():

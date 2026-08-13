@@ -1,0 +1,76 @@
+DATASET: 'MsrDataset'
+DATA_PATH: '/mnt/d/DataSet/11111111111'
+
+POINT_CLOUD_RANGE: [0, -25.6, -10, 51.2, 25.6, 10]
+
+DATA_SPLIT: {
+    'train': training,
+    'test': val,
+}
+
+INFO_PATH: {
+    'train': [msr_infos_training.pkl],
+    'test': [msr_infos_val.pkl],
+}
+
+# 地面系速度补偿开关:True 时 get_radar 读 PARAMS ego_speed/yaw_rate 做补偿
+USE_GND_VELOCITY: True
+
+POINT_FEATURE_ENCODING: {
+    encoding_type: absolute_coordinates_encoding,
+    # src 18 列(与 MSR_FEATURE_ORDER 对齐,前 3 强制 xyz 满足基类 PointFeatureEncoder 断言)
+    src_feature_list: [x, y, z, range_m, doppler_mps, ang_rad, elv_rad, rcs, snr,
+                       doppler_anti_amb_confi, exist_confidence, frame, beam, extra_cnt,
+                       dop_x, dop_y, dop_x_gnd, dop_y_gnd],
+    # used 用地面系补偿后的速度列(dop_x_gnd/dop_y_gnd)
+    used_feature_list: [x, y, z, dop_x_gnd, dop_y_gnd, rcs],
+}
+
+POINT_FEATURE_NORMALIZATION: {
+    USE_NORM: False,
+}
+
+DATA_AUGMENTOR:
+    DISABLE_AUG_LIST: ['placeholder']
+    AUG_CONFIG_LIST:
+        - NAME: gt_sampling
+          USE_ROAD_PLANE: False
+          DB_INFO_PATH:
+              - msr_dbinfos_training.pkl
+          PREPARE: {
+             filter_by_min_points: ['1:5', '4:5', '5:3'],
+             filter_by_difficulty: [-1],
+          }
+
+          SAMPLE_GROUPS: ['1:10', '4:20', '5:30']
+          NUM_POINT_FEATURES: 6
+          DATABASE_WITH_FAKELIDAR: False
+          REMOVE_EXTRA_WIDTH: [0.0, 0.0, 0.0]
+          LIMIT_WHOLE_SCENE: True
+
+        - NAME: random_world_flip
+          ALONG_AXIS_LIST: ['x']
+
+        - NAME: random_world_rotation
+          WORLD_ROT_ANGLE: [-0.78539816, 0.78539816]
+
+        - NAME: random_world_scaling
+          WORLD_SCALE_RANGE: [0.95, 1.05]
+
+DATA_PROCESSOR:
+    - NAME: mask_points_and_boxes_outside_range
+      REMOVE_OUTSIDE_BOXES: True
+
+    - NAME: shuffle_points
+      SHUFFLE_ENABLED: {
+        'train': True,
+        'test': False
+      }
+
+    - NAME: transform_points_to_voxels
+      VOXEL_SIZE: [0.16, 0.16, 20.0]
+      MAX_POINTS_PER_VOXEL: 10
+      MAX_NUMBER_OF_VOXELS: {
+        'train': 16000,
+        'test': 40000
+      }

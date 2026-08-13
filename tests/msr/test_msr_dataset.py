@@ -70,10 +70,10 @@ def test_msr_dataset_constructs(ds):
 
 
 def test_selected_feature_idx(ds):
-    """selected_feature_idx 对应 MSR_FEATURE_ORDER 中的位置。"""
+    """selected_feature_idx 对应 MSR_FEATURE_ORDER 中的位置(xyz 强制前 3)。"""
     # used_feature_list=['x','y','z','rcs','doppler_mps']
-    # MSR_FEATURE_ORDER 中 x=11, y=12, z=13, rcs=4, doppler_mps=1
-    assert ds.selected_feature_idx == [11, 12, 13, 4, 1]
+    # 新 MSR_FEATURE_ORDER: x=0,y=1,z=2, rcs=7, doppler_mps=4
+    assert ds.selected_feature_idx == [0, 1, 2, 7, 4]
 
 
 # ---------- get_dynamic_param ----------
