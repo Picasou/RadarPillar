@@ -13,7 +13,10 @@ import pickle
 from pathlib import Path
 
 import numpy as np
+from skimage import io
 
+from ...ops.roiaware_pool3d import roiaware_pool3d_utils
+from ...utils import box_utils
 from ..dataset import DatasetTemplate
 from .msr_utils import (
     MSR_FEATURE_ORDER,
@@ -196,6 +199,133 @@ class MsrDataset(DatasetTemplate):
             return np.zeros((0, 7), dtype=np.float32), np.array([], dtype=np.str_)
         return parse_label_boxes(raw, self._labels_names)
 
+    # ---------- image / info pkl 生成 ----------
+
+    def get_image_shape(self, idx):
+        """读 IMAGES/{idx}.png shape[:2];无图返回 [0,0]。MSR 无相机,仅占位/可视化用。"""
+        img_file = self.root_split_path / 'IMAGES' / ('%s.png' % idx)
+        if img_file.exists():
+            return np.array(io.imread(str(img_file)).shape[:2], dtype=np.int32)
+        return np.array([0, 0], dtype=np.int32)
+
+    def get_infos(self, num_workers=4, has_label=True, count_inside_pts=True, sample_id_list=None):
+        """装 info dict 列表(仿 VodDataset.get_infos,精简无 calib)。
+
+        每条 info 包含:
+          - point_cloud: {num_features, lidar_idx(=sample_idx)}
+          - image:       {image_idx, image_shape}
+          - param:       {ego_speed, yaw_rate}(get_dynamic_param)
+          - annos(若 has_label): {name, gt_boxes_lidar, score(全1), [num_points_in_gt]}
+        """
+        import concurrent.futures as futures
+
+        def process_single_scene(sample_idx):
+            print('%s sample_idx: %s' % (self.split, sample_idx))
+            info = {}
+            num_features = self.point_feature_encoder.num_point_features
+            pc_info = {'num_features': num_features, 'lidar_idx': sample_idx}
+            info['point_cloud'] = pc_info
+
+            image_info = {'image_idx': sample_idx, 'image_shape': self.get_image_shape(sample_idx)}
+            info['image'] = image_info
+
+            param = self.get_dynamic_param(sample_idx)
+            info['param'] = {'ego_speed': param['ego_speed'], 'yaw_rate': param['yaw_rate']}
+
+            if has_label:
+                gt_boxes, gt_names = self.get_label(sample_idx)
+                annotations = {}
+                if gt_boxes.shape[0] == 0:
+                    annotations['name'] = np.array([], dtype=np.str_)
+                    annotations['gt_boxes_lidar'] = np.zeros((0, 7), dtype=np.float32)
+                    annotations['score'] = np.array([], dtype=np.float32)
+                    info['annos'] = annotations
+                    return info
+
+                annotations['name'] = gt_names
+                annotations['gt_boxes_lidar'] = gt_boxes  # 已是 lidar/雷达系 xyzwlh+heading(rad)
+                annotations['score'] = np.ones((gt_boxes.shape[0],), dtype=np.float32)
+                info['annos'] = annotations
+
+                if count_inside_pts:
+                    # MSR 无 FOV 裁剪,直接用全部点(已选列,前 3 列强制为 x/y/z)
+                    points = self.get_radar(sample_idx)
+                    num_gt = gt_boxes.shape[0]
+                    corners_lidar = box_utils.boxes_to_corners_3d(gt_boxes)
+                    num_points_in_gt = -np.ones(num_gt, dtype=np.int32)
+                    for k in range(num_gt):
+                        flag = box_utils.in_hull(points[:, 0:3], corners_lidar[k])
+                        num_points_in_gt[k] = flag.sum()
+                    annotations['num_points_in_gt'] = num_points_in_gt
+
+            return info
+
+        sample_id_list = sample_id_list if sample_id_list is not None else self.sample_id_list
+        with futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
+            infos = executor.map(process_single_scene, sample_id_list)
+        return list(infos)
+
+    def create_groundtruth_database(self, info_path=None, used_classes=None, split='train'):
+        """读 train pkl → 每个 gt box 抠点存 gt_database/{idx}_{name}_{i}.bin → 收集 dbinfos pkl。
+
+        仿 VodDataset.create_groundtruth_database。点前 3 列(xyz)减去 box 中心。
+        """
+        import torch
+
+        database_save_path = Path(self.root_path) / ('gt_database' if split == 'train' else ('gt_database_%s' % split))
+        db_info_save_path = Path(self.root_path) / ('msr_dbinfos_%s.pkl' % split)
+
+        database_save_path.mkdir(parents=True, exist_ok=True)
+        all_db_infos = {}
+
+        with open(info_path, 'rb') as f:
+            infos = pickle.load(f)
+
+        for k in range(len(infos)):
+            print('gt_database sample: %d/%d' % (k + 1, len(infos)))
+            info = infos[k]
+            sample_idx = info['point_cloud']['lidar_idx']
+            points = self.get_radar(sample_idx)
+            annos = info['annos']
+            names = annos['name']
+            gt_boxes = annos['gt_boxes_lidar']
+
+            num_obj = gt_boxes.shape[0]
+            if num_obj == 0:
+                continue
+            point_indices = roiaware_pool3d_utils.points_in_boxes_cpu(
+                torch.from_numpy(points[:, 0:3]), torch.from_numpy(gt_boxes)
+            ).numpy()  # (num_obj, num_points) in/out 标志
+
+            for i in range(num_obj):
+                filename = '%s_%s_%d.bin' % (sample_idx, names[i], i)
+                filepath = database_save_path / filename
+                gt_points = points[point_indices[i] > 0]
+
+                gt_points = gt_points.copy()
+                gt_points[:, :3] -= gt_boxes[i, :3]
+                with open(filepath, 'wb') as f:
+                    gt_points.tofile(f)
+
+                if (used_classes is None) or names[i] in used_classes:
+                    db_info = {
+                        'name': names[i],
+                        'path': str(filepath.relative_to(self.root_path)),
+                        'image_idx': sample_idx, 'gt_idx': i,
+                        'box3d_lidar': gt_boxes[i],
+                        'num_points_in_gt': gt_points.shape[0],
+                    }
+                    if names[i] in all_db_infos:
+                        all_db_infos[names[i]].append(db_info)
+                    else:
+                        all_db_infos[names[i]] = [db_info]
+
+        for k, v in all_db_infos.items():
+            print('Database %s: %d' % (k, len(v)))
+
+        with open(db_info_save_path, 'wb') as f:
+            pickle.dump(all_db_infos, f)
+
     # ---------- DatasetTemplate 契约 ----------
 
     def __len__(self):
@@ -229,3 +359,70 @@ class MsrDataset(DatasetTemplate):
         data_dict = self.prepare_data(data_dict=input_dict)
         data_dict['image_shape'] = info.get('image', {}).get('image_shape', np.array([0, 0], dtype=np.int32))
         return data_dict
+
+
+def create_msr_infos(dataset_cfg, class_names, data_path, save_path, workers=4):
+    """生成 MSR info pkls + gt_database(仿 create_vod_infos,精简无 calib/FOV)。
+
+    流程:
+      train_split='training', val_split='val'
+      set_split(train) → get_infos(has_label=True, count_inside_pts=True) → dump msr_infos_training.pkl
+      set_split(val)   → 同上 → msr_infos_val.pkl
+      合并 → msr_infos_trainval.pkl
+      set_split('testing') → get_infos(has_label=False) → msr_infos_testing.pkl
+      最后 set_split(train) + create_groundtruth_database(msr_dbinfos_training.pkl + gt_database/)
+
+    MSR 无 training/testing 二级目录,split 名直接对应 IMAGESETS/{split}.txt。
+    """
+    dataset = MsrDataset(dataset_cfg=dataset_cfg, class_names=class_names,
+                         root_path=data_path, training=False)
+    train_split, val_split = 'training', 'val'
+
+    train_filename = save_path / ('msr_infos_%s.pkl' % train_split)
+    val_filename = save_path / ('msr_infos_%s.pkl' % val_split)
+    trainval_filename = save_path / 'msr_infos_trainval.pkl'
+    test_filename = save_path / 'msr_infos_testing.pkl'
+
+    print('---------------Start to generate data infos---------------')
+
+    dataset.set_split(train_split)
+    msr_infos_train = dataset.get_infos(num_workers=workers, has_label=True, count_inside_pts=True)
+    with open(train_filename, 'wb') as f:
+        pickle.dump(msr_infos_train, f)
+    print('MSR info train file is saved to %s' % train_filename)
+
+    dataset.set_split(val_split)
+    msr_infos_val = dataset.get_infos(num_workers=workers, has_label=True, count_inside_pts=True)
+    with open(val_filename, 'wb') as f:
+        pickle.dump(msr_infos_val, f)
+    print('MSR info val file is saved to %s' % val_filename)
+
+    with open(trainval_filename, 'wb') as f:
+        pickle.dump(msr_infos_train + msr_infos_val, f)
+    print('MSR info trainval file is saved to %s' % trainval_filename)
+
+    dataset.set_split('testing')
+    msr_infos_test = dataset.get_infos(num_workers=workers, has_label=False, count_inside_pts=False)
+    with open(test_filename, 'wb') as f:
+        pickle.dump(msr_infos_test, f)
+    print('MSR info test file is saved to %s' % test_filename)
+
+    print('---------------Start create groundtruth database for data augmentation---------------')
+    dataset.set_split(train_split)
+    dataset.create_groundtruth_database(info_path=train_filename, used_classes=class_names, split=train_split)
+
+    print('---------------Data preparation Done---------------')
+
+
+if __name__ == '__main__':
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == 'create_msr_infos':
+        import yaml
+        from easydict import EasyDict
+        dataset_cfg = EasyDict(yaml.full_load(open(sys.argv[2])))
+        create_msr_infos(
+            dataset_cfg=dataset_cfg,
+            class_names=['1', '4', '5'],
+            data_path=Path('/mnt/d/DataSet/11111111111'),
+            save_path=Path('/mnt/d/DataSet/11111111111'),
+        )
