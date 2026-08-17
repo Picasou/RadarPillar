@@ -1,0 +1,51 @@
+{
+  "stage": 4,
+  "ts": "2026-08-10",
+  "backfilled": "2026-08-17",
+  "scope": "11 head-swap 实验 = 4 种 2D backbone (b1=BaseBEV / b8=RepDWC / n3=PPMDFEN / n6,n7=RadarNeXtMDFEN) × 3 种检测头 (center 有z / 2d 无z / rp_mask 自家) + rp_mask 对照线",
+  "backfill_note": "本 stage 走 model-train 新流程 (commit 9e2b889), 工件落 output/train_log/vod/<ts>_<tag>/, 不再自动写 stage 目录; 原 sweep OR 已清理, sweep 数据源=20260810_stage4_report.md。08-14/15 后续 5 run 在盘。",
+  "protocol": {
+    "dataset": "VoD val, 5f EAA",
+    "iou": "Car=0.5 / Ped·Cyc=0.25",
+    "metric": "AP moderate R40",
+    "train": "bs=8 ep=80 seed=666 FROZEN",
+    "pickbest": "ckpt 80 单点评估 (无 median)"
+  },
+  "adjudication": {
+    "criterion": "3D 与 BEV 双口径 (2d 头仅 BEV 有效, 3D 恒 0 为设计)",
+    "decision": "3D 最强=head_b8_center (RepDWC+center); BEV 最强=head_b1_center (BaseBEV+center); 轻量化路线=head_*_2d (BEV 不掉点)",
+    "ranking_3d_mean": ["head_b8_center(44.26)", "head_b1_center(44.18)", "head_n3_center(42.56)", "head_n6_center(39.95)", "rp_mask_center(35.85)", "rp_mask(31.02)"],
+    "ranking_bev_mean": ["head_b1_center(51.86)", "head_b8_center(51.41)", "head_n3_center(50.87)", "head_b8_2d(50.23)", "head_n6_2d(49.11)", "head_n3_2d(48.81)", "head_b1_2d(48.14)", "head_n6_center(46.79)", "rp_mask_center(40.12)", "rp_mask(34.34)"]
+  },
+  "key_findings": {
+    "repdwc_tradeoff": "b8 换来 3D 小增益 (+0.08), BEV 反略降 (-0.45)",
+    "head_2d": "2d 头 BEV ≈ center 头 BEV (b8: 50.23 vs 51.41), 无 z 不掉 BEV",
+    "rp_mask_gap": "自家轻量 head (0.18-0.42M) 全面弱于 RadarNeXt 头 ~10pp, Car 项尤差 (<15)",
+    "zh_synergy_0814_15": "BEV 增益源自 z+h 联合监督: center 52.59 > 2d(去z+h) 51.87 > abl_h 50.52 > abl_z 49.71; lossup 51.84 无增益"
+  },
+  "issues": [
+    "head_n7_2d eval 未产出 (results.json 空); 原 ckpt 已清理, 补齐需重训",
+    "08-10 sweep 原始 OR (train log/ckpt/eval json) 不在盘上, 数据以报告为准",
+    "复跑波动: b1_center 3D 42.94 (0814) vs 44.18 (0810), b1_2d BEV 51.87 vs 48.14, 单跑 ~1-4pp, 交叉对比以同批 run 为准"
+  ],
+  "models": [
+    {"name": "head_b8_center", "backbone2d": "RepDWCNoneBackbone", "head": "RadarNeXtCenterHead", "cfg": "experiments/YAML/head_b8_center.yaml", "ep": 80, "3d_mean": 44.26, "3d_cpc": [33.49, 37.00, 62.29], "bev_mean": 51.41, "bev_cpc": [45.22, 43.94, 65.07], "params_m": 0.46, "flops_g": 169.5},
+    {"name": "head_b1_center", "backbone2d": "BaseBEVBackbone", "head": "RadarNeXtCenterHead", "cfg": "experiments/YAML/head_b1_center.yaml", "ep": 80, "3d_mean": 44.18, "3d_cpc": [31.92, 39.55, 61.06], "bev_mean": 51.86, "bev_cpc": [45.38, 47.90, 62.31], "params_m": 0.42, "flops_g": 132.9},
+    {"name": "head_n3_center", "backbone2d": "PPMDFENBackbone", "head": "RadarNeXtCenterHead", "cfg": "experiments/YAML/head_n3_center.yaml", "ep": 80, "3d_mean": 42.56, "3d_cpc": [33.21, 33.08, 61.38], "bev_mean": 50.87, "bev_cpc": [45.28, 41.83, 65.50], "params_m": 1.22, "flops_g": 131.8},
+    {"name": "head_n6_center", "backbone2d": "RadarNeXtMDFENBackbone", "head": "RadarNeXtCenterHead", "cfg": "experiments/YAML/head_n6_center.yaml", "ep": 80, "3d_mean": 39.95, "3d_cpc": [29.67, 32.71, 57.46], "bev_mean": 46.79, "bev_cpc": [38.39, 40.03, 61.95], "params_m": 1.17, "flops_g": 128.4},
+    {"name": "rp_mask_center", "backbone2d": "BaseBEVBackbone", "head": "RadarPillarCenterHead", "cfg": "experiments/YAML/rp_mask_center.yaml", "ep": 80, "3d_mean": 35.85, "3d_cpc": [10.59, 40.10, 56.87], "bev_mean": 40.12, "bev_cpc": [13.59, 46.91, 59.85], "params_m": 0.42, "flops_g": 132.9},
+    {"name": "rp_mask", "backbone2d": "BaseBEVBackbone", "head": "RadarPillarAnchorHeadSingle", "cfg": "experiments/YAML/rp_mask_a0.yaml", "ep": 80, "3d_mean": 31.02, "3d_cpc": [13.51, 29.00, 50.55], "bev_mean": 34.34, "bev_cpc": [14.28, 35.41, 53.32], "params_m": 0.18, "flops_g": 34.3},
+    {"name": "head_b8_2d", "backbone2d": "RepDWCNoneBackbone", "head": "RadarNeXtCenterHead2DNoZ", "cfg": "experiments/YAML/head_b8_2d.yaml", "ep": 80, "3d_mean": 0, "bev_mean": 50.23, "bev_cpc": [44.66, 41.00, 65.04], "params_m": 0.42, "flops_g": 153.9},
+    {"name": "head_n6_2d", "backbone2d": "RadarNeXtMDFENBackbone", "head": "RadarNeXtCenterHead2DNoZ", "cfg": "experiments/YAML/head_n6_2d.yaml", "ep": 80, "3d_mean": 0, "bev_mean": 49.11, "bev_cpc": [41.48, 38.26, 67.59], "params_m": 1.13, "flops_g": 124.5},
+    {"name": "head_n3_2d", "backbone2d": "PPMDFENBackbone", "head": "RadarNeXtCenterHead2DNoZ", "cfg": "experiments/YAML/head_n3_2d.yaml", "ep": 80, "3d_mean": 0, "bev_mean": 48.81, "bev_cpc": [44.79, 37.86, 63.78], "params_m": 1.18, "flops_g": 127.9},
+    {"name": "head_b1_2d", "backbone2d": "BaseBEVBackbone", "head": "RadarNeXtCenterHead2DNoZ", "cfg": "experiments/YAML/head_b1_2d.yaml", "ep": 80, "3d_mean": 0, "bev_mean": 48.14, "bev_cpc": [44.66, 40.74, 59.04], "params_m": 0.39, "flops_g": 117.2},
+    {"name": "head_n7_2d", "backbone2d": "RadarNeXtMDFENBackbone", "head": "RadarNeXtCenterHead2DNoZ", "cfg": "experiments/YAML/head_n7_2d.yaml", "ep": 80, "3d_mean": null, "bev_mean": null, "note": "eval 未产出 (results.json 空), 原 ckpt 已清理"}
+  ],
+  "follow_ups_0814_15": [
+    {"name": "head_b1_center (rerun)", "ep": 72, "3d_mean": 42.94, "3d_cpc": [33.36, 34.58, 60.89], "bev_mean": 52.59, "bev_cpc": [48.15, 43.06, 66.56], "params_m": 0.4244, "flops_g": 132.87, "best_ckpt": "output/train_log/vod/202608141442_rpillar_head_b1_center_head_b1_center/best.pth", "model_store": "output/train_log/vod/202608141442_rpillar_head_b1_center_head_b1_center/model_store.yaml"},
+    {"name": "head_b1_2d (rerun)", "ep": 71, "3d_mean": 0, "bev_mean": 51.87, "bev_cpc": [46.00, 40.84, 68.78], "params_m": 0.3862, "flops_g": 117.194, "best_ckpt": "output/train_log/vod/202608141140_rpillar_head_b1_2d_head_b1_2d/best.pth", "model_store": "output/train_log/vod/202608141140_rpillar_head_b1_2d_head_b1_2d/model_store.yaml"},
+    {"name": "head_b1_2d_lossup", "ep": 72, "3d_mean": 0, "bev_mean": 51.84, "bev_cpc": [44.61, 42.27, 68.63], "params_m": 0.3862, "flops_g": 117.194, "note": "loss 加权 BEV 无增益", "best_ckpt": "output/train_log/vod/202608141913_rpillar_head_b1_2d_lossup_head_b1_2d_lossup/best.pth", "model_store": "output/train_log/vod/202608141913_rpillar_head_b1_2d_lossup_head_b1_2d_lossup/model_store.yaml"},
+    {"name": "head_b1_abl_z", "ep": 74, "3d_mean": 0, "bev_mean": 49.71, "bev_cpc": [45.04, 40.50, 63.60], "params_m": 0.4238, "flops_g": 132.635, "note": "center 头去 z, 3D 恒 0 设计", "best_ckpt": "output/train_log/vod/202608142232_rpillar_head_b1_abl_z_head_b1_abl_z/best.pth", "model_store": "output/train_log/vod/202608142232_rpillar_head_b1_abl_z_head_b1_abl_z/model_store.yaml"},
+    {"name": "head_b1_abl_h", "ep": 70, "3d_mean": 3.89, "3d_cpc": [0.01, 4.65, 7.00], "bev_mean": 50.52, "bev_cpc": [44.14, 40.89, 66.53], "params_m": 0.3867, "flops_g": 117.43, "note": "center 头去 h, 3D 近 0", "best_ckpt": "output/train_log/vod/202608150143_rpillar_head_b1_abl_h_head_b1_abl_h/best.pth", "model_store": "output/train_log/vod/202608150143_rpillar_head_b1_abl_h_head_b1_abl_h/model_store.yaml"}
+  ]
+}

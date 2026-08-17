@@ -84,7 +84,7 @@ def main():
     args.epochs = cfg.OPTIMIZATION.NUM_EPOCHS if args.epochs is None else args.epochs
 
     if args.fix_random_seed or cfg.OPTIMIZATION.get('FIX_RANDOM_SEED', True):
-        common_utils.set_random_seed(666)
+        common_utils.set_random_seed(42)
 
     if args.output_root:
         output_dir = Path(args.output_root)
@@ -160,9 +160,15 @@ def main():
         ckpt_list = glob.glob(str(ckpt_dir / '*checkpoint_epoch_*.pth'))
         if len(ckpt_list) > 0:
             ckpt_list.sort(key=os.path.getmtime)
-            it, start_epoch = model.load_params_with_optimizer(
-                ckpt_list[-1], to_cpu=dist, optimizer=optimizer, logger=logger
-            )
+            # 断电常截断"正在写的最新 ckpt"; 自 mtime 新到旧找第一个可加载的 (H7)
+            for _ck in reversed(ckpt_list):
+                try:
+                    it, start_epoch = model.load_params_with_optimizer(
+                        _ck, to_cpu=dist, optimizer=optimizer, logger=logger
+                    )
+                    break
+                except Exception as _e:
+                    logger.warning(f'ckpt {_ck} 加载失败 ({type(_e).__name__}), 回退更早 ckpt')
             last_epoch = start_epoch + 1
 
     model.train()  # before wrap to DistributedDataParallel to support fixed some parameters

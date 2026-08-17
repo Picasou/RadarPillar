@@ -1,0 +1,24 @@
+[backfilled 2026-08-17] 原 driver log 未随 model-train 新流程落 stage 目录且已被清理, 本摘要回填自 20260810_stage4_report.md + 在盘 model_store/eval。
+协议: bs=8 ep=80, pickbest=ckpt 80 单点评估, seed 666 FROZEN。
+
+==================== 2026-08-10 sweep (11 tags, 原 OR 已清理) ====================
+head_b8_center   DONE: 3d_mean 44.26 (33.49/37.00/62.29)  bev_mean 51.41  params 0.46M  flops 169.5G
+head_b1_center   DONE: 3d_mean 44.18 (31.92/39.55/61.06)  bev_mean 51.86  params 0.42M  flops 132.9G
+head_n3_center   DONE: 3d_mean 42.56 (33.21/33.08/61.38)  bev_mean 50.87  params 1.22M  flops 131.8G
+head_n6_center   DONE: 3d_mean 39.95 (29.67/32.71/57.46)  bev_mean 46.79  params 1.17M  flops 128.4G
+rp_mask_center   DONE: 3d_mean 35.85 (10.59/40.10/56.87)  bev_mean 40.12  params 0.42M  flops 132.9G
+rp_mask          DONE: 3d_mean 31.02 (13.51/29.00/50.55)  bev_mean 34.34  params 0.18M  flops 34.3G
+head_b8_2d       DONE: 3d 0 (无z 设计)                    bev_mean 50.23  params 0.42M  flops 153.9G
+head_n6_2d       DONE: 3d 0 (无z 设计)                    bev_mean 49.11  params 1.13M  flops 124.5G
+head_n3_2d       DONE: 3d 0 (无z 设计)                    bev_mean 48.81  params 1.18M  flops 127.9G
+head_b1_2d       DONE: 3d 0 (无z 设计)                    bev_mean 48.14  params 0.39M  flops 117.2G
+head_n7_2d       ISSUE: eval 未产出 (results.json 空), 训练完成 ckpt 曾在盘 (现清理), 补齐需重训
+
+==================== 2026-08-14/15 后续 (b1 底座, OR 在盘) ====================
+202608141140 head_b1_2d       DONE (ep71): 3d 0 (设计)      bev_mean 51.87 (46.00/40.84/68.78)
+202608141442 head_b1_center   DONE (ep72): 3d_mean 42.94    bev_mean 52.59 (48.15/43.06/66.56)
+202608141913 head_b1_2d_lossup DONE (ep72): 3d 0 (设计)     bev_mean 51.84 (44.61/42.27/68.63)  lossup 无增益
+202608142232 head_b1_abl_z    DONE (ep74): 3d 0 (去z 设计)  bev_mean 49.71 (45.04/40.50/63.60)
+202608150143 head_b1_abl_h    DONE (ep70): 3d_mean 3.89     bev_mean 50.52 (44.14/40.89/66.53)
+
+裁决: 3D 最强 head_b8_center, BEV 最强 head_b1_center; 2d 头 BEV 不掉点 (轻量化路线); BEV 增益源自 z+h 联合监督 (center 52.59 > 2d 51.87 > abl_h 50.52 > abl_z 49.71); rp_mask 自家 head 弱 ~10pp。

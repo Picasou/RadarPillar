@@ -37,8 +37,22 @@ WORKERS=${WORKERS:-2}
 LAST_N=${LAST_N:-10}
 DATAROOT=${DATAROOT:-data/VoD/view_of_delft_PUBLIC/radar_5frames}
 
-TS=$(date +%Y%m%d%H%M)
-OUTPUT_ROOT=${OUTPUT_ROOT:-output/train_log/vod/${TS}_${MODEL}_${TAG}}
+# H6: OUTPUT_ROOT 首次生成记入 output/<TAG>.root; retry/watchdog 重启时复用旧 root
+#     → train.py 同 root auto-resume 生效, 中断不再整链重训。
+#     强制全新训练: FRESH=1 (或删 output/<TAG>.root)
+ROOT_FILE="output/${TAG}.root"
+if [ -n "${FRESH:-}" ]; then
+    rm -f "$ROOT_FILE"
+fi
+if [ -z "${OUTPUT_ROOT:-}" ] && [ -f "$ROOT_FILE" ]; then
+    SAVED_ROOT="$(cat "$ROOT_FILE")"
+    [ -d "$SAVED_ROOT" ] && OUTPUT_ROOT="$SAVED_ROOT"
+fi
+if [ -z "${OUTPUT_ROOT:-}" ]; then
+    TS=$(date +%Y%m%d%H%M)
+    OUTPUT_ROOT="output/train_log/vod/${TS}_${MODEL}_${TAG}"
+fi
+echo "$OUTPUT_ROOT" > "$ROOT_FILE"
 LOG_DIR=${OUTPUT_ROOT}/logs
 LOG=${LOG_DIR}/train_$(date +%Y%m%d-%H%M%S).log
 MARKER=output/${TAG}.done

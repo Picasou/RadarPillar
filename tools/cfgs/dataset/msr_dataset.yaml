@@ -18,11 +18,9 @@ USE_GND_VELOCITY: True
 
 POINT_FEATURE_ENCODING: {
     encoding_type: absolute_coordinates_encoding,
-    # src 18 列(与 MSR_FEATURE_ORDER 对齐,前 3 强制 xyz 满足基类 PointFeatureEncoder 断言)
     src_feature_list: [x, y, z, range_m, doppler_mps, ang_rad, elv_rad, rcs, snr,
                        doppler_anti_amb_confi, exist_confidence, frame, beam, extra_cnt,
                        dop_x, dop_y, dop_x_gnd, dop_y_gnd],
-    # used 用地面系补偿后的速度列(dop_x_gnd/dop_y_gnd)
     used_feature_list: [x, y, z, dop_x_gnd, dop_y_gnd, rcs],
 }
 

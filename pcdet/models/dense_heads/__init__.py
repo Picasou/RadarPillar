@@ -8,6 +8,9 @@ from .point_seg_head import PointSegHead
 from .radarnext_center_head import RadarNeXtCenterHead
 from .radarnext_center_head_2d import RadarNeXtCenterHead2D
 from .radarnext_center_head_2d_noz import RadarNeXtCenterHead2DNoZ
+from .radarnext_center_head_2d_lossup import RadarNeXtCenterHead2DLossUp
+from .radarnext_center_head_abl_z import RadarNeXtCenterHeadAblZ
+from .radarnext_center_head_abl_h import RadarNeXtCenterHeadAblH
 from .radarpillar_anchor_head_single import RadarPillarAnchorHeadSingle
 from .radarpillar_center_head import RadarPillarCenterHead
 
@@ -27,6 +30,9 @@ __all__ = {
     'RadarNeXtCenterHead': RadarNeXtCenterHead,
     'RadarNeXtCenterHead2D': RadarNeXtCenterHead2D,
     'RadarNeXtCenterHead2DNoZ': RadarNeXtCenterHead2DNoZ,
+    'RadarNeXtCenterHead2DLossUp': RadarNeXtCenterHead2DLossUp,
+    'RadarNeXtCenterHeadAblZ': RadarNeXtCenterHeadAblZ,
+    'RadarNeXtCenterHeadAblH': RadarNeXtCenterHeadAblH,
     'RadarPillarAnchorHeadSingle': RadarPillarAnchorHeadSingle,
     'RadarPillarCenterHead': RadarPillarCenterHead,
     # 移植（第一批）

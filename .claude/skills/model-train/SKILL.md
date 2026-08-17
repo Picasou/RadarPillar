@@ -87,6 +87,9 @@ bash $SKILL/helpers/tmux_spawn.sh rpillar_<TASK> /path/to/project \
 | H3 | brief 扫 nvidia-smi, 显存 >7G 告警 | `scripts/brief.sh` | GPU OOM 无痕 |
 | H4 | done_notifier 校验所有 marker 齐才标 complete | `helpers/done_notifier.sh` | 部分任务空洞 |
 | H5 | generate_workflow.sh 末尾 `bash -n` 语法检查 | `scripts/generate_workflow.sh` | 生成脚本有语法 bug |
+| H6 | retry/重启 复用 OUTPUT_ROOT（`output/<TAG>.root`），train.py auto-resume 接管 → 中断自动续训 | `templates/full_chain.template.sh` | 断电后整链从头重训烧数小时 |
+| H7 | auto-resume 自 mtime 新到旧校验 ckpt 可加载，损坏自动回退更早 | `tools/train.py` | 断电截断"正在写的最新 ckpt"，resume 撞上即崩 |
+| H8 | 维护锁：`touch /tmp/<TASK>.maintenance` 后 watchdog 跳过，手术完删锁 | `helpers/watchdog.sh` | 人工抢救与 watchdog 自愈打架→双训练 |
 
 ## 结构
 
@@ -117,6 +120,16 @@ tmux kill-session -t rpillar_<TASK>      # 杀
 tail -f /tmp/<TASK>.brief.out             # 简报
 bash helpers/watchdog.sh <TASK>           # 手动重启
 ```
+
+**人工手术（kill session 换内容/续训抢救）前必做**，否则 ≤10min 内 watchdog 会抢跑重启：
+
+```bash
+touch /tmp/<TASK>.maintenance            # 上维护锁, watchdog 跳过
+# ... 手术 (kill session → 换脚本 → 重启) ...
+rm -f /tmp/<TASK>.maintenance            # 手术完解锁
+```
+
+**强制全新重训某 tag**（默认 retry 会续用旧 root 续训）：`FRESH=1 bash train_<tag>_full.sh`，或删 `output/<tag>.root`。
 
 ## 任务用完清理（workflow done 后必须执行）
 

@@ -1,0 +1,52 @@
+stage: 4
+ts: '2026-08-10'
+backfilled: '2026-08-17'
+note: >
+  阶段4 head-swap 扫描 — 4 种 2D backbone (b1=BaseBEV / b8=RepDWC / n3=PPMDFEN / n6,n7=RadarNeXtMDFEN)
+  × 3 种检测头 (center=RadarNeXtCenterHead 有z / 2d=RadarNeXtCenterHead2DNoZ 无z / rp_mask=RadarPillar 自家)
+  + rp_mask 对照线, 共 11 tags。08-14/15 附 b1 底座复跑 + z/h 消融 5 个后续 run (OR 在盘)。
+  本 manifest 为 2026-08-17 回填: 原 sweep 走 model-train 新流程, 工件落在 output/train_log/vod/<ts>_<tag>/,
+  未自动生成 stage 目录文件; 原 sweep OR 目录事后已清理, 故 sweep 条目无 best_ckpt/model_store 路径, 数据以报告为准。
+protocol: VoD 5f EAA, IoU Car=0.5/Ped·Cyc=0.25, AP moderate R40
+train_protocol: bs=8 ep=80 seed 666 FROZEN
+eval_protocol: pickbest = ckpt 80 单点评估 (无 median); 3D 头评 3D+BEV, 2d 头仅 BEV 有效 (3D 恒 0 设计)
+models:
+  - {name: head_b8_center,  backbone2d: RepDWCNoneBackbone,  head: RadarNeXtCenterHead,     bs: 8, ep: 80, cfg: experiments/YAML/head_b8_center.yaml,  3d_mean: 44.26, bev_mean: 51.41, params_m: 0.46,  flops_g: 169.5}
+  - {name: head_b1_center,  backbone2d: BaseBEVBackbone,     head: RadarNeXtCenterHead,     bs: 8, ep: 80, cfg: experiments/YAML/head_b1_center.yaml,  3d_mean: 44.18, bev_mean: 51.86, params_m: 0.42,  flops_g: 132.9}
+  - {name: head_n3_center,  backbone2d: PPMDFENBackbone,     head: RadarNeXtCenterHead,     bs: 8, ep: 80, cfg: experiments/YAML/head_n3_center.yaml,  3d_mean: 42.56, bev_mean: 50.87, params_m: 1.22,  flops_g: 131.8}
+  - {name: head_n6_center,  backbone2d: RadarNeXtMDFENBackbone, head: RadarNeXtCenterHead,  bs: 8, ep: 80, cfg: experiments/YAML/head_n6_center.yaml,  3d_mean: 39.95, bev_mean: 46.79, params_m: 1.17,  flops_g: 128.4}
+  - {name: rp_mask_center,  backbone2d: BaseBEVBackbone,     head: RadarPillarCenterHead,   bs: 8, ep: 80, cfg: experiments/YAML/rp_mask_center.yaml,  3d_mean: 35.85, bev_mean: 40.12, params_m: 0.42,  flops_g: 132.9}
+  - {name: rp_mask,         backbone2d: BaseBEVBackbone,     head: RadarPillarAnchorHeadSingle, bs: 8, ep: 80, cfg: experiments/YAML/rp_mask_a0.yaml,  3d_mean: 31.02, bev_mean: 34.34, params_m: 0.18,  flops_g: 34.3}
+  - {name: head_b8_2d,      backbone2d: RepDWCNoneBackbone,  head: RadarNeXtCenterHead2DNoZ, bs: 8, ep: 80, cfg: experiments/YAML/head_b8_2d.yaml,    3d_mean: 0,     bev_mean: 50.23, params_m: 0.42,  flops_g: 153.9}
+  - {name: head_n6_2d,      backbone2d: RadarNeXtMDFENBackbone, head: RadarNeXtCenterHead2DNoZ, bs: 8, ep: 80, cfg: experiments/YAML/head_n6_2d.yaml, 3d_mean: 0,     bev_mean: 49.11, params_m: 1.13,  flops_g: 124.5}
+  - {name: head_n3_2d,      backbone2d: PPMDFENBackbone,     head: RadarNeXtCenterHead2DNoZ, bs: 8, ep: 80, cfg: experiments/YAML/head_n3_2d.yaml,    3d_mean: 0,     bev_mean: 48.81, params_m: 1.18,  flops_g: 127.9}
+  - {name: head_b1_2d,      backbone2d: BaseBEVBackbone,     head: RadarNeXtCenterHead2DNoZ, bs: 8, ep: 80, cfg: experiments/YAML/head_b1_2d.yaml,    3d_mean: 0,     bev_mean: 48.14, params_m: 0.39,  flops_g: 117.2}
+  - {name: head_n7_2d,      backbone2d: RadarNeXtMDFENBackbone, head: RadarNeXtCenterHead2DNoZ, bs: 8, ep: 80, cfg: experiments/YAML/head_n7_2d.yaml, note: 'eval 未产出 (results.json 空), 原 ckpt 已清理, 补齐需重训'}
+follow_ups_0814_15:
+  - {name: head_b1_center,  rerun: true, bs: 8, ep: 72, cfg: experiments/YAML/head_b1_center.yaml,
+     best_ckpt: output/train_log/vod/202608141442_rpillar_head_b1_center_head_b1_center/best.pth,
+     model_store: output/train_log/vod/202608141442_rpillar_head_b1_center_head_b1_center/model_store.yaml,
+     3d_mean: 42.94, bev_mean: 52.59, params_m: 0.4244, flops_g: 132.87}
+  - {name: head_b1_2d,      rerun: true, bs: 8, ep: 71, cfg: experiments/YAML/head_b1_2d.yaml,
+     best_ckpt: output/train_log/vod/202608141140_rpillar_head_b1_2d_head_b1_2d/best.pth,
+     model_store: output/train_log/vod/202608141140_rpillar_head_b1_2d_head_b1_2d/model_store.yaml,
+     3d_mean: 0, bev_mean: 51.87, params_m: 0.3862, flops_g: 117.194}
+  - {name: head_b1_2d_lossup, bs: 8, ep: 72, cfg: experiments/YAML/head_b1_2d_lossup.yaml,
+     best_ckpt: output/train_log/vod/202608141913_rpillar_head_b1_2d_lossup_head_b1_2d_lossup/best.pth,
+     model_store: output/train_log/vod/202608141913_rpillar_head_b1_2d_lossup_head_b1_2d_lossup/model_store.yaml,
+     3d_mean: 0, bev_mean: 51.84, params_m: 0.3862, flops_g: 117.194, note: '2d 头 loss 加权, BEV 无增益 (51.84 ≈ 2d 51.87)'}
+  - {name: head_b1_abl_z,   bs: 8, ep: 74, cfg: experiments/YAML/head_b1_abl_z.yaml,
+     best_ckpt: output/train_log/vod/202608142232_rpillar_head_b1_abl_z_head_b1_abl_z/best.pth,
+     model_store: output/train_log/vod/202608142232_rpillar_head_b1_abl_z_head_b1_abl_z/model_store.yaml,
+     3d_mean: 0, bev_mean: 49.71, params_m: 0.4238, flops_g: 132.635, note: 'center 头去 z; 3D 恒 0 设计'}
+  - {name: head_b1_abl_h,   bs: 8, ep: 70, cfg: experiments/YAML/head_b1_abl_h.yaml,
+     best_ckpt: output/train_log/vod/202608150143_rpillar_head_b1_abl_h_head_b1_abl_h/best.pth,
+     model_store: output/train_log/vod/202608150143_rpillar_head_b1_abl_h_head_b1_abl_h/model_store.yaml,
+     3d_mean: 3.89, bev_mean: 50.52, params_m: 0.3867, flops_g: 117.43, note: 'center 头去 h; 3D 近 0'}
+next_stage_cfg: 08-14/15 后续 (b1 2d/lossup/abl_z/abl_h) 脚本+cfg 副本, 见 next_stage_cfg/
+key_findings:
+  3d_best: head_b8_center (44.26)
+  bev_best: head_b1_center (51.86)
+  head_2d: '2d 头 BEV ≈ center 头 BEV (50.23 vs 51.41), 无 z 不掉 BEV, 轻量化路线可行'
+  rp_mask: '自家 head 全面弱于 RadarNeXt 头 ~10pp, Car 项尤差'
+  zh_synergy: 'BEV 增益源自 z+h 联合监督 (center 52.59 > 2d 51.87 > abl_h 50.52 > abl_z 49.71)'

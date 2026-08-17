@@ -1,0 +1,17 @@
+tag,backbone2d,head,head_type,bs,bestEp,Car3d_R40,Ped3d_R40,Cyc3d_R40,3d_mean,CarBev_R40,PedBev_R40,CycBev_R40,bev_mean,Params_M,FLOPs_G
+head_b8_center,RepDWCNoneBackbone,RadarNeXtCenterHead,3D,8,80,33.49,37.00,62.29,44.26,45.22,43.94,65.07,51.41,0.46,169.5
+head_b1_center,BaseBEVBackbone,RadarNeXtCenterHead,3D,8,80,31.92,39.55,61.06,44.18,45.38,47.90,62.31,51.86,0.42,132.9
+head_n3_center,PPMDFENBackbone,RadarNeXtCenterHead,3D,8,80,33.21,33.08,61.38,42.56,45.28,41.83,65.50,50.87,1.22,131.8
+head_n6_center,RadarNeXtMDFENBackbone,RadarNeXtCenterHead,3D,8,80,29.67,32.71,57.46,39.95,38.39,40.03,61.95,46.79,1.17,128.4
+rp_mask_center,BaseBEVBackbone,RadarPillarCenterHead,3D,8,80,10.59,40.10,56.87,35.85,13.59,46.91,59.85,40.12,0.42,132.9
+rp_mask,BaseBEVBackbone,RadarPillarAnchorHeadSingle,3D-anchor,8,80,13.51,29.00,50.55,31.02,14.28,35.41,53.32,34.34,0.18,34.3
+head_b8_2d,RepDWCNoneBackbone,RadarNeXtCenterHead2DNoZ,BEV,8,80,0,0,0,0,44.66,41.00,65.04,50.23,0.42,153.9
+head_n6_2d,RadarNeXtMDFENBackbone,RadarNeXtCenterHead2DNoZ,BEV,8,80,0,0,0,0,41.48,38.26,67.59,49.11,1.13,124.5
+head_n3_2d,PPMDFENBackbone,RadarNeXtCenterHead2DNoZ,BEV,8,80,0,0,0,0,44.79,37.86,63.78,48.81,1.18,127.9
+head_b1_2d,BaseBEVBackbone,RadarNeXtCenterHead2DNoZ,BEV,8,80,0,0,0,0,44.66,40.74,59.04,48.14,0.39,117.2
+head_n7_2d,RadarNeXtMDFENBackbone,RadarNeXtCenterHead2DNoZ,BEV,8,80,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A
+head_b1_center@0814,BaseBEVBackbone,RadarNeXtCenterHead,3D,8,72,33.36,34.58,60.89,42.94,48.15,43.06,66.56,52.59,0.4244,132.87
+head_b1_2d@0814,BaseBEVBackbone,RadarNeXtCenterHead2DNoZ,BEV,8,71,0,0,0,0,46.00,40.84,68.78,51.87,0.3862,117.194
+head_b1_2d_lossup@0814,BaseBEVBackbone,RadarNeXtCenterHead2DLossUp,BEV,8,72,0,0,0,0,44.61,42.27,68.63,51.84,0.3862,117.194
+head_b1_abl_z@0815,BaseBEVBackbone,RadarNeXtCenterHeadAblZ,3D-noZ,8,74,0,0,0,0,45.04,40.50,63.60,49.71,0.4238,132.635
+head_b1_abl_h@0815,BaseBEVBackbone,RadarNeXtCenterHeadAblH,3D-noH,8,70,0.01,4.65,7.00,3.89,44.14,40.89,66.53,50.52,0.3867,117.43

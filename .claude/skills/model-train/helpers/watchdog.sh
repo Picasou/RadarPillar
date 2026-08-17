@@ -23,6 +23,13 @@ WORKFLOW="${2:-workflow_${TASK#train-}.sh}"
 
 SESSION="rpillar_${TASK}"
 
+# === 维护锁 (H8): 人工手术/续训抢救期间 touch /tmp/${TASK}.maintenance, 本 tick 跳过 ===
+LOCK="/tmp/${TASK}.maintenance"
+if [ -f "$LOCK" ]; then
+    echo "[$(date '+%F %T')] watchdog: 🔒 maintenance 锁存在, 跳过本 tick" >> "$LOG"
+    exit 0
+fi
+
 # === H2: cron 自我守护 ===
 CRON_ALIVE=false
 if pgrep -x cron >/dev/null 2>&1 || pgrep -x crond >/dev/null 2>&1; then
