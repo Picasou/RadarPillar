@@ -3,7 +3,7 @@
 """
 MSR 数据 infos + gt_database 生成入口。
 对齐 plan Task 5: class_names 硬编码 ['1','4','5'](dataset yaml 无此 key);
-data_path / save_path 都指 /mnt/d/DataSet/11111111111(与 msr_dataset.yaml 的 DATA_PATH / INFO_PATH 解析路径一致)。
+data_path / save_path 都指 /mnt/d/DataSet/MSR(与 msr_dataset.yaml 的 DATA_PATH / INFO_PATH 解析路径一致)。
 """
 import argparse
 from pathlib import Path
@@ -18,7 +18,7 @@ def main():
                         default='tools/cfgs/dataset/msr_dataset.yaml',
                         help='dataset config yaml')
     parser.add_argument('--data_path', type=str,
-                        default='/mnt/d/DataSet/11111111111',
+                        default='/mnt/d/DataSet/MSR',
                         help='root data path; also used as save_path (must match YAML INFO_PATH resolution)')
     args = parser.parse_args()
 

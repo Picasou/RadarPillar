@@ -28,9 +28,9 @@ def make_full_cfg(data_path):
     """完整 dataset_cfg:含 DATA_PROCESSOR + POINT_FEATURE_ENCODING,供 MsrDataset 构造。
 
     注意:PointFeatureEncoder 基类硬断言 src_feature_list[0:3] == ['x','y','z']。
-    MSR 真实 18 列(MSR_FEATURE_ORDER)中 xyz 在 11-13 位,直接传入会触发断言。
-    MsrDataset.get_radar 实际用 MSR_FEATURE_ORDER 常量选列,与 yaml src 顺序无关,
-    所以这里把 src_feature_list 重排为 xyz 在前 3 仅满足基类断言,不影响真实选列。
+    MsrDataset.get_radar 返回 MSR_FEATURE_ORDER 18 列全列(xyz 已在前 3),
+    选列由 encoder 按 used_feature_list 统一完成。src_feature_list 直接用
+    MSR_FEATURE_ORDER(与 get_radar 输出列序一致,encoder 的 src 索引才正确)。
     """
     return EasyDict({
         'DATASET': 'MsrDataset',
@@ -71,7 +71,7 @@ def make_full_cfg(data_path):
 
 def main():
     parser = argparse.ArgumentParser(description='MSR single-frame sanity check + BEV plot')
-    parser.add_argument('--data_path', type=str, default='/mnt/d/DataSet/11111111111')
+    parser.add_argument('--data_path', type=str, default='/mnt/d/DataSet/MSR')
     parser.add_argument('--idx', type=str, default='00000000')
     parser.add_argument('--out_png', type=str, default='/tmp/msr_bev_%s.png',
                         help='output BEV png path (%%s for idx)')

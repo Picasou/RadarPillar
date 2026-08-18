@@ -1,0 +1,50 @@
+# experiments/YAML 配置统计表
+
+| 名字 | VFE | 3D backbone | 2D backbone | neck | head | NMS | 2D map | 3D map |
+|---|---|---|---|---|---|---|---|---|
+| a0 | PillarVFE | 无 | BaseBEVBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| a1 | PillarVFE | PillarAttention | BaseBEVBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| a2 | PillarVFE | SEBlock | BaseBEVBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| a3 | PillarVFE | SEDWConv | BaseBEVBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| a4 | PillarVFE | PillarAttentionRes | BaseBEVBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| a4_lnpost | PillarVFE | PillarAttentionResA | BaseBEVBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| a4_rezero | PillarVFE | PillarAttentionResB | BaseBEVBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| b1 | PillarVFE | PillarAttention | BaseBEVBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| b2 | PillarVFE | PillarAttention | BaseBEVBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| b3 | PillarVFE | PillarAttention | BaseBEVBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| b4 | PillarVFE | PillarAttention | BaseBEVBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| b5 | PillarVFE | PillarAttention | RepDWCNoneBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| b6 | PillarVFE | PillarAttention | RepDWCNoneBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| b7 | PillarVFE | PillarAttention | RepDWCNoneBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| b8 | PillarVFE | PillarAttention | RepDWCNoneBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| b9 | PillarVFE | PillarAttention | RepDWCNoneBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| e1 | PillarVFE | PillarAttention | BaseBEVBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| e2 | PillarVFE | PillarAttention | BaseBEVBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| e3 | PillarVFE | PillarAttention | BaseBEVBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| f1 | PillarVFE | PillarAttention | BaseBEVBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| f3 | PillarVFE | PillarAttention | BaseBEVBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| head_2d | PillarVFE | PillarAttention | BaseBEVBackbone | 无 | RadarNeXtCenterHead2D | nms_gpu(0.1) | ✓ | 无 |
+| head_anchor | PillarVFE | PillarAttention | BaseBEVBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| head_b1_2d | PillarVFE | PillarAttention | BaseBEVBackbone | 无 | RadarNeXtCenterHead2DNoZ | nms_gpu(0.1) | ✓ | 无 |
+| head_b1_2d_lossup | PillarVFE | PillarAttention | BaseBEVBackbone | 无 | RadarNeXtCenterHead2DLossUp | nms_gpu(0.1) | ✓ | 无 |
+| head_b1_abl_h | PillarVFE | PillarAttention | BaseBEVBackbone | 无 | RadarNeXtCenterHeadAblH | nms_gpu(0.1) | ✓ | 无 |
+| head_b1_abl_z | PillarVFE | PillarAttention | BaseBEVBackbone | 无 | RadarNeXtCenterHeadAblZ | nms_gpu(0.1) | ✓ | 无 |
+| head_b1_center | PillarVFE | PillarAttention | BaseBEVBackbone | 无 | RadarNeXtCenterHead | nms_gpu(0.1) | 无 | ✓ |
+| head_b8_2d | PillarVFE | PillarAttention | RepDWCNoneBackbone | 无 | RadarNeXtCenterHead2DNoZ | nms_gpu(0.1) | ✓ | 无 |
+| head_b8_center | PillarVFE | PillarAttention | RepDWCNoneBackbone | 无 | RadarNeXtCenterHead | nms_gpu(0.1) | 无 | ✓ |
+| head_center | PillarVFE | PillarAttention | BaseBEVBackbone | 无 | RadarNeXtCenterHead | nms_gpu(0.1) | 无 | ✓ |
+| head_n3_2d | PillarVFE | PillarAttention | PPMDFENBackbone | 无 | RadarNeXtCenterHead2DNoZ | nms_gpu(0.1) | ✓ | 无 |
+| head_n3_center | PillarVFE | PillarAttention | PPMDFENBackbone | 无 | RadarNeXtCenterHead | nms_gpu(0.1) | 无 | ✓ |
+| head_n6_2d | PillarVFE | PillarAttention | RadarNeXtMDFENBackbone | 无 | RadarNeXtCenterHead2DNoZ | nms_gpu(0.1) | ✓ | 无 |
+| head_n6_center | PillarVFE | PillarAttention | RadarNeXtMDFENBackbone | 无 | RadarNeXtCenterHead | nms_gpu(0.1) | 无 | ✓ |
+| head_n7_2d | PillarVFE | PillarAttention | RadarNeXtMDFENBackbone | 无 | RadarNeXtCenterHead2DNoZ | nms_gpu(0.1) | ✓ | 无 |
+| n1 | PillarVFE | PillarAttention | BaseBEVBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| n2 | PillarVFE | PillarAttention | PPFPNBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| n3 | PillarVFE | PillarAttention | PPMDFENBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| n4 | PillarVFE | PillarAttention | RepDWCNoneBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| n5 | PillarVFE | PillarAttention | RadarNeXtFPNBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| n6 | PillarVFE | PillarAttention | RadarNeXtMDFENBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| n7 | PillarVFE | PillarAttention | RadarNeXtMDFENBackbone | 无 | AnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| n8 | PillarVFE | PillarAttention | RadarNeXtMDFENBackbone | 无 | RadarNeXtCenterHead | nms_gpu(0.2) | 无 | ✓ |
+| rp_mask_a0 | PillarVFE | 无 | BaseBEVBackbone | 无 | RadarPillarAnchorHeadSingle | nms_gpu(0.1) | 无 | ✓ |
+| rp_mask_center | PillarVFE | PillarAttention | BaseBEVBackbone | 无 | RadarPillarCenterHead | nms_gpu(0.1) | 无 | ✓ |

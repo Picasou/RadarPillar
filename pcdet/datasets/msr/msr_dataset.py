@@ -50,8 +50,9 @@ class MsrDataset(DatasetTemplate):
 
         # PointFeatureEncoder 用 src_feature_list = MSR_FEATURE_ORDER(18 列)
         self.radar_feature_order = MSR_FEATURE_ORDER
-        # 基类 PointFeatureEncoder 强制 used 列前 3 必须是 ['x','y','z'](voxel 取 points[:,0:3])。
-        # 所以选列后强制重排:xyz 提到前 3,其余按 used_feature_list 原顺序。yaml 不必把 xyz 写最前。
+        # selected_* 仅诊断/文档用途(check_msr 打印、可视化取列):表达 used_feature_list
+        # 重排后的最终选列。实际选列由基类 PointFeatureEncoder.forward 完成(见 get_radar 注释)。
+        # xyz 强制前 3(基类断言 + voxel 取 points[:,0:3]),其余按 used_feature_list 原顺序。
         used = list(self.dataset_cfg.POINT_FEATURE_ENCODING.used_feature_list)
         xyz = [f for f in used if f in ('x', 'y', 'z')]
         missing = {'x', 'y', 'z'} - set(xyz)
@@ -66,10 +67,10 @@ class MsrDataset(DatasetTemplate):
         if self.use_feature_norm:
             mean = np.array(norm_cfg.get('MEAN', []), dtype=np.float32)
             std = np.array(norm_cfg.get('STD', []), dtype=np.float32)
-            if mean.shape[0] != len(self.selected_feature_list):
-                raise ValueError('POINT_FEATURE_NORMALIZATION.MEAN length must match used_feature_list')
-            if std.shape[0] != len(self.selected_feature_list):
-                raise ValueError('POINT_FEATURE_NORMALIZATION.STD length must match used_feature_list')
+            if mean.shape[0] != len(self.radar_feature_order):
+                raise ValueError('POINT_FEATURE_NORMALIZATION.MEAN length must match MSR_FEATURE_ORDER(18 列)')
+            if std.shape[0] != len(self.radar_feature_order):
+                raise ValueError('POINT_FEATURE_NORMALIZATION.STD length must match MSR_FEATURE_ORDER(18 列)')
             self.feature_mean = mean
             self.feature_std = std
         else:
@@ -82,7 +83,10 @@ class MsrDataset(DatasetTemplate):
         # 预加载 struct.json 路径 + 动态构造 dtype(运行时解析,schema 变更自动适配)
         self.points_json = self.root_path / 'POINTS' / 'struct.json'
         self.labels_json = self.root_path / 'LABELS' / 'struct.json'
-        self.params_json = self.root_path / 'PARAMS' / 'radar_dynamic.struct.json'
+        # PARAMS 目录兼容:旧布局单目录 PARAMS/;2026-08 MSR 包拆为 PARAMS_DYNAMIC/+PARAMS_FIXED/,
+        # 动态参数(radar_dynamic.struct.json + 每帧 bin)在 PARAMS_DYNAMIC/ 下,schema 不变
+        self.params_dir = 'PARAMS_DYNAMIC' if (self.root_path / 'PARAMS_DYNAMIC').is_dir() else 'PARAMS'
+        self.params_json = self.root_path / self.params_dir / 'radar_dynamic.struct.json'
         self._points_dtype, _, self._points_names = load_struct_dtype(self.points_json)
         self._labels_dtype, _, self._labels_names = load_struct_dtype(self.labels_json)
         self._params_dtype, _, self._params_names = load_struct_dtype(self.params_json)
@@ -138,7 +142,7 @@ class MsrDataset(DatasetTemplate):
             vehicleYawRate_radps: scale=57.2957...(即 raw 是度/s,json scale=弧度→度,所以 raw/scale=弧度/s)
         读失败或 USE_GND_VELOCITY=False 时由调用处决定是否传 0。
         """
-        param_file = self.root_split_path / 'PARAMS' / ('%s.bin' % idx)
+        param_file = self.root_split_path / self.params_dir / ('%s.bin' % idx)
         if not param_file.exists():
             return {'ego_speed': 0.0, 'yaw_rate': 0.0}
         raw = np.fromfile(str(param_file), dtype=self._params_dtype)
@@ -150,17 +154,21 @@ class MsrDataset(DatasetTemplate):
         return {'ego_speed': ego_speed, 'yaw_rate': yaw_rate}
 
     def get_radar(self, idx):
-        """读 POINTS/{idx}.bin + struct.json → (N, used_feature_list 对应列数)。
+        """读 POINTS/{idx}.bin + struct.json → (N, 18) MSR_FEATURE_ORDER 全列。
 
         流程:frombuffer 解原始整数 → 对 range/doppler/azi/elv 乘 json scale(物理量)
-        → build_msr_features(ego_speed, yaw_rate) 产 18 列 → 选 used_feature_list 列 → 可选归一化。
+        → build_msr_features(ego_speed, yaw_rate) 产 18 列 → 可选归一化。
+
+        返回 src 全列而非预选列:选列统一由 DatasetTemplate.prepare_data →
+        PointFeatureEncoder.forward 按 used_feature_list 完成(基类按 src_feature_list
+        索引二次选列,若此处预选,越界切片会产生空列,特征只剩 xyz —— 已踩过)。
         """
         points_file = self.root_split_path / 'POINTS' / ('%s.bin' % idx)
         assert points_file.exists(), 'POINTS file missing: %s' % points_file
         raw = np.fromfile(str(points_file), dtype=self._points_dtype)
         if raw.shape[0] == 0:
-            # 空帧兜底:返回 0 行 used_feature_list 列
-            return np.zeros((0, len(self.selected_feature_idx)), dtype=np.float32)
+            # 空帧兜底:返回 0 行 18 列
+            return np.zeros((0, len(self.radar_feature_order)), dtype=np.float32)
 
         # 拿 ego_speed / yaw_rate 给 gnd 速度补偿;关开关或读失败传 0
         if self.use_gnd_velocity:
@@ -182,8 +190,8 @@ class MsrDataset(DatasetTemplate):
             scaled[n] = col
 
         feats = build_msr_features(scaled, self._points_names, ego_speed=ego_speed, yaw_rate=yaw_rate)
-        feats = feats[:, self.selected_feature_idx]
         if self.use_feature_norm:
+            # 归一化作用于 18 列全列(此时未选列),MEAN/STD 需按 MSR_FEATURE_ORDER 配置
             feats = (feats - self.feature_mean) / self.feature_std
         return feats
 

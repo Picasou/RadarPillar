@@ -1,12 +1,13 @@
 # MSR (MC_Single_Radar) RadarPillar baseline
-# 纯 PointPillar(BACKBONE_3D: null),仿 experiments/YAML/a0.yaml 结构。
-# 改动点(相对 a0.yaml):
+# RadarPillar 口径 = experiments/YAML/a1.yaml: PointPillars + BACKBONE_3D: PillarAttention,模型载体 MC_RadarPillars。
+# 改动点(相对 a1.yaml):
 #   - CLASS_NAMES: ['1','4','5'] (type 数字传递;1=轿车 4=二轮车 5=卡车)
 #   - 引用 msr_dataset.yaml
-#   - POINT_CLOUD_RANGE / VOXEL_SIZE 按 McRadarPillar.md(x[0:1:100] y[-20:0.5:20] z[-10:20:10])
+#   - POINT_CLOUD_RANGE / VOXEL_SIZE 按 McRadarPillar.md(y[-20:0.5:20] z[-10:20:10] 单层 pillar);
+#     x 上限 100→200:GT 实测最远 141.7m(x p99≈140m),100 会裁掉远距真值框;voxel x 步长 1.0 不变
 #   - VFE: USE_VELOCITY_DECOMPOSITION=False(dop_x_gnd/dop_y_gnd 已是笛卡尔分量,避免重复分解)
 #   - anchor 按真实 GT 尺寸中位数
-#   - 关 early_stop / LR_WARMUP(对齐 train 脚本 SET_CFGS)
+#   - 关 early_stop / LR_WARMUP(train 脚本 SET_CFGS 运行时强制覆盖,yaml 值无关紧要)
 CLASS_NAMES:
 - '1'
 - '4'
@@ -17,7 +18,7 @@ DATA_CONFIG:
   - 0
   - -20
   - -10
-  - 100
+  - 200
   - 20
   - 10
   DATA_PROCESSOR:
@@ -51,20 +52,25 @@ DATA_CONFIG:
       - 0.95
       - 1.05
 MODEL:
-  NAME: PointPillar
+  NAME: MC_RadarPillars
   VFE:
     NAME: PillarVFE
     WITH_DISTANCE: false
     USE_ABSOLUTE_XYZ: true
-    USE_NORM: false
-    # dop_x_gnd/dop_y_gnd 已是笛卡尔速度分量,关闭 VFE 径向分解避免语义冲突
-    USE_VELOCITY_DECOMPOSITION: false
+    USE_NORM: true
+    USE_VELOCITY_DECOMPOSITION: false # dop_x_gnd/dop_y_gnd 已是笛卡尔速度分量,关闭 VFE 径向分解避免语义冲突
     USE_REL_VELOCITY_DECOMPOSITION: false
     USE_VELOCITY_OFFSET: false
     USE_REL_VELOCITY_OFFSET: false
     NUM_FILTERS:
     - 32
-  BACKBONE_3D: null
+  BACKBONE_3D:
+    NAME: PillarAttention
+    ATTN_CHANNELS: 32
+    NUM_HEADS: 1
+    DROPOUT: 0.0
+    FFN_CHANNELS: 32
+    USE_LAYER_NORM: true
   MAP_TO_BEV:
     NAME: PointPillarScatter
     NUM_BEV_FEATURES: 32

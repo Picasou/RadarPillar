@@ -1,7 +1,7 @@
 DATASET: 'MsrDataset'
-DATA_PATH: '/mnt/d/DataSet/11111111111'
+DATA_PATH: '/mnt/d/DataSet/MSRv1'
 
-POINT_CLOUD_RANGE: [0, -25.6, -10, 51.2, 25.6, 10]
+POINT_CLOUD_RANGE: [0, -20.0, -10, 200, 20.0, 10]
 
 DATA_SPLIT: {
     'train': training,
@@ -13,7 +13,7 @@ INFO_PATH: {
     'test': [msr_infos_val.pkl],
 }
 
-# 地面系速度补偿开关:True 时 get_radar 读 PARAMS ego_speed/yaw_rate 做补偿
+# 地面系速度补偿开关
 USE_GND_VELOCITY: True
 
 POINT_FEATURE_ENCODING: {
@@ -22,6 +22,7 @@ POINT_FEATURE_ENCODING: {
                        doppler_anti_amb_confi, exist_confidence, frame, beam, extra_cnt,
                        dop_x, dop_y, dop_x_gnd, dop_y_gnd],
     used_feature_list: [x, y, z, dop_x_gnd, dop_y_gnd, rcs],
+    # used_feature_list: [x, y, z, dop_x_gnd, dop_y_gnd, range_m, doppler_mps, ang_rad, elv_rad, rcs, snr]
 }
 
 POINT_FEATURE_NORMALIZATION: {
@@ -29,7 +30,7 @@ POINT_FEATURE_NORMALIZATION: {
 }
 
 DATA_AUGMENTOR:
-    DISABLE_AUG_LIST: ['placeholder']
+    DISABLE_AUG_LIST: ['gt_sampling', 'random_world_flip', 'random_world_rotation', 'random_world_scaling']
     AUG_CONFIG_LIST:
         - NAME: gt_sampling
           USE_ROAD_PLANE: False
@@ -66,9 +67,9 @@ DATA_PROCESSOR:
       }
 
     - NAME: transform_points_to_voxels
-      VOXEL_SIZE: [0.16, 0.16, 20.0]
-      MAX_POINTS_PER_VOXEL: 10
+      VOXEL_SIZE: [1.0, 0.5, 20.0]
+      MAX_POINTS_PER_VOXEL: 20
       MAX_NUMBER_OF_VOXELS: {
-        'train': 16000,
-        'test': 40000
+        'train': 3000,
+        'test': 3000
       }

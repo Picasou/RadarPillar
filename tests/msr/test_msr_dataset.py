@@ -1,6 +1,6 @@
 """Task 2 测试:MsrDataset 类的 reader 方法对真实数据的形状/正确性验证。
 
-依赖真实数据路径 /mnt/d/DataSet/11111111111(WSL)。路径不存在时整模块 skip。
+依赖真实数据路径 /mnt/d/DataSet/MSR(WSL)。路径不存在时整模块 skip。
 """
 import os
 
@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from easydict import EasyDict
 
-DATA_ROOT = '/mnt/d/DataSet/11111111111'
+DATA_ROOT = '/mnt/d/DataSet/MSR'
 
 # 真实数据缺失则跳过整组(测试依赖外部数据集)
 pytestmark = pytest.mark.skipif(
@@ -22,7 +22,7 @@ def _make_minimal_cfg(used_features):
     return EasyDict({
         'DATA_PATH': DATA_ROOT,
         'DATA_SPLIT': {'train': 'training', 'test': 'val'},
-        'INFO_PATH': {'train': ['msr_infos_train.pkl'], 'test': ['msr_infos_val.pkl']},
+        'INFO_PATH': {'train': ['msr_infos_training.pkl'], 'test': ['msr_infos_val.pkl']},
         'POINT_CLOUD_RANGE': [0, -25.6, -3, 51.2, 25.6, 2],
         'POINT_FEATURE_ENCODING': {
             'encoding_type': 'absolute_coordinates_encoding',
@@ -97,12 +97,28 @@ def test_get_dynamic_param_missing_file(ds):
 # ---------- get_radar ----------
 
 def test_get_radar_shape(ds):
-    """get_radar 返回 (N, len(used_feature_list)) 且 dtype=float32。"""
+    """get_radar 返回 (N, 18) MSR_FEATURE_ORDER 全列且 dtype=float32。
+
+    返回 src 全列(不预选):选列由基类 PointFeatureEncoder.forward 统一完成。
+    """
+    from pcdet.datasets.msr.msr_utils import MSR_FEATURE_ORDER
     pts = ds.get_radar('00000000')
     assert pts.ndim == 2
-    assert pts.shape[1] == 5  # used_feature_list 长度
+    assert pts.shape[1] == len(MSR_FEATURE_ORDER)  # 18 列 src 全列
     assert pts.dtype == np.float32
     assert pts.shape[0] > 0  # 00000000 有真实点
+
+
+def test_getitem_encoder_selects_used_columns(ds):
+    """回归:prepare_data 全链路后 points 列数 == len(used_feature_list)。
+
+    防双重选列复发(get_radar 曾预选 6 列,encoder 再按 18 列 src 索引选列,
+    numpy 越界切片产生空列,特征只剩 xyz 3 列)。
+    """
+    item = ds[0]  # training=False → prepare_data 走 encoder + data_processor
+    assert item['points'].shape[1] == 5  # fixture used_feature_list 长度
+    # xyz 在前 3 列(voxel 契约)
+    assert item['points'][:, 0].max() > 0  # x 物理量(米)
 
 
 def test_get_radar_xyz_is_physical(ds):
@@ -162,7 +178,7 @@ def test_use_gnd_velocity_off():
     ds = MsrDataset(dataset_cfg=cfg, class_names=['1', '4', '5'], training=False, root_path=None)
     ds.set_split('training')
     pts = ds.get_radar('00000000')
-    # 选列顺序:dop_x(14), dop_y(15), dop_x_gnd(16), dop_y_gnd(17)
+    # 18 列 src 顺序:dop_x(14), dop_y(15), dop_x_gnd(16), dop_y_gnd(17)
     # USE_GND_VELOCITY=False → ego_speed=0 → dop_*_gnd == dop_*
-    assert np.allclose(pts[:, 3], pts[:, 5], atol=1e-5)  # dop_x == dop_x_gnd
-    assert np.allclose(pts[:, 4], pts[:, 6], atol=1e-5)  # dop_y == dop_y_gnd
+    assert np.allclose(pts[:, 14], pts[:, 16], atol=1e-5)  # dop_x == dop_x_gnd
+    assert np.allclose(pts[:, 15], pts[:, 17], atol=1e-5)  # dop_y == dop_y_gnd

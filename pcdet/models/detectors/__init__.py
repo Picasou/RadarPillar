@@ -17,6 +17,9 @@ from .voxelnext import VoxelNeXt
 from .pv_rcnn_plusplus import PVRCNNPlusPlus
 from .transfusion import TransFusion
 
+# MSR (MC_Single_Radar) 适配
+from .mc_radarpillars import MC_RadarPillars
+
 __all__ = {
     'Detector3DTemplate': Detector3DTemplate,
     'SECONDNet': SECONDNet,
@@ -33,6 +36,8 @@ __all__ = {
     'VoxelNeXt': VoxelNeXt,
     'PVRCNNPlusPlus': PVRCNNPlusPlus,
     'TransFusion': TransFusion,
+    # MSR 适配
+    'MC_RadarPillars': MC_RadarPillars,
 }
 
 

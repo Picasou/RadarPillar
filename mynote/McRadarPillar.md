@@ -72,7 +72,7 @@ L = w1×L(location) + w2×L(size) + w3×L(heading) + w4×L(type) + w5×L(vel) + 
 - 输出：[N_f ,H ,W] 
 
 ### **VFE**
-**input  :** [N_v, M, N_f]（N_v: pillar，M:单 pillar 最大点数）
+**input  :** [N_v, M, N_f]（N_v: pillar，M:单 pillar 最大点数）  
 **output :** [N_v, N]  
 **keyWord :** pointnNet风格抽象block[N,N,N], 逐个pillar提取freature map    
 **candidate:** N候选32,64,128  
@@ -87,9 +87,9 @@ L = w1×L(location) + w2×L(size) + w3×L(heading) + w4×L(type) + w5×L(vel) + 
 
 
 ### **Backbone**
-**input  :** [N_Fatt ,H ,W] 
-**output :** 多尺度 [N_Fbev, {H, H/2, H/4}]（下采样金字塔）
-**keyWord :** 重复 block 提取多尺度 BEV 特征金字塔
+**input  :** [N_Fatt ,H ,W]   
+**output :** 多尺度 [N_Fbev, {H, H/2, H/4}]（下采样金字塔）  
+**keyWord :** 重复 block 提取多尺度 BEV 特征金字塔  
 **candidate:** 
 - block : [pointpiller 风格块 ； repDwc 风格块]
 - N_Fbev(f_dim) : [[32,32,32],[64,64,64],[32,64,128]]
@@ -98,9 +98,9 @@ L = w1×L(location) + w2×L(size) + w3×L(heading) + w4×L(type) + w5×L(vel) + 
 **pipeline :**  
 
 ### **Neck**
-**input  :** 多尺度 [N_Fbev, {H, H/2, H/4}]（Backbone 金字塔）
-**output :** [N_Fneck ,H ,W]（融合后单尺度 → Head）
-**keyWord :** 多尺度金字塔融合成单张 BEV 图
+**input  :** 多尺度 [N_Fbev, {H, H/2, H/4}]（Backbone 金字塔）  
+**output :** [N_Fneck ,H ,W]（融合后单尺度 → Head）  
+**keyWord :** 多尺度金字塔融合成单张 BEV 图  
 **candidate:**  
 - block : [直接concat, FPN, MDFEN]
 - N_Fneck : concat→压缩定值 ; FPN/MDFEN→各级加总
@@ -108,11 +108,12 @@ L = w1×L(location) + w2×L(size) + w3×L(heading) + w4×L(type) + w5×L(vel) + 
 **pipeline :**
 
 ### **Head**
-**input  :** [N_Fneck ,H ,W] 
-**output :** [N_cand × (location, size, vel, type, ispassable)]
+**input  :** [N_Fneck ,H ,W]   
+**output :** [N_cand × (location, size, vel, type, ispassable)]  
 **keyWord :** 从 BEV feature map 解码目标（location/size/vel/type/ispassable）  
 **candidate:**   
-- head 类型 : [AnchorHeadSingle(anchor 回归) ； RadarNeXtCenterHead(center heatmap)]
+- AnchorHeadSingle (anchor 回归) ；
+- RadarNeXtCenterHead (center heatmap)
 
 **pipeline :**   
 

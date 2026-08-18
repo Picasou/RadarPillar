@@ -2,7 +2,7 @@
 
 # eg. bash mc/SH/train_msr.sh
 # MSR (MC_Single_Radar) RadarPillar baseline 训练脚本
-# 数据: /mnt/d/DataSet/11111111111  | 类别: ['1','4','5'] (1=轿车 4=二轮车 5=卡车)
+# 数据: /mnt/d/DataSet/MSR  | 类别: ['1','4','5'] (1=轿车 4=二轮车 5=卡车)
 
 # —— 可选 ——
 # [续训]
