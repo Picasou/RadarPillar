@@ -1,0 +1,250 @@
+2026-08-18 19:12:48,050   INFO  **********************Start logging**********************
+2026-08-18 19:12:48,051   INFO  CUDA_VISIBLE_DEVICES=0
+2026-08-18 19:12:48,051   INFO  cfg_file         /home/admin/projects/RadarPillar/experiments/MC_DATASET/YAML/msr.yaml
+2026-08-18 19:12:48,051   INFO  batch_size       8
+2026-08-18 19:12:48,051   INFO  epochs           80
+2026-08-18 19:12:48,051   INFO  workers          2
+2026-08-18 19:12:48,051   INFO  extra_tag        msr
+2026-08-18 19:12:48,051   INFO  output_root      output/train_log/msr/202608181912_rpillar_msr_msr
+2026-08-18 19:12:48,051   INFO  ckpt             None
+2026-08-18 19:12:48,051   INFO  pretrained_model None
+2026-08-18 19:12:48,051   INFO  launcher         none
+2026-08-18 19:12:48,051   INFO  tcp_port         18888
+2026-08-18 19:12:48,051   INFO  sync_bn          False
+2026-08-18 19:12:48,051   INFO  fix_random_seed  True
+2026-08-18 19:12:48,052   INFO  ckpt_save_interval 1
+2026-08-18 19:12:48,052   INFO  local_rank       0
+2026-08-18 19:12:48,052   INFO  max_ckpt_save_num 30
+2026-08-18 19:12:48,052   INFO  merge_all_iters_to_one_epoch False
+2026-08-18 19:12:48,052   INFO  set_cfgs         ['OPTIMIZATION.early_stop.enabled', 'False', 'OPTIMIZATION.LR_WARMUP', 'False']
+2026-08-18 19:12:48,052   INFO  max_waiting_mins 0
+2026-08-18 19:12:48,052   INFO  start_epoch      0
+2026-08-18 19:12:48,052   INFO  save_to_file     False
+2026-08-18 19:12:48,052   INFO  use_wandb        False
+2026-08-18 19:12:48,052   INFO  skip_eval        True
+2026-08-18 19:12:48,052   INFO  cfg.ROOT_DIR: /home/admin/projects/RadarPillar
+2026-08-18 19:12:48,052   INFO  cfg.LOCAL_RANK: 0
+2026-08-18 19:12:48,052   INFO  cfg.CLASS_NAMES: ['1', '2', '4', '5']
+2026-08-18 19:12:48,052   INFO  
+cfg.DATA_CONFIG = edict()
+2026-08-18 19:12:48,052   INFO  cfg.DATA_CONFIG.DATASET: MsrDataset
+2026-08-18 19:12:48,053   INFO  cfg.DATA_CONFIG.DATA_PATH: /mnt/d/DataSet/MSRv1
+2026-08-18 19:12:48,053   INFO  cfg.DATA_CONFIG.POINT_CLOUD_RANGE: [0, -20, -10, 200, 20, 10]
+2026-08-18 19:12:48,053   INFO  
+cfg.DATA_CONFIG.DATA_SPLIT = edict()
+2026-08-18 19:12:48,053   INFO  cfg.DATA_CONFIG.DATA_SPLIT.train: training
+2026-08-18 19:12:48,053   INFO  cfg.DATA_CONFIG.DATA_SPLIT.test: val
+2026-08-18 19:12:48,053   INFO  
+cfg.DATA_CONFIG.INFO_PATH = edict()
+2026-08-18 19:12:48,053   INFO  cfg.DATA_CONFIG.INFO_PATH.train: ['msr_infos_training.pkl']
+2026-08-18 19:12:48,053   INFO  cfg.DATA_CONFIG.INFO_PATH.test: ['msr_infos_val.pkl']
+2026-08-18 19:12:48,053   INFO  cfg.DATA_CONFIG.USE_GND_VELOCITY: True
+2026-08-18 19:12:48,053   INFO  
+cfg.DATA_CONFIG.POINT_FEATURE_ENCODING = edict()
+2026-08-18 19:12:48,053   INFO  cfg.DATA_CONFIG.POINT_FEATURE_ENCODING.encoding_type: absolute_coordinates_encoding
+2026-08-18 19:12:48,053   INFO  cfg.DATA_CONFIG.POINT_FEATURE_ENCODING.src_feature_list: ['x', 'y', 'z', 'range_m', 'doppler_mps', 'ang_rad', 'elv_rad', 'rcs', 'snr', 'doppler_anti_amb_confi', 'exist_confidence', 'frame', 'beam', 'extra_cnt', 'dop_x', 'dop_y', 'dop_x_gnd', 'dop_y_gnd']
+2026-08-18 19:12:48,053   INFO  cfg.DATA_CONFIG.POINT_FEATURE_ENCODING.used_feature_list: ['x', 'y', 'z', 'dop_x_gnd', 'dop_y_gnd', 'rcs']
+2026-08-18 19:12:48,053   INFO  
+cfg.DATA_CONFIG.POINT_FEATURE_NORMALIZATION = edict()
+2026-08-18 19:12:48,053   INFO  cfg.DATA_CONFIG.POINT_FEATURE_NORMALIZATION.USE_NORM: False
+2026-08-18 19:12:48,053   INFO  
+cfg.DATA_CONFIG.DATA_AUGMENTOR = edict()
+2026-08-18 19:12:48,053   INFO  cfg.DATA_CONFIG.DATA_AUGMENTOR.DISABLE_AUG_LIST: ['gt_sampling', 'placeholder']
+2026-08-18 19:12:48,054   INFO  cfg.DATA_CONFIG.DATA_AUGMENTOR.AUG_CONFIG_LIST: [{'NAME': 'random_world_flip', 'ALONG_AXIS_LIST': ['x']}, {'NAME': 'random_world_scaling', 'WORLD_SCALE_RANGE': [0.95, 1.05]}]
+2026-08-18 19:12:48,054   INFO  cfg.DATA_CONFIG.DATA_PROCESSOR: [{'NAME': 'mask_points_and_boxes_outside_range', 'REMOVE_OUTSIDE_BOXES': True}, {'NAME': 'shuffle_points', 'SHUFFLE_ENABLED': {'train': True, 'test': False}}, {'NAME': 'transform_points_to_voxels', 'VOXEL_SIZE': [1.0, 0.5, 20.0], 'MAX_POINTS_PER_VOXEL': 16, 'MAX_NUMBER_OF_VOXELS': {'train': 2048, 'test': 3096}}]
+2026-08-18 19:12:48,054   INFO  cfg.DATA_CONFIG._BASE_CONFIG_: tools/cfgs/dataset/msr_dataset.yaml
+2026-08-18 19:12:48,054   INFO  
+cfg.MODEL = edict()
+2026-08-18 19:12:48,054   INFO  cfg.MODEL.NAME: MC_RadarPillars
+2026-08-18 19:12:48,054   INFO  
+cfg.MODEL.VFE = edict()
+2026-08-18 19:12:48,054   INFO  cfg.MODEL.VFE.NAME: PillarVFE
+2026-08-18 19:12:48,054   INFO  cfg.MODEL.VFE.WITH_DISTANCE: False
+2026-08-18 19:12:48,054   INFO  cfg.MODEL.VFE.USE_ABSOLUTE_XYZ: True
+2026-08-18 19:12:48,054   INFO  cfg.MODEL.VFE.USE_NORM: True
+2026-08-18 19:12:48,054   INFO  cfg.MODEL.VFE.USE_VELOCITY_DECOMPOSITION: False
+2026-08-18 19:12:48,054   INFO  cfg.MODEL.VFE.USE_REL_VELOCITY_DECOMPOSITION: False
+2026-08-18 19:12:48,054   INFO  cfg.MODEL.VFE.USE_VELOCITY_OFFSET: False
+2026-08-18 19:12:48,054   INFO  cfg.MODEL.VFE.USE_REL_VELOCITY_OFFSET: False
+2026-08-18 19:12:48,054   INFO  cfg.MODEL.VFE.NUM_FILTERS: [32]
+2026-08-18 19:12:48,054   INFO  
+cfg.MODEL.BACKBONE_3D = edict()
+2026-08-18 19:12:48,054   INFO  cfg.MODEL.BACKBONE_3D.NAME: PillarAttention
+2026-08-18 19:12:48,055   INFO  cfg.MODEL.BACKBONE_3D.ATTN_CHANNELS: 32
+2026-08-18 19:12:48,055   INFO  cfg.MODEL.BACKBONE_3D.NUM_HEADS: 1
+2026-08-18 19:12:48,055   INFO  cfg.MODEL.BACKBONE_3D.DROPOUT: 0.0
+2026-08-18 19:12:48,055   INFO  cfg.MODEL.BACKBONE_3D.FFN_CHANNELS: 32
+2026-08-18 19:12:48,055   INFO  cfg.MODEL.BACKBONE_3D.USE_LAYER_NORM: True
+2026-08-18 19:12:48,055   INFO  
+cfg.MODEL.MAP_TO_BEV = edict()
+2026-08-18 19:12:48,055   INFO  cfg.MODEL.MAP_TO_BEV.NAME: PointPillarScatter
+2026-08-18 19:12:48,055   INFO  cfg.MODEL.MAP_TO_BEV.NUM_BEV_FEATURES: 32
+2026-08-18 19:12:48,055   INFO  
+cfg.MODEL.BACKBONE_2D = edict()
+2026-08-18 19:12:48,055   INFO  cfg.MODEL.BACKBONE_2D.NAME: BaseBEVBackbone
+2026-08-18 19:12:48,055   INFO  cfg.MODEL.BACKBONE_2D.LAYER_NUMS: [3, 5, 5]
+2026-08-18 19:12:48,055   INFO  cfg.MODEL.BACKBONE_2D.LAYER_STRIDES: [2, 2, 2]
+2026-08-18 19:12:48,055   INFO  cfg.MODEL.BACKBONE_2D.NUM_FILTERS: [32, 32, 32]
+2026-08-18 19:12:48,055   INFO  cfg.MODEL.BACKBONE_2D.UPSAMPLE_STRIDES: [1, 2, 4]
+2026-08-18 19:12:48,055   INFO  cfg.MODEL.BACKBONE_2D.NUM_UPSAMPLE_FILTERS: [32, 32, 32]
+2026-08-18 19:12:48,055   INFO  
+cfg.MODEL.DENSE_HEAD = edict()
+2026-08-18 19:12:48,055   INFO  cfg.MODEL.DENSE_HEAD.NAME: AnchorHeadSingle
+2026-08-18 19:12:48,055   INFO  cfg.MODEL.DENSE_HEAD.CLASS_AGNOSTIC: False
+2026-08-18 19:12:48,055   INFO  cfg.MODEL.DENSE_HEAD.USE_DIRECTION_CLASSIFIER: True
+2026-08-18 19:12:48,055   INFO  cfg.MODEL.DENSE_HEAD.DIR_OFFSET: 0.78539
+2026-08-18 19:12:48,055   INFO  cfg.MODEL.DENSE_HEAD.DIR_LIMIT_OFFSET: 0.0
+2026-08-18 19:12:48,056   INFO  cfg.MODEL.DENSE_HEAD.NUM_DIR_BINS: 2
+2026-08-18 19:12:48,056   INFO  cfg.MODEL.DENSE_HEAD.ANCHOR_GENERATOR_CONFIG: [{'class_name': '1', 'anchor_sizes': [[5.0, 2.0, 1.5]], 'anchor_rotations': [0, 1.57], 'anchor_bottom_heights': [-0.75], 'align_center': False, 'feature_map_stride': 2, 'matched_threshold': 0.6, 'unmatched_threshold': 0.45}, {'class_name': '2', 'anchor_sizes': [[0.6, 0.6, 1.7]], 'anchor_rotations': [0, 1.57], 'anchor_bottom_heights': [-0.85], 'align_center': False, 'feature_map_stride': 2, 'matched_threshold': 0.5, 'unmatched_threshold': 0.35}, {'class_name': '4', 'anchor_sizes': [[1.8, 0.7, 1.7]], 'anchor_rotations': [0, 1.57], 'anchor_bottom_heights': [-0.85], 'align_center': False, 'feature_map_stride': 2, 'matched_threshold': 0.5, 'unmatched_threshold': 0.35}, {'class_name': '5', 'anchor_sizes': [[15.0, 2.5, 3.0]], 'anchor_rotations': [0, 1.57], 'anchor_bottom_heights': [-1.5], 'align_center': False, 'feature_map_stride': 2, 'matched_threshold': 0.5, 'unmatched_threshold': 0.35}]
+2026-08-18 19:12:48,056   INFO  
+cfg.MODEL.DENSE_HEAD.TARGET_ASSIGNER_CONFIG = edict()
+2026-08-18 19:12:48,056   INFO  cfg.MODEL.DENSE_HEAD.TARGET_ASSIGNER_CONFIG.NAME: AxisAlignedTargetAssigner
+2026-08-18 19:12:48,056   INFO  cfg.MODEL.DENSE_HEAD.TARGET_ASSIGNER_CONFIG.POS_FRACTION: -1.0
+2026-08-18 19:12:48,056   INFO  cfg.MODEL.DENSE_HEAD.TARGET_ASSIGNER_CONFIG.SAMPLE_SIZE: 512
+2026-08-18 19:12:48,056   INFO  cfg.MODEL.DENSE_HEAD.TARGET_ASSIGNER_CONFIG.NORM_BY_NUM_EXAMPLES: False
+2026-08-18 19:12:48,056   INFO  cfg.MODEL.DENSE_HEAD.TARGET_ASSIGNER_CONFIG.MATCH_HEIGHT: False
+2026-08-18 19:12:48,056   INFO  cfg.MODEL.DENSE_HEAD.TARGET_ASSIGNER_CONFIG.BOX_CODER: ResidualCoder
+2026-08-18 19:12:48,056   INFO  
+cfg.MODEL.DENSE_HEAD.LOSS_CONFIG = edict()
+2026-08-18 19:12:48,056   INFO  
+cfg.MODEL.DENSE_HEAD.LOSS_CONFIG.LOSS_WEIGHTS = edict()
+2026-08-18 19:12:48,056   INFO  cfg.MODEL.DENSE_HEAD.LOSS_CONFIG.LOSS_WEIGHTS.cls_weight: 1.0
+2026-08-18 19:12:48,056   INFO  cfg.MODEL.DENSE_HEAD.LOSS_CONFIG.LOSS_WEIGHTS.loc_weight: 2.0
+2026-08-18 19:12:48,056   INFO  cfg.MODEL.DENSE_HEAD.LOSS_CONFIG.LOSS_WEIGHTS.dir_weight: 0.2
+2026-08-18 19:12:48,056   INFO  cfg.MODEL.DENSE_HEAD.LOSS_CONFIG.LOSS_WEIGHTS.code_weights: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+2026-08-18 19:12:48,056   INFO  
+cfg.MODEL.POST_PROCESSING = edict()
+2026-08-18 19:12:48,056   INFO  cfg.MODEL.POST_PROCESSING.RECALL_THRESH_LIST: [0.3, 0.5, 0.7]
+2026-08-18 19:12:48,056   INFO  cfg.MODEL.POST_PROCESSING.SCORE_THRESH: 0.2
+2026-08-18 19:12:48,056   INFO  cfg.MODEL.POST_PROCESSING.OUTPUT_RAW_SCORE: False
+2026-08-18 19:12:48,056   INFO  cfg.MODEL.POST_PROCESSING.EVAL_METRIC: vod
+2026-08-18 19:12:48,056   INFO  
+cfg.MODEL.POST_PROCESSING.NMS_CONFIG = edict()
+2026-08-18 19:12:48,057   INFO  cfg.MODEL.POST_PROCESSING.NMS_CONFIG.MULTI_CLASSES_NMS: True
+2026-08-18 19:12:48,057   INFO  cfg.MODEL.POST_PROCESSING.NMS_CONFIG.NMS_TYPE: nms_gpu
+2026-08-18 19:12:48,057   INFO  cfg.MODEL.POST_PROCESSING.NMS_CONFIG.NMS_THRESH: 0.1
+2026-08-18 19:12:48,057   INFO  cfg.MODEL.POST_PROCESSING.NMS_CONFIG.NMS_PRE_MAXSIZE: 4096
+2026-08-18 19:12:48,057   INFO  cfg.MODEL.POST_PROCESSING.NMS_CONFIG.NMS_POST_MAXSIZE: 500
+2026-08-18 19:12:48,057   INFO  
+cfg.OPTIMIZATION = edict()
+2026-08-18 19:12:48,057   INFO  cfg.OPTIMIZATION.FIX_RANDOM_SEED: False
+2026-08-18 19:12:48,057   INFO  cfg.OPTIMIZATION.BATCH_SIZE_PER_GPU: 4
+2026-08-18 19:12:48,057   INFO  cfg.OPTIMIZATION.NUM_EPOCHS: 80
+2026-08-18 19:12:48,057   INFO  cfg.OPTIMIZATION.eval_interval: 80
+2026-08-18 19:12:48,057   INFO  
+cfg.OPTIMIZATION.early_stop = edict()
+2026-08-18 19:12:48,057   INFO  cfg.OPTIMIZATION.early_stop.enabled: False
+2026-08-18 19:12:48,057   INFO  cfg.OPTIMIZATION.OPTIMIZER: adam_onecycle
+2026-08-18 19:12:48,057   INFO  cfg.OPTIMIZATION.LR: 0.003
+2026-08-18 19:12:48,057   INFO  cfg.OPTIMIZATION.WEIGHT_DECAY: 0.01
+2026-08-18 19:12:48,057   INFO  cfg.OPTIMIZATION.MOMENTUM: 0.9
+2026-08-18 19:12:48,057   INFO  cfg.OPTIMIZATION.MOMS: [0.95, 0.85]
+2026-08-18 19:12:48,057   INFO  cfg.OPTIMIZATION.PCT_START: 0.4
+2026-08-18 19:12:48,057   INFO  cfg.OPTIMIZATION.DIV_FACTOR: 10
+2026-08-18 19:12:48,058   INFO  cfg.OPTIMIZATION.DECAY_STEP_LIST: [35, 45]
+2026-08-18 19:12:48,058   INFO  cfg.OPTIMIZATION.LR_DECAY: 0.1
+2026-08-18 19:12:48,058   INFO  cfg.OPTIMIZATION.LR_CLIP: 1e-07
+2026-08-18 19:12:48,058   INFO  cfg.OPTIMIZATION.LR_WARMUP: False
+2026-08-18 19:12:48,058   INFO  cfg.OPTIMIZATION.GRAD_NORM_CLIP: 10
+2026-08-18 19:12:48,058   INFO  cfg.TAG: msr
+2026-08-18 19:12:48,058   INFO  cfg.EXP_GROUP_PATH: home/admin/projects/RadarPillar/experiments/MC_DATASET/YAML
+2026-08-18 19:12:48,070   INFO  Loading MSR dataset
+2026-08-18 19:12:48,244   INFO  Total samples for MSR dataset: 13780
+2026-08-18 19:12:48,909   INFO  MC_RadarPillars(
+  (vfe): PillarVFE(
+    (pfn_layers): ModuleList(
+      (0): PFNLayer(
+        (linear): Linear(in_features=12, out_features=32, bias=False)
+        (norm): BatchNorm1d(32, eps=0.001, momentum=0.01, affine=True, track_running_stats=True)
+      )
+    )
+  )
+  (backbone_3d): PillarAttention(
+    (pre_mlp): Identity()
+    (attn): MultiheadAttention(
+      (out_proj): NonDynamicallyQuantizableLinear(in_features=32, out_features=32, bias=True)
+    )
+    (norm1): LayerNorm((32,), eps=1e-05, elementwise_affine=True)
+    (ffn): Sequential(
+      (0): Linear(in_features=32, out_features=32, bias=True)
+      (1): GELU(approximate='none')
+      (2): Linear(in_features=32, out_features=32, bias=True)
+    )
+    (norm2): LayerNorm((32,), eps=1e-05, elementwise_affine=True)
+  )
+  (map_to_bev_module): PointPillarScatter()
+  (pfe): None
+  (backbone_2d): BaseBEVBackbone(
+    (blocks): ModuleList(
+      (0): Sequential(
+        (0): ZeroPad2d((1, 1, 1, 1))
+        (1): Conv2d(32, 32, kernel_size=(3, 3), stride=(2, 2), bias=False)
+        (2): BatchNorm2d(32, eps=0.001, momentum=0.01, affine=True, track_running_stats=True)
+        (3): ReLU()
+        (4): Conv2d(32, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (5): BatchNorm2d(32, eps=0.001, momentum=0.01, affine=True, track_running_stats=True)
+        (6): ReLU()
+        (7): Conv2d(32, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (8): BatchNorm2d(32, eps=0.001, momentum=0.01, affine=True, track_running_stats=True)
+        (9): ReLU()
+        (10): Conv2d(32, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (11): BatchNorm2d(32, eps=0.001, momentum=0.01, affine=True, track_running_stats=True)
+        (12): ReLU()
+      )
+      (1-2): 2 x Sequential(
+        (0): ZeroPad2d((1, 1, 1, 1))
+        (1): Conv2d(32, 32, kernel_size=(3, 3), stride=(2, 2), bias=False)
+        (2): BatchNorm2d(32, eps=0.001, momentum=0.01, affine=True, track_running_stats=True)
+        (3): ReLU()
+        (4): Conv2d(32, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (5): BatchNorm2d(32, eps=0.001, momentum=0.01, affine=True, track_running_stats=True)
+        (6): ReLU()
+        (7): Conv2d(32, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (8): BatchNorm2d(32, eps=0.001, momentum=0.01, affine=True, track_running_stats=True)
+        (9): ReLU()
+        (10): Conv2d(32, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (11): BatchNorm2d(32, eps=0.001, momentum=0.01, affine=True, track_running_stats=True)
+        (12): ReLU()
+        (13): Conv2d(32, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (14): BatchNorm2d(32, eps=0.001, momentum=0.01, affine=True, track_running_stats=True)
+        (15): ReLU()
+        (16): Conv2d(32, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (17): BatchNorm2d(32, eps=0.001, momentum=0.01, affine=True, track_running_stats=True)
+        (18): ReLU()
+      )
+    )
+    (deblocks): ModuleList(
+      (0): Sequential(
+        (0): ConvTranspose2d(32, 32, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (1): BatchNorm2d(32, eps=0.001, momentum=0.01, affine=True, track_running_stats=True)
+        (2): ReLU()
+      )
+      (1): Sequential(
+        (0): ConvTranspose2d(32, 32, kernel_size=(2, 2), stride=(2, 2), bias=False)
+        (1): BatchNorm2d(32, eps=0.001, momentum=0.01, affine=True, track_running_stats=True)
+        (2): ReLU()
+      )
+      (2): Sequential(
+        (0): ConvTranspose2d(32, 32, kernel_size=(4, 4), stride=(4, 4), bias=False)
+        (1): BatchNorm2d(32, eps=0.001, momentum=0.01, affine=True, track_running_stats=True)
+        (2): ReLU()
+      )
+    )
+  )
+  (dense_head): AnchorHeadSingle(
+    (cls_loss_func): SigmoidFocalClassificationLoss()
+    (reg_loss_func): WeightedSmoothL1Loss()
+    (dir_loss_func): WeightedCrossEntropyLoss()
+    (conv_cls): Conv2d(96, 32, kernel_size=(1, 1), stride=(1, 1))
+    (conv_box): Conv2d(96, 56, kernel_size=(1, 1), stride=(1, 1))
+    (conv_dir_cls): Conv2d(96, 16, kernel_size=(1, 1), stride=(1, 1))
+  )
+  (point_head): None
+  (roi_head): None
+)
+2026-08-18 19:12:48,909   INFO  **********************Start training home/admin/projects/RadarPillar/experiments/MC_DATASET/YAML/msr(msr)**********************
+2026-08-18 22:36:36,914   INFO  **********************End training home/admin/projects/RadarPillar/experiments/MC_DATASET/YAML/msr(msr)**********************
+
+
+
+2026-08-18 22:36:36,915   INFO  **********************Skip evaluation (--skip_eval) home/admin/projects/RadarPillar/experiments/MC_DATASET/YAML/msr(msr)**********************

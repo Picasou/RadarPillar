@@ -1,0 +1,154 @@
+# MSR RadarPillar baseline (口径同 a1.yaml: PointPillars + PillarAttention, 载体 MC_RadarPillars)
+# 类别: 1=轿车 2=行人 4=二轮车 5=卡车 | x 上限 200(GT 最远 141.7m) | anchor=GT 中位尺寸
+
+# ============================================================================================================================
+CLASS_NAMES: ['1', '2', '4', '5']
+
+# ============================================================================================================================
+DATA_CONFIG:
+  _BASE_CONFIG_: tools/cfgs/dataset/msr_dataset.yaml
+  POINT_CLOUD_RANGE: [0, -20, -10, 200, 20, 10]
+  DATA_PROCESSOR:
+  - NAME: mask_points_and_boxes_outside_range
+    REMOVE_OUTSIDE_BOXES: true
+  - NAME: shuffle_points
+    SHUFFLE_ENABLED:
+      train: true
+      test: false
+  - NAME: transform_points_to_voxels
+    VOXEL_SIZE: [1.0, 0.5, 20.0]
+    MAX_POINTS_PER_VOXEL: 16
+    MAX_NUMBER_OF_VOXELS:
+      train: 2048
+      test: 3096
+      
+# ============================================================================================================================
+  DATA_AUGMENTOR:
+    DISABLE_AUG_LIST: [gt_sampling, placeholder]
+    AUG_CONFIG_LIST:
+    - NAME: random_world_flip
+      ALONG_AXIS_LIST: [x]
+    - NAME: random_world_scaling
+      WORLD_SCALE_RANGE: [0.95, 1.05]
+
+# ============================================================================================================================
+MODEL:
+  NAME: MC_RadarPillars
+  # ------------------------
+  VFE:
+    NAME: PillarVFE
+    WITH_DISTANCE: false
+    USE_ABSOLUTE_XYZ: true
+    USE_NORM: true
+    USE_VELOCITY_DECOMPOSITION: false
+    USE_REL_VELOCITY_DECOMPOSITION: false
+    USE_VELOCITY_OFFSET: false
+    USE_REL_VELOCITY_OFFSET: false
+    NUM_FILTERS: [32]
+  # ------------------------
+  BACKBONE_3D:
+    NAME: PillarAttention
+    ATTN_CHANNELS: 32
+    NUM_HEADS: 1
+    DROPOUT: 0.0
+    FFN_CHANNELS: 32
+    USE_LAYER_NORM: true
+  # ------------------------
+  MAP_TO_BEV:
+    NAME: PointPillarScatter
+    NUM_BEV_FEATURES: 32
+  # ------------------------
+  BACKBONE_2D:
+    NAME: BaseBEVBackbone
+    LAYER_NUMS: [3, 5, 5]
+    LAYER_STRIDES: [2, 2, 2]
+    NUM_FILTERS: [32, 32, 32]
+    UPSAMPLE_STRIDES: [1, 2, 4]
+    NUM_UPSAMPLE_FILTERS: [32, 32, 32]
+  # ------------------------
+  DENSE_HEAD:
+    NAME: AnchorHeadSingle
+    CLASS_AGNOSTIC: false
+    USE_DIRECTION_CLASSIFIER: true
+    DIR_OFFSET: 0.78539
+    DIR_LIMIT_OFFSET: 0.0
+    NUM_DIR_BINS: 2
+    ANCHOR_GENERATOR_CONFIG:
+    - class_name: '1'            # 轿车 l5.0 w2.0 h1.5
+      anchor_sizes: [[5.0, 2.0, 1.5]]
+      anchor_rotations: [0, 1.57]
+      anchor_bottom_heights: [-0.75]
+      align_center: false
+      feature_map_stride: 2
+      matched_threshold: 0.6
+      unmatched_threshold: 0.45
+    - class_name: '2'            # 行人 l0.6 w0.6 h1.7(小目标,IoU 阈值降档)
+      anchor_sizes: [[0.6, 0.6, 1.7]]
+      anchor_rotations: [0, 1.57]
+      anchor_bottom_heights: [-0.85]
+      align_center: false
+      feature_map_stride: 2
+      matched_threshold: 0.5
+      unmatched_threshold: 0.35
+    - class_name: '4'            # 二轮车 l1.8 w0.7 h1.7
+      anchor_sizes: [[1.8, 0.7, 1.7]]
+      anchor_rotations: [0, 1.57]
+      anchor_bottom_heights: [-0.85]
+      align_center: false
+      feature_map_stride: 2
+      matched_threshold: 0.5
+      unmatched_threshold: 0.35
+    - class_name: '5'            # 卡车 l15.0 w2.5 h3.0
+      anchor_sizes: [[15.0, 2.5, 3.0]]
+      anchor_rotations: [0, 1.57]
+      anchor_bottom_heights: [-1.5]
+      align_center: false
+      feature_map_stride: 2
+      matched_threshold: 0.5
+      unmatched_threshold: 0.35
+    TARGET_ASSIGNER_CONFIG:
+      NAME: AxisAlignedTargetAssigner
+      POS_FRACTION: -1.0
+      SAMPLE_SIZE: 512
+      NORM_BY_NUM_EXAMPLES: false
+      MATCH_HEIGHT: false
+      BOX_CODER: ResidualCoder
+    LOSS_CONFIG:
+      LOSS_WEIGHTS:
+        cls_weight: 1.0
+        loc_weight: 2.0
+        dir_weight: 0.2
+        code_weights: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  # ------------------------
+  POST_PROCESSING:
+    RECALL_THRESH_LIST: [0.3, 0.5, 0.7]
+    SCORE_THRESH: 0.2
+    OUTPUT_RAW_SCORE: false
+    EVAL_METRIC: vod          # MSR 无独立 eval,借用 vod;SKIP_EVAL 跳过实际评估
+    NMS_CONFIG:
+      MULTI_CLASSES_NMS: true
+      NMS_TYPE: nms_gpu
+      NMS_THRESH: 0.1
+      NMS_PRE_MAXSIZE: 4096
+      NMS_POST_MAXSIZE: 500
+
+# ============================================================================================================================
+OPTIMIZATION:
+  FIX_RANDOM_SEED: false
+  BATCH_SIZE_PER_GPU: 4       # MSR 点云密集 + 8G 显存,保守起步
+  NUM_EPOCHS: 80
+  eval_interval: 80
+  early_stop:
+    enabled: false
+  OPTIMIZER: adam_onecycle
+  LR: 0.003
+  WEIGHT_DECAY: 0.01
+  MOMENTUM: 0.9
+  MOMS: [0.95, 0.85]
+  PCT_START: 0.4
+  DIV_FACTOR: 10
+  DECAY_STEP_LIST: [35, 45]
+  LR_DECAY: 0.1
+  LR_CLIP: 1.0e-07
+  LR_WARMUP: false
+  GRAD_NORM_CLIP: 10
