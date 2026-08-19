@@ -2,10 +2,12 @@
 import os
 import sys
 import numpy as np
+import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 仓库根加入 sys.path, 保证 tracker 以包形式导入
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from tracker.schemas import VDD, FRAME, Trk, TrkHistory, PTs, GTs, Objs
-from tracker.utils.common import compensate_trks, compensate_frame_forward
+from tracker.utils.common import c_trk_compensate, c_points_compensate
 
 
 def make_vdd(speed_ms=10.0, yaw_rate=0.0, gear=0):
@@ -26,6 +28,7 @@ def make_trk(x, y, vx, vy, h=0, history_states=None):
     return Trk(
         x_m=x, y_m=y, z_m=0,
         vx_mps=vx, vy_mps=vy,
+        doppler_mps=0,
         ax_mps2=0, ay_mps2=0,
         heading_deg=h, yaw_rate_degs=0,
         id=1, width_m=2, height_m=1, length_m=4, lifetime_s=0,
@@ -52,19 +55,29 @@ def make_empty_frame():
 
 def test_straight_compensation():
     trk = make_trk(x=100, y=50, vx=10, vy=5, h=90)
-    compensate_trks([trk], make_vdd(speed_ms=10.0, yaw_rate=0.0), 0.1)
-    assert trk.x_m == 99, f"x_m=99, got {trk.x_m}"
-    assert trk.y_m == 50
-    assert trk.vx_mps == 10
-    assert trk.vy_mps == 5
+    c_trk_compensate(trk,make_vdd(speed_ms=10.0, yaw_rate=0.0), 0.1)
+    assert trk.x_m == pytest.approx(99), f"x_m=99, got {trk.x_m}"
+    assert trk.y_m == pytest.approx(50)
+    assert trk.vx_mps == pytest.approx(10)
+    assert trk.vy_mps == pytest.approx(5)
     assert trk.heading_deg == 90
     print(f"  [PASS] straight: x 100->{trk.x_m}")
+
+
+def test_noninteger_compensation():
+    trk = make_trk(x=100.4, y=50.2, vx=3.3, vy=1.7, h=90)
+    c_trk_compensate(trk,make_vdd(speed_ms=3.0, yaw_rate=0.0), 0.1)
+    assert trk.x_m == pytest.approx(100.1)
+    assert trk.y_m == pytest.approx(50.2)
+    assert trk.vx_mps == pytest.approx(3.3)
+    assert trk.vy_mps == pytest.approx(1.7)
+    print(f"  [PASS] non-integer: x 100.4->{trk.x_m}")
 
 
 def test_turning_compensation():
     trk = make_trk(x=100, y=50, vx=10, vy=5, h=90)
     speed, yr, cycle_s = 10.0, 0.1, 0.1
-    compensate_trks([trk], make_vdd(speed_ms=speed, yaw_rate=yr), cycle_s)
+    c_trk_compensate(trk,make_vdd(speed_ms=speed, yaw_rate=yr), cycle_s)
     dx, wt = speed * cycle_s, yr * cycle_s
     cos_wt, sin_wt = np.cos(wt), np.sin(wt)
     ex  = (100 - dx) * cos_wt + 50 * sin_wt
@@ -80,31 +93,26 @@ def test_turning_compensation():
     print(f"  [PASS] turning: x 100->{trk.x_m}, y 50->{trk.y_m}, h 90->{trk.heading_deg}")
 
 
-def test_empty_trks():
-    compensate_trks([], make_vdd(), 0.1)
-    print("  [PASS] empty trks list safe")
-
-
 def test_zero_cycle():
     trk = make_trk(x=100, y=50, vx=10, vy=5, h=90)
-    compensate_trks([trk], make_vdd(speed_ms=10.0, yaw_rate=0.1), 0.0)
+    c_trk_compensate(trk,make_vdd(speed_ms=10.0, yaw_rate=0.1), 0.0)
     assert trk.x_m == 100 and trk.y_m == 50
     print("  [PASS] cycle_s=0 is no-op")
 
 
-def test_compensate_frame_forward_straight():
+def test_c_points_compensate_straight():
     cycle_s = 0.1
     xy = np.array([[30.0, 0.0], [40.0, 5.0]], dtype=np.float32)
     intermediates = [make_empty_frame() for _ in range(3)]
     for f in intermediates:
         f.vdd = make_vdd(speed_ms=10.0, yaw_rate=0.0)
-    xy2 = compensate_frame_forward(xy.copy(), intermediates, cycle_s)
+    xy2 = c_points_compensate(xy.copy(), intermediates, cycle_s)
     expected = xy - np.array([[3.0, 0.0], [3.0, 0.0]], dtype=np.float32)
     assert np.allclose(xy2, expected)
     print(f"  [PASS] 3-step straight: x {xy[:,0]} -> {xy2[:,0]}")
 
 
-def test_compensate_frame_forward_turning():
+def test_c_points_compensate_turning():
     cycle_s, yr, speed = 0.1, 0.1, 5.0
     xy = np.array([[10.0, 0.0]], dtype=np.float32)
     intermediates = [make_empty_frame() for _ in range(2)]
@@ -118,7 +126,7 @@ def test_compensate_frame_forward_turning():
     x1, y1 = step(10.0, 0.0, dx, wt)
     ex, ey = step(x1, y1, dx, wt)
 
-    xy2 = compensate_frame_forward(xy.copy(), intermediates, cycle_s)
+    xy2 = c_points_compensate(xy.copy(), intermediates, cycle_s)
     assert abs(xy2[0, 0] - ex) < 1e-4
     assert abs(xy2[0, 1] - ey) < 1e-4
     print(f"  [PASS] 2-step turning: ({xy[0,0]},{xy[0,1]}) -> ({xy2[0,0]:.4f},{xy2[0,1]:.4f})")
@@ -126,7 +134,7 @@ def test_compensate_frame_forward_turning():
 
 def test_history_cumulative_straight():
     trk = make_trk(x=100, y=50, vx=10, vy=5, h=90)
-    compensate_trks([trk], make_vdd(speed_ms=10.0, yaw_rate=0.0), 0.1)
+    c_trk_compensate(trk,make_vdd(speed_ms=10.0, yaw_rate=0.0), 0.1)
     assert trk.history.wt   == 0.0
     assert abs(trk.history.dx   - 1.0) < 1e-6
     assert trk.history.dy   == 0.0
@@ -137,7 +145,7 @@ def test_history_cumulative_straight():
 def test_history_cumulative_turning():
     trk = make_trk(x=100, y=50, vx=10, vy=5, h=90)
     speed, yr, cycle_s = 10.0, 0.1, 0.1
-    compensate_trks([trk], make_vdd(speed_ms=speed, yaw_rate=yr), cycle_s)
+    c_trk_compensate(trk,make_vdd(speed_ms=speed, yaw_rate=yr), cycle_s)
     assert abs(trk.history.wt   - yr * cycle_s) < 1e-6
     assert abs(trk.history.dx   - speed * cycle_s) < 1e-6
     assert abs(trk.history.dist - speed * cycle_s) < 1e-6
@@ -153,7 +161,7 @@ def test_history_states_compensation():
     snapshot = original.copy()
     trk = make_trk(x=100, y=50, vx=10, vy=5, h=90, history_states=original)
     speed, yr, cycle_s = 10.0, 0.1, 0.1
-    compensate_trks([trk], make_vdd(speed_ms=speed, yaw_rate=yr), cycle_s)
+    c_trk_compensate(trk,make_vdd(speed_ms=speed, yaw_rate=yr), cycle_s)
 
     dx, wt = speed * cycle_s, yr * cycle_s
     cos_wt, sin_wt = np.cos(wt), np.sin(wt)
@@ -176,15 +184,15 @@ def test_history_states_compensation():
 
 if __name__ == '__main__':
     print("=== [utils.common] trk 状态补偿 + 跨帧补偿 验证 ===")
-    print("\n--- compensate_trks ---")
+    print("\n--- c_trk_compensate ---")
     test_straight_compensation()
+    test_noninteger_compensation()
     test_turning_compensation()
-    test_empty_trks()
     test_zero_cycle()
-    print("\n--- compensate_frame_forward ---")
-    test_compensate_frame_forward_straight()
-    test_compensate_frame_forward_turning()
-    print("\n--- compensate_trks history ---")
+    print("\n--- c_points_compensate ---")
+    test_c_points_compensate_straight()
+    test_c_points_compensate_turning()
+    print("\n--- c_trk_compensate history ---")
     test_history_cumulative_straight()
     test_history_cumulative_turning()
     test_history_states_compensation()

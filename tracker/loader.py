@@ -9,7 +9,7 @@ from .utils.rw_struct import (struct_read,
                               Raw_DetHead, Raw_Det,
                               Raw_TrkHead, Raw_Trk,
                               Raw_Vdd, Raw_Vds)
-from .utils.common import compute_cycle_s, compensate_state
+from .utils.common import c_state_compensate
 
 
 
@@ -31,7 +31,7 @@ class Loader:
         pts_list = self._load_PTs(data_path, vds)
         gts_list = self._load_GTs(data_path)
         vdd_list = self._load_VDD(data_path)
-        objs_list = self._load_objs(data_path)
+        objs_list = self._load_objs(data_path, vds)
 
         n = min(len(pts_list), len(vdd_list), len(objs_list))
         if n != len(pts_list) or n != len(vdd_list) or n != len(objs_list):
@@ -109,7 +109,7 @@ class Loader:
             offset += head.det_num
         return pts_list
 
-    def _load_objs(self, path: str) -> list[Objs]:
+    def _load_objs(self, path: str, vds: VDS) -> list[Objs]:
         file_0200 = os.path.join(path, '0200.00000.bin')
         file_0201 = os.path.join(path, '0201.00000.bin')
         if not os.path.exists(file_0200) or not os.path.exists(file_0201):
@@ -120,7 +120,6 @@ class Loader:
 
         vdd_path = os.path.join(path, '2021.00000.bin')
         vdd_raw_list = struct_read(vdd_path, Raw_Vdd) if os.path.exists(vdd_path) else []
-        cycle_s_list = compute_cycle_s(vdd_raw_list)
 
         objs_list = []
         offset, limit = 0, len(trk_list)
@@ -131,7 +130,7 @@ class Loader:
             if num < 0:
                 break
 
-            cycle_s = cycle_s_list[frame_i] if frame_i < len(cycle_s_list) else 0.05
+            cycle_s = vds.cycle_s
             v_raw = vdd_raw_list[frame_i] if frame_i < len(vdd_raw_list) else None
             v = VDD(
                 speed_ms=v_raw.hostVelocity_mps,
@@ -142,7 +141,7 @@ class Loader:
             objs = []
             for j in range(num):
                 t = trk_list[offset + j]
-                x, y, vx, vy = compensate_state(
+                x, y, vx, vy = c_state_compensate(
                     t.x / 100.0, t.y / 100.0,
                     t.vx / 100.0, t.vy / 100.0,
                     v, cycle_s

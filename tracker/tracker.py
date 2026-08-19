@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from .schemas import Cfg, VDS, FRAME, FRAMEs, Trk
-from .loader import Loader
-from .utils.common import (load_data_cfg, prepare_points)
+from .utils.common import (load_data_cfg, c_points_prepare)
+from . import loader
 from . import detector
-from . import filter
 from . import matcher
+from . import updater
 from . import manager
 from . import evaluator
 
@@ -21,11 +21,11 @@ class Tracker:
         self.accum_frames = self.cfg.RUN.accum_frames
         self.point_cloud_range = load_data_cfg().POINT_CLOUD_RANGE
 
-        self.loader    = Loader(self.cfg)
+        self.loader    = loader.Loader(self.cfg)
         self.detector  = detector.Detector(self.cfg)
-        self.filter    = filter.Filter(self.cfg)
+        self.updater   = updater.Updater(self.cfg)
         self.matcher   = matcher.Matcher(self.cfg)
-        self.manager   = manager.TrackManager(self.cfg)
+        self.manager   = manager.TrackerManager(self.cfg)
         self.evaluator = evaluator.Evaluator(self.cfg)
 
     def run(self) -> None:
@@ -44,7 +44,7 @@ class Tracker:
                 self.step(frame, frames, self.trks, vds, i)
 
                 if run_mode != 0:
-                    tracks_list.append([t.copy() for t in self.trks])
+                    tracks_list.append([t.copy() for t in self.trks if t.obstacle_prob])
                     if eval_mode == 1:
                         self.evaluator.online(frame)
 
@@ -62,15 +62,22 @@ class Tracker:
 
     def step(self, frame: FRAME, frames: FRAMEs, trks: list[Trk], vds: VDS, i: int) -> None:
         # 1. 点云准备
-        frame.proc.points = prepare_points(frames, i, vds, self.accum_frames, self.point_cloud_range)
+        frame.proc.points = c_points_prepare(frames, i, vds, self.accum_frames, self.point_cloud_range)
         frame.frame_id = str(frame.pts.Lst[0].frame) if frame.pts.Lst else ''
+
         # 2. 检测
         objs = self.detector.run(frame)
+
         # 3. 预测
-        self.filter.predict(trks, frame.vdd, vds.cycle_s)
+        self.updater.predict(trks, frame.vdd, vds.cycle_s)
+
         # 4. 关联
         matches = self.matcher.run(trks, objs)
+
         # 5. 更新
-        self.filter.update(matches)
+        self.updater.run(matches, vds.cycle_s)
+        
         # 6. 航迹管理
-        self.manager.run(matches, objs, frame)
+        self.manager.run(matches, trks, vds.cycle_s)
+
+        # 7. 可视化

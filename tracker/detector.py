@@ -12,6 +12,7 @@ from pcdet.models import build_network, load_data_to_gpu
 from pcdet.models.detectors.detector3d_template import Detector3DTemplate
 from pcdet.utils import common_utils
 
+from .utils import cpu_patch
 from .schemas import Cfg, FRAME, Obj
 
 
@@ -33,6 +34,11 @@ class Detector:
 
     def __init__(self, cfg: Cfg) -> None:
         self.score_thresh = cfg.MODEL.score_thresh
+        self.device = cfg.MODEL.device
+        if self.device == 'auto':
+            self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        if self.device == 'cpu':
+            cpu_patch.apply_cpu_patch()
         self.logger = common_utils.create_logger()
 
         pcdet_cfg = cfg_from_yaml_file(cfg.MODEL.cfg, pcdet_global_cfg)
@@ -40,8 +46,9 @@ class Detector:
 
         self.dataset = _PcdetDataset(pcdet_cfg, self.class_names, self.logger)
         self.model: Detector3DTemplate = build_network(model_cfg=pcdet_cfg.MODEL, num_class=len(self.class_names), dataset=self.dataset)
-        self.model.load_params_from_file(filename=cfg.MODEL.ckpt, logger=self.logger, to_cpu=False)
-        self.model.cuda()
+        self.model.load_params_from_file(filename=cfg.MODEL.ckpt, logger=self.logger, to_cpu=(self.device == 'cpu'))
+        if self.device == 'cuda':
+            self.model.cuda()
         self.model.eval()
 
     def run(self, frame: FRAME) -> List[Obj]:
@@ -59,7 +66,10 @@ class Detector:
         return self.dataset.collate_batch([data_dict])
 
     def _infer(self, data_dict: dict) -> list:
-        load_data_to_gpu(data_dict)
+        if self.device == 'cuda':
+            load_data_to_gpu(data_dict)
+        else:
+            cpu_patch.load_data_to_cpu(data_dict)
         with torch.no_grad():
             pred_dicts, _ = self.model.forward(data_dict)
         return pred_dicts
