@@ -4,9 +4,11 @@
 # -------------------- 运行配置 --------------------
 # ==================================================
 RUN:
-# mode: 0=display  1=normal  2=regress
+# mode: 0=display  1=just_model 2=full
   mode: 1
-# overlap: 0=不覆盖  1=覆盖
+# save: 0=不保存  1=保存
+  save: 0
+# overlap: 航迹/目标数据文件(JSON)覆盖开关 0=已存在跳过  1=覆盖; 可视化图不受此控, 恒覆盖
   overlap: 0
 # align : 雷达滞后实际实际的帧数
   delay: 1
@@ -27,16 +29,18 @@ RUN:
 # ==================================================
 DATA:
   paths:
-    - /mnt/d/DataSet/.seqdata/自车静止_二轮车_运动_023_20260414_154151_441
-    # 024 未解包完(缺 0101 det 点 bin), loader 0 帧, 暂不启用
-    # - /mnt/d/DataSet/.seqdata/自车静止_二轮车_运动_024_20260414_154255_840
+    - /mnt/d/DataSet/DATASETv1/自车驶向_行人_运动_001_20260409_174740_366
+    - /mnt/d/DataSet/DATASETv1/自车驶向_行人_运动_002_20260414_134124_326
+    - /mnt/d/DataSet/DATASETv1/自车前进_二轮车_运动_001_20260414_155155_137
+    - /mnt/d/DataSet/DATASETv1/自车前进_二轮车_运动_003_20260512_153714_638
+    - /mnt/d/DataSet/DATASETv1/自车前进_轿车_运动_001_20260409_173152_170
 
 # ==================================================
 # -------------------- 模型配置 --------------------
 # ==================================================
 MODEL:
-  cfg: ./output/train_log/vod/202608141442_rpillar_head_b1_center_head_b1_center/head_b1_center.yaml
-  ckpt: ./output/train_log/vod/202608141442_rpillar_head_b1_center_head_b1_center/best.pth
+  cfg: /home/admin/projects/RadarPillar/output/train_log/msr/202608181912_rpillar_msr_msr/resbag/cfg.yaml
+  ckpt: /home/admin/projects/RadarPillar/output/train_log/msr/202608181912_rpillar_msr_msr/resbag/best.pth
   score_thresh: 0.3
 # device: auto | cuda | cpu (默认 auto: 有 GPU 走 cuda, 无 GPU 自动落 cpu)
   device: auto
@@ -119,20 +123,31 @@ MATCH:
 # -------------------- 可视化配置 --------------------
 # ==================================================
 VISUAL:
-# enable: 总开关 0=完全不出图(RUN.mode 任意值都不画)  1=可视化
+# enable: 可视化使能
   enable: 1
-# save: 落盘格式 0=不保存  1=GIF  2=PNG序列  3=GIF+PNG
-  save: 3
-# label: 框上标注 0=不标  1=仅航迹ID(对"框上不写字"规范的唯一豁免)
-  label: 1
+# save: 落盘格式 1=GIF  2=PNG序列  3=MP4
+  save: [2, 3]
+# range: 固定坐标范围 [x_lo, x_hi, y_lo, y_hi]; 不配置则按序列点云外沿+3m
+  range: [0, 200, -20, 20]
+# test_val: 属于 test/val 划分的序列名列表(命中则整图加黑色边框警示防泄露)
+  test_val: []
+# cam_rotate: 相机画面旋转 0=不转(原始画面) 1=逆时针90° 2=180° 3=顺时针90°
+  cam_rotate: 0
 # show: 画面元素开关(tracks/objs 组合出 航迹|目标|都显示)
   show:
     points: 1
     tracks: 1
     objs: 1
     gts: 1
-  metrics: 1
-  metrics_show:
+
+# ==================================================
+# -------------------- 指标显示配置 --------------------
+# ==================================================
+METRICS:
+# enable: 指标面板总开关(预留, evaluator 实装后生效)
+  enable: 1
+# show: 各项指标显示开关
+  show:
     tp: 1
     fp: 1
     fn: 1

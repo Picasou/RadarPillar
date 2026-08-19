@@ -55,12 +55,34 @@ class Detector:
         points = frame.proc.points
         if points is None or points.shape[0] == 0:
             return []
-        data_dict = self._prepare(points)
+        data_dict = self._prepare(self._to_src_points(points, frame.vdd))
         pred_dicts = self._infer(data_dict)
         return self._to_objs(pred_dicts[0])
 
+    def _to_src_points(self, points: np.ndarray, vdd) -> np.ndarray:
+        """
+        点云转训练口径: tracker (N,7)[x,y,z,rcs,v_r,v_r_comp,time] → src_feature_list 18 列
+        (used 列 dop_x_gnd/dop_y_gnd 按 build_msr_features 公式重构, azi=atan2(y,x) 精确还原)
+        """
+        enc = self.dataset.point_feature_encoder
+        idx = {n: i for i, n in enumerate(enc.src_feature_list)}
+        ego = float(vdd.speed_ms) if vdd is not None else 0.0
+        yr = float(vdd.yaw_rate) if vdd is not None else 0.0
+        x, y, dop = points[:, 0], points[:, 1], points[:, 4]
+        azi = np.arctan2(y, x)
+        dop_x, dop_y = dop * np.cos(azi), dop * np.sin(azi)
+        cols = {
+            'x': x, 'y': y, 'z': points[:, 2], 'rcs': points[:, 3],
+            'dop_x': dop_x, 'dop_y': dop_y,
+            'dop_x_gnd': dop_x - ego, 'dop_y_gnd': dop_y + ego * np.tan(yr),
+        }
+        out = np.zeros((points.shape[0], len(enc.src_feature_list)), dtype=np.float32)
+        for name, arr in cols.items():
+            out[:, idx[name]] = arr
+        return out
+
     def _prepare(self, points: np.ndarray) -> dict:
-        # prepare_data 跑完整 DATA_PROCESSOR 管线 (mask/shuffle/feature_encoding/voxelize), 
+        # prepare_data 跑完整 DATA_PROCESSOR 管线 (mask/shuffle/feature_encoding/voxelize),
         # collate_batch 再做 batch collate
         data_dict = self.dataset.prepare_data({'points': points, 'frame_id': 0})
         return self.dataset.collate_batch([data_dict])

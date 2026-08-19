@@ -45,9 +45,10 @@ BEV 检测可视化（`tools/utils/visual_utils/`，MSR 参照 `visualize_msr.py
 - **类色与点云分离**：类色避开点云蓝红色域——Car=黄、Pedestrian=品红、Cyclist=草绿、Truck=青绿
 - **GT 框**：细实线（linewidth 1.2）+ 无填充
 - **pred 框**：粗虚线（linewidth 2.8）+ 半透明类色填充（α≈0.25），边线保持实色
-- **标注**：框上不写类名/分数，类别统一看 legend（全类固定槽位色，两面板各一份）；面板 title 标各自目标数，如 `GT (11)` / `Pred (16)`；title 简洁
+- **标注**：框上不写类名/分数，类别统一看 legend（全类固定槽位色，面板外共享一份放 figure 底部，不遮挡目标）；面板 title 标各自目标数，如 `GT (11)` / `Pred (16)`；title 简洁
 - **绘制入口**：GT/pred 统一走 `viz_common.draw_box_bev`（Polygon 角点法 + 朝向短线，`swap_xy` 支持车规朝向），勿散写 Rectangle
 - **选帧**：`pick_frames` 分段覆盖全程 + 类多样性优先 + GT 签名去重；非 testing split 强制排除测试集帧（防信息泄露）
+- **序列可视化**（`visualize_msr_seq.py`）：坐标轴与点云色标全程固定，防逐帧跳变；默认 x[-10,210] y[-25,25]（ROI 外留边）、doppler ±16 m/s（抽样 p99），均参数化可改
 
 ## 开发规范
 

@@ -251,7 +251,8 @@ class CfgVds:
 class CfgRun:
     """运行配置 - 对齐 RUN。"""
     mode: int                   # 0=display  1=normal  2=regress
-    overlap: int                # 0=不覆盖  1=覆盖
+    save: int                   # 0=不保存  1=保存(航迹结果落盘)
+    overlap: int                # 航迹JSON覆盖: 0=已存在跳过  1=覆盖(可视化图恒覆盖)
     delay: int                  # 雷达滞后实际帧数
     vds: CfgVds
     accum_frames: int = 1       # 点云叠加帧数 (1=不叠加)
@@ -309,11 +310,18 @@ class CfgMatch:
 class CfgVisual:
     """可视化配置 - 对齐 VISUAL。"""
     enable: int                 # 总开关: 0=完全不出图  1=可视化
-    save: int                   # 0=不保存  1=GIF  2=PNG序列  3=GIF+PNG
-    label: int                  # 框上标注: 0=不标  1=仅航迹ID
+    save: list                  # 落盘格式数组: 1=GIF  2=PNG序列  3=MP4; 空数组=不落盘
     show: dict                  # points/tracks/objs/gts
-    metrics: int
-    metrics_show: dict          # 各项指标开关
+    range: Optional[list] = None    # 固定坐标 [x_lo, x_hi, y_lo, y_hi]
+    test_val: Optional[list] = None    # test/val 序列名列表(命中加黑边框)
+    cam_rotate: int = 0             # 相机画面转正: 0=不转 1=逆时针90° 2=180° 3=顺时针90°
+
+
+@dataclass
+class CfgMetrics:
+    """指标显示配置 - 对齐 METRICS。"""
+    enable: int                 # 指标面板总开关: 0=不显示  1=显示
+    show: dict                  # 各项指标开关
 
 
 @dataclass
@@ -337,13 +345,14 @@ class CfgManager:
 
 @dataclass
 class Cfg:
-    """配置 - 镜像 cfg.yaml 的 8 大组。"""
+    """配置 - 镜像 cfg.yaml 的 9 大组。"""
     RUN: CfgRun
     DATA: CfgData
     MODEL: CfgModel
     FILTER: CfgFilter
     MATCH: CfgMatch
     VISUAL: CfgVisual
+    METRICS: CfgMetrics
     EVALUATE: CfgEvaluate
     MANAGER: CfgManager
 
@@ -358,7 +367,8 @@ class Cfg:
         _MAP = {
             'RUN': CfgRun, 'DATA': CfgData, 'MODEL': CfgModel,
             'FILTER': CfgFilter, 'MATCH': CfgMatch,
-            'VISUAL': CfgVisual, 'EVALUATE': CfgEvaluate,
+            'VISUAL': CfgVisual, 'METRICS': CfgMetrics,
+            'EVALUATE': CfgEvaluate,
             'MANAGER': CfgManager,
             'vds': CfgVds, 'para': CfgFilterPara,
             'para_kf': CfgFilterParaKf, 'para_abf': dict,
@@ -391,6 +401,7 @@ class Cfg:
     def isvalid(self) -> bool:
         """校验所有配置字段的类型和合法性."""
         self._check_int(self.RUN.mode, 0, 2, 'RUN.mode')
+        self._check_int(self.RUN.save, 0, 1, 'RUN.save')
         self._check_int(self.RUN.overlap, 0, 1, 'RUN.overlap')
         self._check_int(self.RUN.delay, 0, None, 'RUN.delay')
         self._check_int_gt(self.RUN.accum_frames, 0, 'RUN.accum_frames')
@@ -450,13 +461,27 @@ class Cfg:
 
         # VISUAL
         self._check_int(self.VISUAL.enable, 0, 1, 'VISUAL.enable')
-        self._check_int(self.VISUAL.save, 0, 3, 'VISUAL.save')
-        self._check_int(self.VISUAL.label, 0, 1, 'VISUAL.label')
+        s = self.VISUAL.save
+        if not isinstance(s, list) or not all(x in (1, 2, 3) for x in s):
+            raise ValueError(f"VISUAL.save 须为 [1,2,3] 子集列表(1=GIF 2=PNG 3=MP4,空=不落盘), got {s}")
+        if self.VISUAL.range is not None:
+            r = self.VISUAL.range
+            if not isinstance(r, list) or len(r) != 4 or \
+                    not all(isinstance(x, (int, float)) for x in r):
+                raise ValueError(f"VISUAL.range 须为 [x_lo, x_hi, y_lo, y_hi] 数值列表, got {r}")
+            if not (r[0] < r[1] and r[2] < r[3]):
+                raise ValueError(f"VISUAL.range 须 lo < hi, got {r}")
+        if self.VISUAL.test_val is not None:
+            tv = self.VISUAL.test_val
+            if not isinstance(tv, list) or not all(isinstance(s, str) for s in tv):
+                raise ValueError(f"VISUAL.test_val 须为序列名字符串列表, got {tv}")
+        self._check_int(self.VISUAL.cam_rotate, 0, 3, 'VISUAL.cam_rotate')
         for k, v in self.VISUAL.show.items():
             self._check_int(v, 0, 1, f'VISUAL.show.{k}')
-        self._check_int(self.VISUAL.metrics, 0, 1, 'VISUAL.metrics')
-        for k, v in self.VISUAL.metrics_show.items():
-            self._check_int(v, 0, 1, f'VISUAL.metrics_show.{k}')
+        # METRICS
+        self._check_int(self.METRICS.enable, 0, 1, 'METRICS.enable')
+        for k, v in self.METRICS.show.items():
+            self._check_int(v, 0, 1, f'METRICS.show.{k}')
 
         # EVALUATE
         self._check_int(self.EVALUATE.type, 0, 2, 'EVALUATE.type')

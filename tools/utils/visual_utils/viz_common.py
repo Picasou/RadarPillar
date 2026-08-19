@@ -138,6 +138,7 @@ def draw_box_bev(ax, box, color, label=None, linestyle='-', score=None,
             linewidth=linewidth, linestyle=linestyle, zorder=zorder)  # 朝向(车头)
     if label:
         text = '%s %.2f' % (label, score) if score is not None else label
-        ax.text(x, y + max(dy, 1.2) * 0.7 + 0.6, text, fontsize=8,
+        # 用 c(已随 swap_xy 互换的中心)而非原始 x/y,swap 模式下文字才落在框正上方
+        ax.text(c[0], c[1] + max(dy, 1.2) * 0.7 + 0.6, text, fontsize=8,
                 color='#0b0b0b', ha='center', zorder=zorder + 1)
         ax.texts[-1].set_path_effects([pe.withStroke(linewidth=3, foreground='white')])

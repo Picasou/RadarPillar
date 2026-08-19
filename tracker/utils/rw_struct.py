@@ -191,9 +191,16 @@ def struct_read(filepath, c_item, limit=None):
     return c_list
 
 
-def struct_write(filepath, c_list):
-    """将结构体列表写入 bin 文件"""
+def struct_write(filepath, c_list, heads=None, head_filepath=None):
+    """
+    结构体写出: c_list → bin; heads 非空时写 head_filepath 帧头文件(仿数据源 0200/0201 布局)
+    """
+    os.makedirs(os.path.dirname(filepath) or '.', exist_ok=True)
+    if heads is not None and head_filepath is not None:
+        os.makedirs(os.path.dirname(head_filepath) or '.', exist_ok=True)
+        with open(head_filepath, 'wb') as f:
+            for h in heads:
+                f.write(h.encode())
     with open(filepath, 'wb') as f:
         for item in c_list:
-            payload = item.encode()
-            f.write(payload)
+            f.write(item.encode())

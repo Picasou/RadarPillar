@@ -52,7 +52,9 @@ def pick_frames(ds, ids, num, split='training'):
     return _pick(gt_by_id, num)
 
 
-def plot_frame(ds, sid, split, out_dir, color_by='doppler_gnd', pred=None):
+def plot_frame(ds, sid, split, out_dir, color_by='doppler_gnd', pred=None,
+               x_range=None, y_range=None, cbar_range=None, border_black=False,
+               tracks=None):
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
@@ -93,7 +95,8 @@ def plot_frame(ds, sid, split, out_dir, color_by='doppler_gnd', pred=None):
                  + pts[:, cols['dop_y_gnd']] * np.sin(azi))
         else:
             c = pts[:, cols[color_by]]
-        vmax = np.percentile(np.abs(c), 99) or 1.0
+        # cbar_range 传入则固定色标(序列动画防逐帧跳变),否则逐帧 p99 自适应
+        vmax = cbar_range if cbar_range else (np.percentile(np.abs(c), 99) or 1.0)
         norm = Normalize(vmin=-vmax, vmax=vmax)
         for ax in panels:  # 两个 BEV 面板各画一份(scatter 不能跨 axes 复用)
             sc = ax.scatter(pts[:, 1], pts[:, 0], c=c, cmap=cmap, norm=norm,
@@ -123,13 +126,22 @@ def plot_frame(ds, sid, split, out_dir, color_by='doppler_gnd', pred=None):
                          zorder=4, swap_xy=True)
             n_pred += 1
 
+    # 航迹框(ax_pred, mod=2 全链路): 同款细实线 + 框旁航迹 ID(与 pred 互斥使用)
+    n_trk = 0
+    if tracks:
+        for b, n, tid in tracks:
+            color = CLASS_COLOR.get(str(n), '#eda100')
+            draw_box_bev(ax_pred, b, color, linestyle='-', linewidth=1.2,
+                         zorder=4, swap_xy=True, label='#%d' % tid)
+            n_trk += 1
+
     # ego 位置
     for ax in panels:
         ax.scatter([0], [0], marker='o', s=5, color=INK, zorder=5)
     ax_gt.annotate('ego', (0, 0), textcoords='offset points', xytext=(6, 6),
                    fontsize=8, color=INK2)
 
-    # 范围:点与框联合外沿 + 3m 边距,两面板同 range 便于对比; 等比
+    # 范围:自适应联合外沿 + 3m 边距; x_range/y_range 传入则固定(序列动画防跳变),两面板同 range; 等比
     if pts.shape[0] or boxes.shape[0]:
         xs = np.concatenate([pts[:, 0], boxes[:, 0]]) if pts.shape[0] else boxes[:, 0]
         ys = np.concatenate([pts[:, 1], boxes[:, 1]]) if pts.shape[0] else boxes[:, 1]
@@ -138,6 +150,10 @@ def plot_frame(ds, sid, split, out_dir, color_by='doppler_gnd', pred=None):
         ylo, yhi = min(ys.min(), 0) - m, ys.max() + m
     else:
         xlo, xhi, ylo, yhi = -10, 10, -10, 10
+    if x_range:
+        xlo, xhi = x_range
+    if y_range:
+        ylo, yhi = y_range
     for ax in panels:
         ax.set_xlim(ylo, yhi)          # 显示横轴 = y
         ax.set_ylim(xlo, xhi)          # 显示纵轴 = x
@@ -151,24 +167,34 @@ def plot_frame(ds, sid, split, out_dir, color_by='doppler_gnd', pred=None):
         ax.grid(True, color=GRID, linewidth=0.6, alpha=0.9)
         ax.set_axisbelow(True)
 
-    # 图例: 全 4 类固定槽位色, 两面板各带一份; title 带各自目标数, 一眼看出 GT/pred 数量差
+    # 图例: 全 4 类固定槽位色, 面板外共享一份(figure 底部), 不遮挡目标; title 带各自目标数
     class_handles = [Line2D([0], [0], color=CLASS_COLOR[k], linewidth=2,
                             label=CLASS_LABEL.get(k, k))
                      for k in ['1', '2', '4', '5']]
-    for ax, ttl in zip(panels, ['GT (%d)' % boxes.shape[0], 'Pred (%d)' % n_pred]):
-        ax.legend(handles=class_handles, loc='upper right', fontsize=8,
-                  framealpha=0.9, edgecolor=GRID, labelcolor=INK2,
-                  title='Class', title_fontsize=9)
+    for ax, ttl in zip(panels, ['GT (%d)' % boxes.shape[0],
+                                'Trk (%d)' % n_trk if tracks is not None else 'Pred (%d)' % n_pred]):
         ax.set_title(ttl, fontsize=10, color=INK2, pad=8)
+    fig.legend(handles=class_handles, loc='upper center', ncol=4, fontsize=9,
+               framealpha=0.9, edgecolor=GRID, labelcolor=INK2,
+               title='Class', title_fontsize=9, bbox_to_anchor=(0.5, -0.02))
 
-    fig.suptitle('MSR %s %s  |  %d GT, %d pred  |  ego %.1f m/s'
-                 % (split, sid, boxes.shape[0], n_pred, param['ego_speed']),
+    n_out = n_trk if tracks is not None else n_pred
+    fig.suptitle('MSR %s %s  |  %d GT, %d %s  |  ego %.1f m/s'
+                 % (split, sid, boxes.shape[0], n_out,
+                    'trk' if tracks is not None else 'pred', param['ego_speed']),
                  fontsize=12, color=INK, y=0.99)
+
+    # border_black: 最后一个面板(BEV+pred)黑色粗边框(split 来源标记);
+    # 只动 spines 不改 figure 尺寸,保证序列 PNG 尺寸一致,GIF 合成不异常
+    if border_black:
+        for s in ax_pred.spines.values():
+            s.set_color('black')
+            s.set_linewidth(3.5)
 
     out = out_dir / ('%s_bev_%s.png' % (split, sid))
     fig.savefig(out, dpi=140, facecolor='white', bbox_inches='tight')
     plt.close(fig)
-    return out, pts.shape[0], boxes.shape[0], n_pred, sorted(set(str(n) for n in names))
+    return out, pts.shape[0], boxes.shape[0], n_out, sorted(set(str(n) for n in names))
 
 
 def main():

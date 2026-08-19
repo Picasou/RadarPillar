@@ -34,3 +34,5 @@ doc/
 
 # Claude auto-managed per-user memory (会话级，不入库)
 .claude/projects/
+
+store/

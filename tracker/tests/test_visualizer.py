@@ -9,7 +9,8 @@ from PIL import Image
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from tracker.schemas import Cfg, FRAME, FrameProc, GT, GTs, Objs, Obj, PTs, Trk, TrkHistory, VDD
 from tracker import visualizer
-from tracker.visualizer import Visualizer, _box_corners
+from tracker.visualizer import Visualizer
+from viz_common import draw_box_bev
 
 CFG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'cfg', 'cfg.yaml')
 
@@ -64,48 +65,48 @@ def test_cfg_visual_parse_and_valid():
     cfg = Cfg.get_cfg(CFG_PATH)
     assert cfg.isvalid()
     assert cfg.VISUAL.enable == 1
-    assert cfg.VISUAL.save == 3
-    assert cfg.VISUAL.label == 1
+    assert cfg.VISUAL.save == [2, 3]
     assert set(cfg.VISUAL.show) == {'points', 'tracks', 'objs', 'gts'}
 
 
 def test_cfg_visual_save_out_of_range():
-    cfg = make_cfg(save=4)
+    cfg = make_cfg(save=[4])
     with pytest.raises(ValueError):
         cfg.isvalid()
 
 
-# ---------------- 角点几何 ----------------
+# ---------------- 复用件 draw_box_bev 冒烟 ----------------
 
-def test_box_corners_axis_aligned():
-    c = _box_corners(0, 0, 4, 2, 0.0)
-    assert c.shape == (4, 2)
-    assert np.allclose(c[:, 0].max(), 2.0)   # length/2 沿 x
-    assert np.allclose(c[:, 1].max(), 1.0)   # width/2 沿 y
-
-
-def test_box_corners_rotated_90():
-    c = _box_corners(0, 0, 4, 2, np.pi / 2)
-    assert np.allclose(c[:, 0].max(), 1.0)   # 转 90° 后 length 沿 y
-    assert np.allclose(c[:, 1].max(), 2.0)
+def test_draw_box_bev_artists():
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots()
+    draw_box_bev(ax, [0, 0, 0, 4, 2, 1.5, 0.0], '#f1c40f', linestyle='-',
+                 linewidth=1.2, swap_xy=True)
+    # 边线 Polygon + 朝向线 共 2 个 artist; swap_xy 后 u=y 取 ±dy/2, v=x 取 ±dx/2
+    assert len(ax.patches) == 1 and len(ax.lines) == 1
+    corners = ax.patches[0].get_xy()[:4]
+    assert np.allclose(np.abs(corners).max(0), [1.0, 2.0])
+    plt.close(fig)
 
 
 # ---------------- 出图落盘 ----------------
 
 def test_run_png(tmp_path, monkeypatch):
     monkeypatch.setattr(visualizer, 'OUT_ROOT', tmp_path)
-    viz = Visualizer(make_cfg(enable=1, save=2))
+    viz = Visualizer(make_cfg(enable=1, save=[2]))
     viz.begin_seq('seqA')
-    viz.run(make_frame(), [make_trk(20, 5)])
+    viz.run(make_frame(), make_frame().objs.Lst, [make_trk(20, 5)])
     png = tmp_path / 'seqA' / '000001.png'
     assert png.exists()
 
 
 def test_run_enable_off(tmp_path, monkeypatch):
     monkeypatch.setattr(visualizer, 'OUT_ROOT', tmp_path)
-    viz = Visualizer(make_cfg(enable=0, save=3))
+    viz = Visualizer(make_cfg(enable=0, save=[1, 3]))
     viz.begin_seq('seqA')
-    viz.run(make_frame(), [make_trk(20, 5)])
+    viz.run(make_frame(), make_frame().objs.Lst, [make_trk(20, 5)])
     viz.on_seq_end()
     assert not (tmp_path / 'seqA').exists()
     assert not list(tmp_path.glob('*.gif'))
@@ -113,21 +114,49 @@ def test_run_enable_off(tmp_path, monkeypatch):
 
 def test_gif(tmp_path, monkeypatch):
     monkeypatch.setattr(visualizer, 'OUT_ROOT', tmp_path)
-    viz = Visualizer(make_cfg(enable=1, save=1))
+    viz = Visualizer(make_cfg(enable=1, save=[1]))
     viz.begin_seq('seqB')
-    viz.run(make_frame('000001'), [make_trk(20, 5)])
-    viz.run(make_frame('000002'), [make_trk(21, 6)])
+    viz.run(make_frame('000001'), make_frame().objs.Lst, [make_trk(20, 5)])
+    viz.run(make_frame('000002'), make_frame().objs.Lst, [make_trk(21, 6)])
     viz.on_seq_end()
-    gif = tmp_path / 'seqB.gif'
+    gif = tmp_path / 'seqB' / 'seqB.gif'
     assert gif.exists()
     with Image.open(gif) as im:
         assert im.n_frames == 2
 
 
+def test_mp4(tmp_path, monkeypatch):
+    monkeypatch.setattr(visualizer, 'OUT_ROOT', tmp_path)
+    viz = Visualizer(make_cfg(enable=1, save=[3]))
+    viz.begin_seq('seqD')
+    viz.run(make_frame('000001'), make_frame().objs.Lst, [make_trk(20, 5)])
+    viz.run(make_frame('000002'), make_frame().objs.Lst, [make_trk(21, 6)])
+    viz.on_seq_end()
+    mp4 = tmp_path / 'seqD' / 'seqD.mp4'
+    assert mp4.exists() and mp4.stat().st_size > 0
+    assert not list(tmp_path.glob('*.gif'))       # 只存 MP4, 不产 GIF
+
+
 def test_save0_no_disk(tmp_path, monkeypatch):
     monkeypatch.setattr(visualizer, 'OUT_ROOT', tmp_path)
-    viz = Visualizer(make_cfg(enable=1, save=0))
+    viz = Visualizer(make_cfg(enable=1, save=[]))
     viz.begin_seq('seqC')
-    viz.run(make_frame(), [make_trk(20, 5)])
+    viz.run(make_frame(), make_frame().objs.Lst, [make_trk(20, 5)])
     viz.on_seq_end()
     assert list(tmp_path.iterdir()) == []
+
+
+def test_test_val_black_border(tmp_path, monkeypatch):
+    monkeypatch.setattr(visualizer, 'OUT_ROOT', tmp_path)
+    # 命中 test/val: 边框像素为黑
+    viz = Visualizer(make_cfg(enable=1, save=[2]))
+    viz.begin_seq('seqD', is_test=True)
+    viz.run(make_frame(), make_frame().objs.Lst, [make_trk(20, 5)])
+    im = np.asarray(Image.open(tmp_path / 'seqD' / '000001.png').convert('L'))
+    assert im[2, 2] < 50 and im[2, -3] < 50            # 左上/右上角黑
+    # 非命中: 无黑边
+    viz2 = Visualizer(make_cfg(enable=1, save=[2]))
+    viz2.begin_seq('seqE')
+    viz2.run(make_frame(), make_frame().objs.Lst, [make_trk(20, 5)])
+    im2 = np.asarray(Image.open(tmp_path / 'seqE' / '000001.png').convert('L'))
+    assert im2[2, 2] > 200                             # 左上角白
