@@ -64,7 +64,7 @@ def test_cfg_visual_parse_and_valid():
     cfg = Cfg.get_cfg(CFG_PATH)
     assert cfg.isvalid()
     assert cfg.VISUAL.enable == 1
-    assert cfg.VISUAL.save == 2
+    assert cfg.VISUAL.save == 3
     assert cfg.VISUAL.label == 1
     assert set(cfg.VISUAL.show) == {'points', 'tracks', 'objs', 'gts'}
 

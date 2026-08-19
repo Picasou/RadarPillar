@@ -38,6 +38,12 @@ class Updater:
         self._udt_miantain(matches, cycle_s)
         self._udt_coasting(matches.unmatched_trks)
 
+    def predict(self, trks: list[Trk], vdd, cycle_s: float) -> None:
+        """
+        航迹预测: 委托 Filter.predict (ego 补偿 + 状态外推)
+        """
+        self.filter.predict(trks, vdd, cycle_s)
+
     def _udt_miantain(self, matches: Matches, cycle_s: float) -> None:
         for trk, obj in matches.matched:
             trk.doppler_mps = getattr(obj, 'doppler', 0.0)   # dpl update

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 
 from .schemas import Cfg, VDS, FRAME, FRAMEs, Trk
@@ -50,7 +51,7 @@ class Tracker:
                 self.step(frame, frames, self.trks, vds, i)
 
                 if run_mode != 0:
-                    tracks_list.append([t.copy() for t in self.trks if t.obstacle_prob])
+                    tracks_list.append([copy.deepcopy(t) for t in self.trks if t.obstacle_prob])
                     if eval_mode == 1:
                         self.evaluator.online(frame)
 
@@ -69,7 +70,7 @@ class Tracker:
     def step(self, frame: FRAME, frames: FRAMEs, trks: list[Trk], vds: VDS, i: int) -> None:
         # 1. 点云准备
         frame.proc.points = c_points_prepare(frames, i, vds, self.accum_frames, self.point_cloud_range)
-        frame.frame_id = str(frame.pts.Lst[0].frame) if frame.pts.Lst else ''
+        frame.frame_id = '%06d' % i      # bin 点级 frame 号未填(恒 0), 用帧序号
 
         # 2. 检测
         objs = self.detector.run(frame)

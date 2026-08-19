@@ -8,6 +8,7 @@ class Evaluator:
     out: MOT 指标 (MOTA / ID 切换 / 碎片率) 报告或可视化
     """
 
-    def __init__(self, gt_dir='data/tracker_gt', trk_dir='output/tracks'):
-        self.gt_dir = Path(gt_dir)
-        self.trk_dir = Path(trk_dir)
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.gt_dir = Path('data/tracker_gt')
+        self.trk_dir = Path('output/tracks')
