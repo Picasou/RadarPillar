@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from .schemas import Cfg, VDS, FRAME, FRAMEs, Trk
 from .utils.common import (load_data_cfg, c_points_prepare)
 from . import loader
@@ -8,6 +10,7 @@ from . import matcher
 from . import updater
 from . import manager
 from . import evaluator
+from . import visualizer
 
 
 class Tracker:
@@ -27,20 +30,23 @@ class Tracker:
         self.matcher   = matcher.Matcher(self.cfg)
         self.manager   = manager.TrackerManager(self.cfg)
         self.evaluator = evaluator.Evaluator(self.cfg)
+        self.visualizer = visualizer.Visualizer(self.cfg, class_names=self.detector.class_names)
 
     def run(self) -> None:
         run_mode  = self.cfg.RUN.mode       # 0=display  1=normal  2=regress
         eval_mode = self.cfg.EVALUATE.type  # 0=off  1=online  2=offline
-        is_visualize = (self.cfg.VISUALIZE.enable == 1)
+        is_visualize = (self.cfg.VISUAL.enable == 1)
 
         history = []
         for path in self.cfg.DATA.paths:
             frames = self.loader.getframes(path)
             vds    = self.loader.getvds(path)
+            if is_visualize:
+                self.visualizer.begin_seq(Path(path).name)
 
             tracks_list = []
             for i, frame in enumerate(frames.Lst):
-                
+
                 self.step(frame, frames, self.trks, vds, i)
 
                 if run_mode != 0:
@@ -48,14 +54,14 @@ class Tracker:
                     if eval_mode == 1:
                         self.evaluator.online(frame)
 
-                if is_visualize:
-                    self.evaluator.visualize(frame)
-
                 if run_mode == 2 and self.cfg.RUN.overlap == 1:
                     self.write(frame)
 
             if run_mode != 0:
                 history.append((frame.gts, tracks_list.copy()))
+
+            if is_visualize:
+                self.visualizer.on_seq_end()
 
         if eval_mode == 2:
             self.evaluator.evaluate(history)
@@ -81,3 +87,5 @@ class Tracker:
         self.manager.run(matches, trks, vds.cycle_s)
 
         # 7. 可视化
+        if self.cfg.VISUAL.enable == 1:
+            self.visualizer.run(frame, trks)

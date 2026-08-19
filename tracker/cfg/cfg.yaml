@@ -27,15 +27,15 @@ RUN:
 # ==================================================
 DATA:
   paths:
-    - /path/to/seq1
-    - /path/to/seq2
+    - /mnt/d/DataSet/.seqdata/自车静止_二轮车_运动_023_20260414_154151_441
+    - /mnt/d/DataSet/.seqdata/自车静止_二轮车_运动_024_20260414_154255_840
 
 # ==================================================
 # -------------------- 模型配置 --------------------
 # ==================================================
 MODEL:
-  cfg: ./tools/cfgs/vod_models/vod_radarpillar.yaml
-  ckpt: ./checkpoints/vod_radarpillar.pth
+  cfg: ./output/train_log/vod/202608141442_rpillar_head_b1_center_head_b1_center/head_b1_center.yaml
+  ckpt: ./output/train_log/vod/202608141442_rpillar_head_b1_center_head_b1_center/best.pth
   score_thresh: 0.3
 # device: auto | cuda | cpu (默认 auto: 有 GPU 走 cuda, 无 GPU 自动落 cpu)
   device: auto
@@ -117,8 +117,14 @@ MATCH:
 # ==================================================
 # -------------------- 可视化配置 --------------------
 # ==================================================
-VISUALIZE:
+VISUAL:
+# enable: 总开关 0=完全不出图(RUN.mode 任意值都不画)  1=可视化
   enable: 1
+# save: 落盘格式 0=不保存  1=GIF  2=PNG序列  3=GIF+PNG
+  save: 2
+# label: 框上标注 0=不标  1=仅航迹ID(对"框上不写字"规范的唯一豁免)
+  label: 1
+# show: 画面元素开关(tracks/objs 组合出 航迹|目标|都显示)
   show:
     points: 1
     tracks: 1
@@ -153,7 +159,7 @@ VISUALIZE:
 # ==================================================
 EVALUATE:
 # type: 0=off  1=online  2=offline
-  type: 2
+  type: 0
   report: 1
   template: default
 

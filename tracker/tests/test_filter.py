@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from tracker.schemas import (
     Cfg, CfgRun, CfgVds, CfgData, CfgModel,
     CfgFilter, CfgFilterPara, CfgFilterParaKf,
-    CfgMatch, CfgVisualize, CfgEvaluate, CfgManager,
+    CfgMatch, CfgVisual, CfgEvaluate, CfgManager,
     Obj, Trk, TrkHistory, Matches, VDD,
 )
 from tracker.filter import _get_state, _write_state, _get_z
@@ -65,10 +65,10 @@ def make_cfg(filter_type=2):
                       'markov': [[0.95, 0.05], [0.05, 0.95]]},
         )),
         MATCH=CfgMatch(gap_type=1, gap_dim=2, gap_weight=[1.0, 1.0, 1.0], thresh=3.0),
-        VISUALIZE=CfgVisualize(enable=1,
-                               show={'points': 1, 'tracks': 1, 'objs': 1, 'gts': 1},
-                               metrics=1,
-                               metrics_show={'tp': 1, 'fp': 1, 'fn': 1, 'ids': 1, 'mota': 1}),
+        VISUAL=CfgVisual(enable=1, save=2, label=1,
+                         show={'points': 1, 'tracks': 1, 'objs': 1, 'gts': 1},
+                         metrics=1,
+                         metrics_show={'tp': 1, 'fp': 1, 'fn': 1, 'ids': 1, 'mota': 1}),
         EVALUATE=CfgEvaluate(type=2, report=1, template='default'),
         MANAGER=CfgManager(birth_heat=3, death_heat=3, dt=0.1, history_horizon=4.0,
                            adapter={'smooth': 1, 'markov': 1}),

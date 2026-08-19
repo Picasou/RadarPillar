@@ -56,7 +56,7 @@ tracker.py ->
 | `CfgModel` | 模型配置（cfg/ckpt/score_thresh） |
 | `CfgFilter` / `CfgFilterPara` / `CfgFilterParaKf` | 滤波配置（type/para） |
 | `CfgMatch` | 关联配置（gap_type/gap_dim/gap_weight/thresh） |
-| `CfgVisualize` | 可视化配置（enable/show/metrics） |
+| `CfgVisual` | 可视化配置（enable/save/label/show/metrics） |
 | `CfgEvaluate` | 性能评估配置（type/report/template） |
 | `CfgManager` | 航迹管理配置（heat/dt/history_horizon/adapter） |
 

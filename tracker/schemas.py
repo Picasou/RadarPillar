@@ -306,9 +306,11 @@ class CfgMatch:
 
 
 @dataclass
-class CfgVisualize:
-    """可视化配置 - 对齐 VISUALIZE。"""
-    enable: int
+class CfgVisual:
+    """可视化配置 - 对齐 VISUAL。"""
+    enable: int                 # 总开关: 0=完全不出图  1=可视化
+    save: int                   # 0=不保存  1=GIF  2=PNG序列  3=GIF+PNG
+    label: int                  # 框上标注: 0=不标  1=仅航迹ID
     show: dict                  # points/tracks/objs/gts
     metrics: int
     metrics_show: dict          # 各项指标开关
@@ -341,7 +343,7 @@ class Cfg:
     MODEL: CfgModel
     FILTER: CfgFilter
     MATCH: CfgMatch
-    VISUALIZE: CfgVisualize
+    VISUAL: CfgVisual
     EVALUATE: CfgEvaluate
     MANAGER: CfgManager
 
@@ -356,7 +358,7 @@ class Cfg:
         _MAP = {
             'RUN': CfgRun, 'DATA': CfgData, 'MODEL': CfgModel,
             'FILTER': CfgFilter, 'MATCH': CfgMatch,
-            'VISUALIZE': CfgVisualize, 'EVALUATE': CfgEvaluate,
+            'VISUAL': CfgVisual, 'EVALUATE': CfgEvaluate,
             'MANAGER': CfgManager,
             'vds': CfgVds, 'para': CfgFilterPara,
             'para_kf': CfgFilterParaKf, 'para_abf': dict,
@@ -446,13 +448,15 @@ class Cfg:
                 raise ValueError(f"MATCH.gap_weight[{i}] must be >=0 number, got {w}")
         self._check_float(self.MATCH.thresh, 0, None, 'MATCH.thresh')
 
-        # VISUALIZE
-        self._check_int(self.VISUALIZE.enable, 0, 1, 'VISUALIZE.enable')
-        for k, v in self.VISUALIZE.show.items():
-            self._check_int(v, 0, 1, f'VISUALIZE.show.{k}')
-        self._check_int(self.VISUALIZE.metrics, 0, 1, 'VISUALIZE.metrics')
-        for k, v in self.VISUALIZE.metrics_show.items():
-            self._check_int(v, 0, 1, f'VISUALIZE.metrics_show.{k}')
+        # VISUAL
+        self._check_int(self.VISUAL.enable, 0, 1, 'VISUAL.enable')
+        self._check_int(self.VISUAL.save, 0, 3, 'VISUAL.save')
+        self._check_int(self.VISUAL.label, 0, 1, 'VISUAL.label')
+        for k, v in self.VISUAL.show.items():
+            self._check_int(v, 0, 1, f'VISUAL.show.{k}')
+        self._check_int(self.VISUAL.metrics, 0, 1, 'VISUAL.metrics')
+        for k, v in self.VISUAL.metrics_show.items():
+            self._check_int(v, 0, 1, f'VISUAL.metrics_show.{k}')
 
         # EVALUATE
         self._check_int(self.EVALUATE.type, 0, 2, 'EVALUATE.type')
