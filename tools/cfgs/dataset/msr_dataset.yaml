@@ -37,7 +37,7 @@ DATA_AUGMENTOR:
           DB_INFO_PATH:
               - msr_dbinfos_training.pkl
           PREPARE: {
-             filter_by_min_points: ['1:5', '4:5', '5:3'],
+             filter_by_min_points: ['1:5', '2:3', '4:5', '5:3'],
              filter_by_difficulty: [-1],
           }
 

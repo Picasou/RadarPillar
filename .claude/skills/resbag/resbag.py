@@ -203,6 +203,13 @@ def _make_locked(output_root, dataset, tag, name, cfg_path, model,
             shutil.rmtree(dst_asset)
         shutil.copytree(src_asset, dst_asset)
 
+    # viz/ 整树硬复制（full_chain viz step 产物: best.pth 的 train/test 各 VIZ_NUM 帧
+    # GT+pred 叠加图;旧实验无此目录则跳过）
+    src_viz = output_root / "viz"
+    if src_viz.exists():
+        shutil.copytree(src_viz, resbag_dir / "viz",
+                        dirs_exist_ok=True)
+
     # ── 3. 算 params / flops（独立实现，try 兜底）─────────────
     params_m, trainable_m, flops_g = _compute_params_flops(
         cfg_path, batch_size

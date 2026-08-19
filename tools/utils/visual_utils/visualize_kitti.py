@@ -1,12 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""KITTI 系(KITTI / VoD / Astyx)可视化脚本 — visualize_msr.py 同款蓝本。
+"""KITTI 系(KITTI / VoD / Astyx)可视化脚本 — visualize_msr.py 同款格式。
 
-左=相机图(仅上下文,不投影),右=BEV 点云 + GT 框(实线) + 预测框(虚线,需 --ckpt)。
-- 点着色:  used_feature_list 中速度/多普勒列 diverging 对称色标,rcs/intensity 顺序色
-- GT/pred: 同类同色,实线=GT 虚线=pred,框上直接标类名(pred 带 score)
-- 选帧:    MSR 式智能选帧(分段覆盖+类多样性+签名去重),train/val 各抽 --num 帧
-- 输出:    默认 output/res_viz/<cfg名>/;图名 <split>_bev_<idx>.png
+三面板: [相机 | BEV+GT | BEV+pred],GT 与 pred 分面板独立展示,便于对比。
+- BEV 朝向: x 前(屏幕上) / y 左(屏幕左),车规惯例,与 visualize_msr.py 一致
+- 点着色:   used_feature_list 中速度/多普勒列 diverging 对称色标,rcs/intensity 顺序色
+- 框样式:   GT 与 pred 同款细实线空心(区分只靠分面板+title 计数),与 visualize_msr.py 一致
+- 类色:     避开点云蓝/红色域(黄/品红/草绿/青绿族),框与点云色相分离
+- 选帧:     MSR 式智能选帧(分段覆盖+类多样性+签名去重),train/val 各抽 --num 帧
+- 输出:     默认 output/res_viz/<cfg名>/;图名 <split>_bev_<idx>.png
 
 用法:
   # 纯数据模式(抽查)
@@ -24,9 +26,10 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # repo 根
 
-# categorical 固定槽位(按 CLASS_NAMES 出现顺序分配;同类 GT/pred 同色,虚实区分)
-PALETTE = ['#2a78d6', '#eb6834', '#1baf7a', '#9b59b6', '#eda100',
-           '#e34948', '#00a6d6', '#8a7d3b', '#c8b8db', '#52514e']
+# categorical 固定槽位(按 CLASS_NAMES 出现顺序分配;同类 GT/pred 同色)
+# 黄/品红/草绿/青绿族,避开点云 diverging(蓝↔红)色域 — 与 visualize_msr.py 同族
+PALETTE = ['#f1c40f', '#d63ee0', '#7cb342', '#00b3a4', '#e67e22',
+           '#9b59b6', '#f39c12', '#8a7d3b', '#c8b8db', '#7f8c8d']
 INK, INK2, MUTED, GRID = '#0b0b0b', '#52514e', '#898781', '#e1e0d9'
 DIV_BLUE, DIV_GRAY, DIV_RED = '#2a78d6', '#f0efec', '#e34948'   # diverging 蓝↔灰↔红
 SEQ_LOW, SEQ_HIGH = '#f0efec', '#2f6f9f'                          # 顺序色(弱→强)
@@ -82,19 +85,21 @@ def split_color(base, feat_names, color_by):
 
 def plot_frame(base, sid, split, out_dir, feat_names, color_by=None, pred=None,
                class_colors=None, point_range=None):
-    """单帧出图。pred: {sample_id: {'pred_boxes','pred_scores','pred_labels'}} 中本帧的项。"""
+    """单帧出图(三面板: 相机 | GT | pred, 与 visualize_msr.py 同格式)。
+    pred: {sample_id: {'pred_boxes','pred_scores','pred_labels'}} 中本帧的项。"""
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
     from matplotlib.colors import LinearSegmentedColormap, Normalize
+    from viz_common import draw_box_bev
 
     pts = base.get_lidar(sid)
     boxes, names = get_gt(base, sid)
     col, cby, diverging = split_color(base, feat_names, color_by)
     class_colors = class_colors or {}
 
-    # ---- 左:相机图(KITTI png / VoD jpg,仅上下文) ----
+    # ---- 布局: [相机 | BEV+GT | BEV+pred] ----
     img_file = None
     for ext in ('.png', '.jpg'):
         cand = base.root_split_path / 'image_2' / ('%s%s' % (sid, ext))
@@ -102,18 +107,20 @@ def plot_frame(base, sid, split, out_dir, feat_names, color_by=None, pred=None,
             img_file = cand
             break
     if img_file is not None:
-        fig, (ax_img, ax) = plt.subplots(
-            1, 2, figsize=(16, 6.2), width_ratios=[1.25, 1],
-            gridspec_kw={'wspace': 0.08})
+        fig, (ax_img, ax_gt, ax_pred) = plt.subplots(
+            1, 3, figsize=(20, 6.2), width_ratios=[1.15, 1, 1],
+            gridspec_kw={'wspace': 0.25})
         from skimage import io
         ax_img.imshow(io.imread(str(img_file)))
-        ax_img.set_title('Camera %s (context only)' % sid, fontsize=10, color=INK2, pad=8)
+        ax_img.set_title('Camera', fontsize=10, color=INK2, pad=8)
         ax_img.axis('off')
     else:
-        fig, ax = plt.subplots(figsize=(9, 7))
+        fig, (ax_gt, ax_pred) = plt.subplots(
+            1, 2, figsize=(14, 6.8), gridspec_kw={'wspace': 0.15})
+    panels = [ax_gt, ax_pred]
 
-    # ---- 右:BEV 点 ----
-    n_pred = 0
+    # ---- BEV 朝向: x 前(屏幕上) / y 左(屏幕左) ----
+    # 数据坐标取 (u,v)=(y,x) + invert_xaxis ⇒ 场景逆时针转 90°, tick 仍是真实 y 值
     if pts.shape[0]:
         c = pts[:, col] if pts.shape[1] > col else pts[:, 0]
         if diverging:
@@ -124,60 +131,68 @@ def plot_frame(base, sid, split, out_dir, feat_names, color_by=None, pred=None,
             cmap = LinearSegmentedColormap.from_list('seq', [SEQ_LOW, SEQ_HIGH])
             vmax = np.percentile(np.abs(c), 99) or 1.0
             norm = Normalize(vmin=np.percentile(c, 1), vmax=vmax)
-        sc = ax.scatter(pts[:, 0], pts[:, 1], c=c, cmap=cmap, norm=norm,
-                        s=6, linewidths=0, alpha=0.8, zorder=2)
-        cb = fig.colorbar(sc, ax=ax, fraction=0.046, pad=0.02)
+        for ax in panels:  # 两面板各画一份(scatter 不可跨 axes 复用)
+            sc = ax.scatter(pts[:, 1], pts[:, 0], c=c, cmap=cmap, norm=norm,
+                            s=6, linewidths=0, alpha=0.8, zorder=2)
+        cb = fig.colorbar(sc, ax=panels, fraction=0.046, pad=0.02)
         cb.set_label(cby, fontsize=9, color=INK2)
         cb.ax.tick_params(colors=MUTED, labelsize=8)
         cb.outline.set_edgecolor(GRID)
 
-    # ---- GT(实线) + pred(虚线) ----
-    from viz_common import draw_box_bev
+    # ---- GT(ax_gt) 与 pred(ax_pred): 同款细实线空心,分面板独立展示 ----
+    n_pred = 0
     for b, n in zip(boxes, names):
-        draw_box_bev(ax, b, class_colors.get(n, '#eda100'), label=n)
+        draw_box_bev(ax_gt, b, class_colors.get(n, '#eda100'),
+                     linewidth=1.2, zorder=4, swap_xy=True)
     if pred is not None and pred.get('pred_boxes') is not None:
         class_names = base.class_names
         for b, lb, sc_ in zip(pred['pred_boxes'], pred['pred_labels'], pred['pred_scores']):
             n = class_names[int(lb) - 1] if 0 < int(lb) <= len(class_names) else str(lb)
-            draw_box_bev(ax, b, class_colors.get(n, '#eda100'), label=n,
-                         linestyle='--', score=float(sc_), linewidth=1.5, zorder=3.5)
+            draw_box_bev(ax_pred, b, class_colors.get(n, '#eda100'),
+                         linewidth=1.2, zorder=4, swap_xy=True)
             n_pred += 1
 
-    ax.scatter([0], [0], marker='o', s=5, color=INK, zorder=5)
-    ax.annotate('ego', (0, 0), textcoords='offset points', xytext=(6, 6),
-                fontsize=8, color=INK2)
+    for ax in panels:
+        ax.scatter([0], [0], marker='o', s=5, color=INK, zorder=5)
+    ax_gt.annotate('ego', (0, 0), textcoords='offset points', xytext=(6, 6),
+                   fontsize=8, color=INK2)
 
-    # 范围:点与框联合外沿 + 3m 边距(cfg 的 POINT_CLOUD_RANGE 可覆盖),等比
+    # 范围:点与框联合外沿 + 3m 边距(cfg 的 POINT_CLOUD_RANGE 可覆盖),两面板同 range; 等比
     if point_range is not None:
         x0, y0, _z0, x1, y1, _z1 = point_range
-        ax.set_xlim(x0, x1)
-        ax.set_ylim(y0, y1)
+        xlo, xhi, ylo, yhi = x0, x1, y0, y1
     elif pts.shape[0] or boxes.shape[0]:
         xs = np.concatenate([p for p in (pts[:, 0], boxes[:, 0]) if p.size])
         ys = np.concatenate([p for p in (pts[:, 1], boxes[:, 1]) if p.size])
         m = 3.0
-        ax.set_xlim(min(xs.min(), 0) - m, xs.max() + m)
-        ax.set_ylim(min(ys.min(), 0) - m, ys.max() + m)
-    ax.set_aspect('equal')
-    ax.set_xlabel('x (m)', fontsize=9, color=INK2)
-    ax.set_ylabel('y (m)', fontsize=9, color=INK2)
-    ax.tick_params(colors=MUTED, labelsize=8)
-    for s in ax.spines.values():
-        s.set_color(GRID)
-    ax.grid(True, color=GRID, linewidth=0.6, alpha=0.9)
-    ax.set_axisbelow(True)
+        xlo, xhi = min(xs.min(), 0) - m, xs.max() + m
+        ylo, yhi = min(ys.min(), 0) - m, ys.max() + m
+    else:
+        xlo, xhi, ylo, yhi = -10, 10, -10, 10
+    for ax in panels:
+        ax.set_xlim(ylo, yhi)          # 显示横轴 = y
+        ax.set_ylim(xlo, xhi)          # 显示纵轴 = x
+        ax.invert_xaxis()              # +y 朝左
+        ax.set_aspect('equal')
+        ax.set_xlabel('y (m)', fontsize=9, color=INK2)
+        ax.set_ylabel('x (m)', fontsize=9, color=INK2)
+        ax.tick_params(colors=MUTED, labelsize=8)
+        for s in ax.spines.values():
+            s.set_color(GRID)
+        ax.grid(True, color=GRID, linewidth=0.6, alpha=0.9)
+        ax.set_axisbelow(True)
 
-    present = [n for n in class_colors if n in set(names)]
-    handles = [Line2D([0], [0], color=class_colors[n], linewidth=2, label=n)
-               for n in present]
-    if handles:
-        ax.legend(handles=handles, loc='upper right', fontsize=8, framealpha=0.9,
-                  edgecolor=GRID, labelcolor=INK2)
+    # 图例: 全类固定槽位色, 两面板各带一份; title 带各自目标数
+    class_handles = [Line2D([0], [0], color=class_colors[n], linewidth=2, label=n)
+                     for n in class_colors]
+    for ax, ttl in zip(panels, ['GT (%d)' % boxes.shape[0], 'Pred (%d)' % n_pred]):
+        ax.legend(handles=class_handles, loc='upper right', fontsize=8,
+                  framealpha=0.9, edgecolor=GRID, labelcolor=INK2,
+                  title='Class', title_fontsize=9)
+        ax.set_title(ttl, fontsize=10, color=INK2, pad=8)
 
-    ax.set_title('BEV points + GT(solid) + pred(dashed)  (color = %s)' % cby,
-                 fontsize=10, color=INK2, pad=8)
-    fig.suptitle('%s %s  idx=%s   |   %d points, %d GT, %d pred'
-                 % (Path(base.root_path).name, split, sid, pts.shape[0], boxes.shape[0], n_pred),
+    fig.suptitle('%s %s %s  |  %d GT, %d pred'
+                 % (Path(base.root_path).name, split, sid, boxes.shape[0], n_pred),
                  fontsize=12, color=INK, y=0.99)
 
     out = out_dir / ('%s_bev_%s.png' % (split, sid))

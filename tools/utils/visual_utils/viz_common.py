@@ -102,22 +102,40 @@ def infer_sample_ids(net, ds, sample_ids):
 
 
 def draw_box_bev(ax, box, color, label=None, linestyle='-', score=None,
-                 linewidth=2.0, zorder=4):
-    """BEV 单框绘制:Rectangle + 朝向短线 + 类名(可选带 score)。
+                 linewidth=2.0, zorder=4, facecolor='none', alpha=1.0, swap_xy=False):
+    """BEV 单框绘制:Polygon 角点法 + 朝向短线(+可选类名/score 文字)。
 
-    box: (7,) [x,y,z,dx,dy,dz,heading];虚线用于 pred,实线用于 GT。
+    box: (7,) [x,y,z,dx,dy,dz,heading];细实线空心用于 GT,粗虚线填充用于 pred。
+    角点法直接算 4 角坐标,不依赖 Rectangle 旋转锚点语义,任意朝向精确居中。
+    swap_xy=True: 画在 (u,v)=(y,x) 数据坐标(配合 ax.invert_xaxis 实现 x 朝上/y 朝左
+    的车规 BEV 朝向),角点与朝向自动随坐标互换。
+    朝向短线粗细随 linewidth(GT 细/pred 粗成对);facecolor+alpha 时边线保持不透明、
+    仅填充半透明,避免粗虚线被 alpha 洗淡。
     """
     import matplotlib.patheffects as pe
-    from matplotlib.patches import Rectangle
+    from matplotlib.patches import Polygon
 
     x, y, _z, dx, dy, _dz, hdg = box
-    rect = Rectangle((x - dx / 2, y - dy / 2), dx, dy, angle=np.degrees(hdg),
-                     linewidth=linewidth, edgecolor=color, facecolor='none',
-                     linestyle=linestyle, zorder=zorder)
-    rect.set_path_effects([pe.withStroke(linewidth=linewidth + 2, foreground='white')])
-    ax.add_patch(rect)
-    ax.plot([x, x + dx / 2 * np.cos(hdg)], [y, y + dy / 2 * np.sin(hdg)],
-            color=color, linewidth=1.2, linestyle=linestyle, zorder=zorder)  # 朝向(车头)
+    fwd = np.array([np.cos(hdg), np.sin(hdg)])   # 车头方向
+    left = np.array([-np.sin(hdg), np.cos(hdg)])  # 车身左侧
+    c = np.array([x, y])
+    corners = np.array([c + fwd * dx / 2 + left * dy / 2,
+                        c + fwd * dx / 2 - left * dy / 2,
+                        c - fwd * dx / 2 - left * dy / 2,
+                        c - fwd * dx / 2 + left * dy / 2])
+    tip = c + fwd * dx / 2
+    if swap_xy:
+        corners, tip, c = corners[:, ::-1], tip[::-1], c[::-1]
+
+    if facecolor not in (None, 'none'):  # 填充层(半透明),边线层单独画保持实色
+        ax.add_patch(Polygon(corners, closed=True, facecolor=facecolor,
+                             edgecolor='none', alpha=alpha, zorder=zorder - 0.1))
+    edge = Polygon(corners, closed=True, linewidth=linewidth, edgecolor=color,
+                   facecolor='none', linestyle=linestyle, zorder=zorder)
+    edge.set_path_effects([pe.withStroke(linewidth=linewidth + 2, foreground='white')])
+    ax.add_patch(edge)
+    ax.plot([c[0], tip[0]], [c[1], tip[1]], color=color,
+            linewidth=linewidth, linestyle=linestyle, zorder=zorder)  # 朝向(车头)
     if label:
         text = '%s %.2f' % (label, score) if score is not None else label
         ax.text(x, y + max(dy, 1.2) * 0.7 + 0.6, text, fontsize=8,

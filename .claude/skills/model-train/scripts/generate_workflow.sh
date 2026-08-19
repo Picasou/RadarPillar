@@ -12,6 +12,7 @@
 #   bash scripts/generate_workflow.sh --tasks-file tags.txt
 #
 # tag→路径约定可覆盖: --train-dir / --yaml-dir (默认 experiments/SH / experiments/YAML)
+#   训练脚本前缀可覆盖: --sh-prefix (默认 train_rpillar_, 如 MSR 用 train_)
 
 set -uo pipefail
 
@@ -21,6 +22,7 @@ MAX_RETRY=3
 DATASET="vod"
 TRAIN_DIR="experiments/SH"
 YAML_DIR="experiments/YAML"
+SH_PREFIX="train_rpillar_"
 EPOCHS=80
 BS=8
 TASK_OVERRIDE=""
@@ -33,6 +35,7 @@ while [[ $# -gt 0 ]]; do
         --dataset)      DATASET="$2"; shift 2 ;;
         --train-dir)    TRAIN_DIR="$2"; shift 2 ;;
         --yaml-dir)     YAML_DIR="$2"; shift 2 ;;
+        --sh-prefix)    SH_PREFIX="$2"; shift 2 ;;
         --epochs)       EPOCHS="$2"; shift 2 ;;
         --bs)           BS="$2"; shift 2 ;;
         --task)         TASK_OVERRIDE="$2"; shift 2 ;;
@@ -83,7 +86,7 @@ echo "[generate_workflow] TASK=$TASK  tags=(${TAGS[*]})  retry=$MAX_RETRY  epoch
 FULL_SCRIPTS=()
 for tag in "${TAGS[@]}"; do
     model="rpillar_${tag}"
-    sh="${SH_DIR}/train_rpillar_${tag}.sh"
+    sh="${SH_DIR}/${SH_PREFIX}${tag}.sh"
     cfg="${YAML_ROOT}/${tag}.yaml"
     [ -f "$sh" ]  || { echo "[generate_workflow] ERROR: 训练脚本不在 $sh" >&2; exit 1; }
     [ -f "$cfg" ] || { echo "[generate_workflow] ERROR: cfg 不在 $cfg" >&2; exit 1; }

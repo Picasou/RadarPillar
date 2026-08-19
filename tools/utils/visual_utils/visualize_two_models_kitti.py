@@ -24,7 +24,7 @@ legend block:
     列出 GT 类别色 + Pred model1 / model2 虚线样式. 不依赖外部共享 legend.
 
 用法:
-    python tools/utils/visual_utils/compare_two_models.py \
+    python tools/utils/visual_utils/visualize_two_models_kitti.py \
         --ckpt1_result <...>/model1/eval/.../result.pkl \
         --ckpt2_result <...>/model2/eval/.../result.pkl \
         --name1 "best_map52.56" --name2 "ckpt_epoch_100" \
@@ -47,14 +47,24 @@ import numpy as np
 from matplotlib.lines import Line2D
 from matplotlib.patches import Polygon
 
-# tools/visualize_eval.py 同款: 把 tools/ 加进 sys.path, 让 `utils.visual_utils.xxx` 可解析
+# vod 单帧绘制工具已内联进 tools/visualize_eval.py(原 visualize_vod_eval.py),
+# 此处 import 该文件复用同名函数
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from utils.visual_utils.visualize_vod_eval import (
-    CLASS_COLORS_GT, _box_corners_2d, _lidar_boxes_to_corners_3d,
-    _project_corners_to_image, _draw_3d_cube_on_image,
-    iter_sample_ids_uniform, load_frame_assets, lookup_predictions_for_frame,
-    BEV_XLIM, BEV_YLIM,
-)
+import importlib.util
+_spec = importlib.util.spec_from_file_location(
+    "visualize_eval", Path(__file__).resolve().parents[2] / "visualize_eval.py")
+_ve = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_ve)
+CLASS_COLORS_GT = _ve.CLASS_COLORS_GT
+_box_corners_2d = _ve._box_corners_2d
+_lidar_boxes_to_corners_3d = _ve._lidar_boxes_to_corners_3d
+_project_corners_to_image = _ve._project_corners_to_image
+_draw_3d_cube_on_image = _ve._draw_3d_cube_on_image
+iter_sample_ids_uniform = _ve.iter_sample_ids_uniform
+load_frame_assets = _ve.load_frame_assets
+lookup_predictions_for_frame = _ve.lookup_predictions_for_frame
+BEV_XLIM = _ve.BEV_XLIM
+BEV_YLIM = _ve.BEV_YLIM
 
 # Pred 颜色 (与 GT 区分)
 PRED1_COLOR = "#e74c3c"  # 红 - model1

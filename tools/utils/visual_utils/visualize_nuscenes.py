@@ -23,40 +23,43 @@ import matplotlib.patches as patches
 from matplotlib.lines import Line2D
 import numpy as np
 from pyquaternion import Quaternion
-from nuscenes.nuscenes import NuScenes
-from nuscenes.utils.data_classes import RadarPointCloud, Box
-from pcdet.datasets.nuscenes.nuscenes_utils import map_name_from_general_to_detection
+
+# nuscenes devkit 惰性导入: 本环境未装 devkit 时脚本仍可 --help/编译,
+# 真正用到数据时才报错(错误信息含安装指引)。
+
+
+def _require_devkit():
+    """惰性导入 nuscenes devkit 符号,返回 (NuScenes, RadarPointCloud, Box, map_name)。"""
+    try:
+        from nuscenes.nuscenes import NuScenes
+        from nuscenes.utils.data_classes import RadarPointCloud, Box
+        from pcdet.datasets.nuscenes.nuscenes_utils import map_name_from_general_to_detection
+    except ImportError as e:
+        raise ImportError(
+            'nuscenes-devkit 未安装: pip install nuscenes-devkit (本脚本仅此依赖缺失)') from e
+    return NuScenes, RadarPointCloud, Box, map_name_from_general_to_detection
 
 # ── 类别颜色 ──────────────────────────────────────────────────
 # 检测类别（来自 map_name_from_general_to_detection）
+# GT/pred 共用一份类色(分面板区分,不再靠两套色);色族避开点云 viridis(紫绿黄)色域
 DET_CLASSES = ["car", "truck", "bus", "trailer", "construction_vehicle",
                "bicycle", "motorcycle", "pedestrian", "traffic_cone", "barrier"]
 
-CLASS_COLORS_GT = {
-    "car":                 "#2ecc71",
-    "truck":               "#e67e22",
-    "bus":                 "#9b59b6",
-    "trailer":             "#1abc9c",
+CLASS_COLORS = {
+    "car":                 "#e74c3c",
+    "truck":               "#d63ee0",
+    "bus":                 "#00b3a4",
+    "trailer":             "#f39c12",
     "construction_vehicle":"#95a5a6",
-    "bicycle":             "#e74c3c",
-    "motorcycle":          "#c0392b",
-    "pedestrian":          "#3498db",
-    "traffic_cone":        "#f1c40f",
-    "barrier":             "#e74c3c",
+    "bicycle":             "#e91e63",
+    "motorcycle":          "#ff7043",
+    "pedestrian":          "#2a78d6",
+    "traffic_cone":        "#ffffff",
+    "barrier":             "#c8b8db",
 }
-
-CLASS_COLORS_PRED = {
-    "car":                 "#27ae60",
-    "truck":               "#d35400",
-    "bus":                 "#8e44ad",
-    "trailer":             "#16a085",
-    "construction_vehicle":"#7f8c8d",
-    "bicycle":             "#c0392b",
-    "motorcycle":          "#a93226",
-    "pedestrian":          "#2980b9",
-    "traffic_cone":        "#d4ac0d",
-    "barrier":             "#c0392b",
-}
+# 兼容旧名(GT/PRED 同色)
+CLASS_COLORS_GT = CLASS_COLORS
+CLASS_COLORS_PRED = CLASS_COLORS
 
 # 相机排列顺序：前向从左到右（FL / F / FR），后向从左到右（BL / B / BR）
 CAM_ORDER = ["CAM_FRONT_LEFT", "CAM_FRONT", "CAM_FRONT_RIGHT",
@@ -73,7 +76,7 @@ CAM_TITLES = {
 
 # ── BEV 绘图 ──────────────────────────────────────────────────
 
-def get_box_bev_corners(box: Box):
+def get_box_bev_corners(box: "Box"):  # noqa: F821 — devkit 惰性导入,注解仅示意
     """获取 BEV 俯视图下旋转矩形的 4 个角点 (4, 2)。"""
     corners = box.bottom_corners()  # (3, 4)
     return corners[:2].T  # (4, 2)
@@ -108,6 +111,7 @@ def draw_bev_box(ax, corners, color, linestyle="-", linewidth=2, alpha=1.0, labe
 
 
 def collect_all_radar_points(nusc, sample, dataroot):
+    _, RadarPointCloud, _, _ = _require_devkit()
     """汇集一帧所有雷达通道的点云（ego 坐标系 = 自车后轴中心）。
     nuScenes 中 calibrated_sensor.rotation 是 sensor→ego 旋转（验证: R @ (p_sensor - t) 给出正确位置）,
     即 p_ego = R @ (p_sensor - trans).
@@ -155,6 +159,7 @@ def get_sample_gt_boxes_ego(nusc, sample):
     所以 R_box_to_ego = R_ego_to_global.T @ R_box_to_global
     对应 quaternion: q_ego_to_box = q_global_to_ego * q_box_to_global
     """
+    _, _, Box, map_name_from_general_to_detection = _require_devkit()
     boxes = []
     sd = nusc.get("sample_data", sample["data"]["LIDAR_TOP"])
     ep = nusc.get("ego_pose", sd["ego_pose_token"])
@@ -232,17 +237,18 @@ def draw_bev(ax, nusc, sample, dataroot, pred_boxes=None, score_thresh=0.1,
         sc = ax.scatter(sx, sy, c=radar_pts[3], cmap="viridis",
                         s=4, alpha=0.6, zorder=1)
 
-    # 绘制 GT boxes（实线）
+    # 绘制 GT boxes(细实线,与 pred 同款样式 — 分面板区分,不再靠虚实/两套色)
     for box in gt_boxes:
         color = CLASS_COLORS_GT.get(box.det_cls, "#95a5a6")
         corners_ego = get_box_bev_corners(box)
         sx, sy = _ego_to_screen(corners_ego, R)
         corners_screen = np.column_stack([sx, sy])
-        draw_bev_box(ax, corners_screen, color, linestyle="-", linewidth=2, alpha=0.9)
+        draw_bev_box(ax, corners_screen, color, linestyle="-", linewidth=1.2, alpha=0.9)
 
-    # 绘制预测 boxes（虚线）
+    # 绘制预测 boxes(细实线同款)
     n_pred = 0
     if pred_boxes is not None and len(pred_boxes) > 0:
+        _, _, Box, _ = _require_devkit()
         for pbox in pred_boxes:
             if pbox.get("score", 1.0) < score_thresh:
                 continue
@@ -251,7 +257,7 @@ def draw_bev(ax, nusc, sample, dataroot, pred_boxes=None, score_thresh=0.1,
             corners_ego = get_box_bev_corners(box)
             sx, sy = _ego_to_screen(corners_ego, R)
             corners_screen = np.column_stack([sx, sy])
-            draw_bev_box(ax, corners_screen, color, linestyle="--", linewidth=1.5, alpha=0.7)
+            draw_bev_box(ax, corners_screen, color, linestyle="-", linewidth=1.2, alpha=0.9)
             n_pred += 1
 
     # 自车 (后轴中心, 在屏幕中心)
@@ -267,26 +273,18 @@ def draw_bev(ax, nusc, sample, dataroot, pred_boxes=None, score_thresh=0.1,
     # 在 ego 坐标轴上的标签 (屏幕上是 -Y, X)
     ax.set_xlabel("Y [m] (left ← | right →)")
     ax.set_ylabel("X [m] (forward ↑)")
-    ax.set_title(f"BEV View  (n_radar_pts={n_radar}, n_gt={n_gt}, n_pred={n_pred}, range=±{R:.0f}m)")
+    ax.set_title(f"BEV View  (n_gt={n_gt}, n_pred={n_pred}, range=±{R:.0f}m)")
     ax.grid(True, alpha=0.3)
 
-    # 简化图例
+    # 简化图例(GT/pred 同色同款,只列出现的类)
     present_gt = sorted(set(b.det_cls for b in gt_boxes))
     legend_elements = [
         Line2D([0], [0], color=CLASS_COLORS_GT.get(c, "#95a5a6"),
-               linewidth=2, label=f"GT {c}")
+               linewidth=2, label=c)
         for c in present_gt
     ]
-    if pred_boxes is not None and n_pred > 0:
-        present_pred = sorted(set(b["det_cls"] for b in pred_boxes
-                                  if b.get("score", 1.0) >= score_thresh))
-        legend_elements += [
-            Line2D([0], [0], color=CLASS_COLORS_PRED.get(c, "#7f8c8d"),
-                   linewidth=2, linestyle="--", label=f"Pred {c}")
-            for c in present_pred
-        ]
     if legend_elements:
-        ax.legend(handles=legend_elements, fontsize=7, loc="upper left")
+        ax.legend(handles=legend_elements, fontsize=7, loc="upper left", title="Class")
 
     return sc
 
@@ -403,14 +401,13 @@ def render_sample_camera(ax, nusc, sample, cam_channel, dataroot, gt_boxes):
 # ── 主入口 ─────────────────────────────────────────────────────
 
 def visualize_sample(nusc, sample_token, dataroot, output_dir,
-                     pred_file=None, score_thresh=0.1, bev_range=55):
-    """可视化单帧数据。"""
+                     pred_file=None, pred_boxes=None, score_thresh=0.1, bev_range=55):
+    """可视化单帧数据。pred_boxes: 已就绪的 ego 系 pbox dict 列表(直推模式,优先于 pred_file)。"""
     sample = nusc.get("sample", sample_token)
     gt_boxes = get_sample_gt_boxes(nusc, sample)
 
-    # 加载预测（可选）
-    pred_boxes = None
-    if pred_file and Path(pred_file).exists():
+    # 加载预测（可选;直推模式 pred_boxes 已给则跳过文件加载）
+    if pred_file and Path(pred_file).exists() and pred_boxes is None:
         import pickle
         with open(pred_file, "rb") as f:
             pred_data = pickle.load(f)
@@ -468,20 +465,108 @@ def visualize_sample(nusc, sample_token, dataroot, output_dir,
     return out_path
 
 
+def split_samples(nusc, split):
+    """按 nuscenes 官方 split(train/val) 过滤 sample 列表。"""
+    from nuscenes.utils.splits import train as train_scenes, val as val_scenes
+    scene_sets = {'train': set(train_scenes), 'val': set(val_scenes)}
+    names = scene_sets[split]
+    return [s for s in nusc.sample if nusc.get('scene', s['scene_token'])['name'] in names]
+
+
+def pick_tokens(nusc, samples, num, seed=42):
+    """MSR 式智能选帧:分段覆盖+类多样性+GT 中心签名去重。
+
+    超 3000 帧时逐帧取 GT 代价过高,退化为固定 seed 随机并提示。
+    """
+    if len(samples) > 3000:
+        random.seed(seed)
+        picked = random.sample([s['token'] for s in samples], min(num, len(samples)))
+        print(f'[pick] {len(samples)} 帧过多,退化为 seed={seed} 随机 {len(picked)} 帧')
+        return picked
+    gt_by_token = {}
+    for s in samples:
+        boxes = get_sample_gt_boxes(nusc, s)
+        gt_by_token[s['token']] = (
+            np.array([[b.center[0], b.center[1], 0, 0, 0, 0, 0] for b in boxes]
+                     or np.zeros((0, 7))).reshape(-1, 7),
+            [b.det_cls for b in boxes],
+        )
+    sys.path.insert(0, str(Path(__file__).resolve().parent))  # viz_common 同目录
+    from viz_common import pick_frames
+    return pick_frames(gt_by_token, num)
+
+
+def infer_tokens(nusc, cfg_file, ckpt, tokens):
+    """pcdet 推理指定 sample token,返回 {token: [ego 系 pbox dict]}。
+
+    pred_dicts 为 LIDAR_TOP 系,经 calibrated_sensor 外参转 ego 后复用
+    --pred_file 的绘制格式(translation/size/rotation/det_cls/score)。
+    注意: 本地无 nuScenes 数据,该路径未实测。
+    """
+    import torch
+    from viz_common import build_viz_net
+    net, _, ds, _cfg = build_viz_net(cfg_file, ckpt)
+    base = ds.dataset if hasattr(ds, 'dataset') else ds
+    infos = base.nuscenes_infos
+    tok2idx = {info['token']: i for i, info in enumerate(infos)}
+    from pcdet.models import load_data_to_gpu
+
+    out = {}
+    with torch.no_grad():
+        for tok in tokens:
+            if tok not in tok2idx:
+                print(f'  [infer] token {tok[:12]} 不在 {cfg_file} 的 infos 中,跳过')
+                continue
+            batch = base.collate_batch([base[tok2idx[tok]]])
+            load_data_to_gpu(batch)
+            pred_dicts, _ = net(batch)
+            p = pred_dicts[0]
+            # LIDAR_TOP → ego 外参(devkit 按 sample→data→calibrated_sensor 链路取)
+            sample = nusc.get('sample', tok)
+            sd = nusc.get('sample_data', sample['data']['LIDAR_TOP'])
+            cs = nusc.get('calibrated_sensor', sd['calibrated_sensor_token'])
+            R = Quaternion(cs['rotation']).rotation_matrix
+            t = np.array(cs['translation'])
+            yaw_off = np.arctan2(R[1, 0], R[0, 0])
+            pb = []
+            for b, lb, sc_ in zip(p['pred_boxes'], p['pred_labels'], p['pred_scores']):
+                b = b.cpu().numpy()
+                xyz = (R @ b[:3]) + t
+                cls_name = base.class_names[int(lb) - 1]
+                pb.append({
+                    'translation': xyz.tolist(),
+                    'size': [float(b[4]), float(b[3]), float(b[5])],  # pcdet(l,w,h)→Box(w,l,h)
+                    'rotation': Quaternion(axis=[0, 0, 1], radians=float(b[6]) + yaw_off).elements.tolist(),
+                    'det_cls': cls_name,
+                    'score': float(sc_),
+                })
+            out[tok] = pb
+    return out
+
+
 def main():
     parser = argparse.ArgumentParser(description="nuScenes 可视化工具")
     parser.add_argument("--dataroot", type=str, default="/mnt/d/DATASET_PART",
                         help="nuScenes 数据集根目录")
     parser.add_argument("--version", type=str, default="v1.0-mini",
                         help="nuScenes 数据集版本")
-    parser.add_argument("--output_dir", type=str, default="output/vis_nuscenes",
-                        help="输出目录")
-    parser.add_argument("--n_samples", type=int, default=5,
-                        help="随机可视化帧数")
+    parser.add_argument("--out_dir", type=str, default=None,
+                        help="输出目录(与 msr/kitti 脚本统一;不填回退 --output_dir)")
+    parser.add_argument("--output_dir", type=str, default="output/res_viz/nuscenes",
+                        help="输出目录(旧参数,保留兼容)")
+    parser.add_argument("--num", type=int, default=10, help="每个 split 选帧数")
+    parser.add_argument("--n_samples", type=int, default=None,
+                        help="随机可视化帧数(旧参数;给了则单 split 模式)")
+    parser.add_argument("--split", type=str, default="both",
+                        choices=["train", "val", "both"],
+                        help="both=train+val 各抽 num 帧;--n_samples 给出时忽略")
     parser.add_argument("--sample_tokens", type=str, nargs="*", default=None,
-                        help="指定 sample token（优先于随机采样）")
+                        help="指定 sample token（优先于自动选帧）")
+    parser.add_argument("--cfg_file", type=str, default=None,
+                        help="pcdet 模型 cfg;与 --ckpt 连用直接推理叠加预测")
+    parser.add_argument("--ckpt", type=str, default=None, help="checkpoint(best.pth)")
     parser.add_argument("--pred_file", type=str, default=None,
-                        help="预测结果 pkl 文件路径（可选）")
+                        help="预测结果 pkl 文件路径（可选,test.py --save_to_file 产物）")
     parser.add_argument("--score_thresh", type=float, default=0.1,
                         help="预测 box 置信度阈值")
     parser.add_argument("--bev_range", type=float, default=55,
@@ -490,24 +575,37 @@ def main():
     args = parser.parse_args()
 
     print(f"Loading {args.version} from {args.dataroot}...")
+    NuScenes, _, _, _ = _require_devkit()
     nusc = NuScenes(version=args.version, dataroot=args.dataroot, verbose=False)
+    out_dir = args.out_dir or args.output_dir
 
-    if args.sample_tokens:
-        tokens = args.sample_tokens
+    # 单 split 旧模式:--n_samples 兼容
+    if args.n_samples is not None:
+        splits = [(args.split if args.split != "both" else "train", args.n_samples)]
     else:
-        random.seed(args.seed)
-        tokens = random.sample([s["token"] for s in nusc.sample],
-                               min(args.n_samples, len(nusc.sample)))
+        splits = [(s, args.num) for s in (["train", "val"] if args.split == "both" else [args.split])]
 
-    print(f"Visualizing {len(tokens)} samples...")
-    for i, token in enumerate(tokens):
-        print(f"  [{i+1}/{len(tokens)}] {token[:12]}...")
-        visualize_sample(nusc, token, args.dataroot, args.output_dir,
-                         pred_file=args.pred_file,
-                         score_thresh=args.score_thresh,
-                         bev_range=args.bev_range)
+    pred_by_token = None
+    total = 0
+    for split, num in splits:
+        samples = split_samples(nusc, split)
+        if args.sample_tokens:
+            tokens = args.sample_tokens
+        else:
+            tokens = pick_tokens(nusc, samples, num, seed=args.seed)
+        if args.ckpt is not None and args.cfg_file is not None and pred_by_token is None:
+            pred_by_token = infer_tokens(nusc, args.cfg_file, args.ckpt, tokens)
+        print(f"[{split}] Visualizing {len(tokens)} samples...")
+        for i, token in enumerate(tokens):
+            print(f"  [{split} {i+1}/{len(tokens)}] {token[:12]}...")
+            visualize_sample(nusc, token, args.dataroot, out_dir,
+                             pred_boxes=(pred_by_token or {}).get(token),
+                             pred_file=args.pred_file,
+                             score_thresh=args.score_thresh,
+                             bev_range=args.bev_range)
+            total += 1
 
-    print(f"Done. Output in {args.output_dir}/")
+    print(f"Done. {total} images in {out_dir}/")
 
 
 if __name__ == "__main__":

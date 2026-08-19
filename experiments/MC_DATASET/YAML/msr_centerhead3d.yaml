@@ -1,5 +1,11 @@
-# MSR RadarPillar baseline (口径同 a1.yaml: PointPillars + PillarAttention, 载体 MC_RadarPillars)
-# 类别: 1=轿车 2=行人 4=二轮车 5=卡车 | x 上限 200(GT 最远 141.7m) | anchor=GT 中位尺寸
+# MSR RadarPillar 变体: head 换 CenterHead(3D) — RadarNeXtCenterHead (anchor-free CenterPoint 式, 预测 z)
+# 派生自 msr_radarpillar.yaml, 差异: DENSE_HEAD AnchorHeadSingle -> RadarNeXtCenterHead;
+#   MODEL.NAME MC_RadarPillars -> CenterPoint (center head 在 predict 内自做 NMS 写 pred_dicts,
+#   PointPillar 模板 eval 走 anchor 的 batch_box_preds 断言会 KeyError; CenterPoint eval 直接消费
+#   pred_dicts — 见 pcdet/models/detectors/centerpoint.py 设计注释, PUBLIC_DATASET stage4 同口径)
+# 写法对齐 PUBLIC_DATASET head_center.yaml (stage4 已训通的参照), 换 MSR 类别/范围/anchor;
+# anchor/target_assigner/loss_weights 块沿参照结构保留
+# 类别: 1=轿车 2=行人 4=二轮车 5=卡车
 
 # ============================================================================================================================
 CLASS_NAMES: ['1', '2', '4', '5']
@@ -21,8 +27,6 @@ DATA_CONFIG:
     MAX_NUMBER_OF_VOXELS:
       train: 2048
       test: 3096
-      
-# ============================================================================================================================
   DATA_AUGMENTOR:
     DISABLE_AUG_LIST: [gt_sampling, placeholder]
     AUG_CONFIG_LIST:
@@ -33,7 +37,7 @@ DATA_CONFIG:
 
 # ============================================================================================================================
 MODEL:
-  NAME: MC_RadarPillars
+  NAME: CenterPoint
   # ------------------------
   VFE:
     NAME: PillarVFE
@@ -67,7 +71,7 @@ MODEL:
     NUM_UPSAMPLE_FILTERS: [32, 32, 32]
   # ------------------------
   DENSE_HEAD:
-    NAME: AnchorHeadSingle
+    NAME: RadarNeXtCenterHead     # 变体点: anchor-based -> anchor-free center (3D: height 头预测 z)
     CLASS_AGNOSTIC: false
     USE_DIRECTION_CLASSIFIER: true
     DIR_OFFSET: 0.78539
@@ -82,7 +86,7 @@ MODEL:
       feature_map_stride: 2
       matched_threshold: 0.6
       unmatched_threshold: 0.45
-    - class_name: '2'            # 行人 l0.6 w0.6 h1.7(小目标,IoU 阈值降档)
+    - class_name: '2'            # 行人 l0.6 w0.6 h1.7
       anchor_sizes: [[0.6, 0.6, 1.7]]
       anchor_rotations: [0, 1.57]
       anchor_bottom_heights: [-0.85]
@@ -119,6 +123,23 @@ MODEL:
         loc_weight: 2.0
         dir_weight: 0.2
         code_weights: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    TASKS:
+    - num_class: 4
+      class_names: ['1', '2', '4', '5']
+    CODE_WEIGHTS: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]   # reg2+height1+dim3+rot2 = 8
+    COMMON_HEADS:
+      reg: [2, 2]
+      height: [1, 2]
+      dim: [3, 2]
+      rot: [2, 2]
+    OUT_SIZE_FACTOR: 2
+    NMS_CONFIG:
+      NMS_TYPE: nms_gpu
+      NMS_THRESH: 0.1
+      NMS_PRE_MAXSIZE: 4096
+      NMS_POST_MAXSIZE: 500
+    SCORE_THRESHOLD: 0.2
+    POST_CENTER_LIMIT_RANGE: [0, -20, -10, 200, 20, 10]
   # ------------------------
   POST_PROCESSING:
     RECALL_THRESH_LIST: [0.3, 0.5, 0.7]

@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# eg. bash experiments/MC_DATASET/SH/train_msr.sh
-# MSR (MC_Single_Radar) RadarPillar baseline 训练脚本
+# eg. bash experiments/MC_DATASET/SH/train_msr_repdwc32.sh
+# MSR (MC_Single_Radar) RadarPillar 2D backbone RepDWC(32,32,32) 变体
 # 数据: /mnt/d/DataSet/MSRv1  | 类别: ['1','2','4','5'] (1=轿车 2=行人 4=二轮车 5=卡车)
 
 # —— 可选 ——
@@ -44,12 +44,12 @@ RUN_MODE="background"
 SET_CFGS=("OPTIMIZATION.early_stop.enabled" "False" "OPTIMIZATION.LR_WARMUP" "False")
 
 # —— 必改 ——
-CFG_FILE="experiments/MC_DATASET/YAML/msr_radarpillar.yaml"
+CFG_FILE="experiments/MC_DATASET/YAML/msr_repdwc32.yaml"
 BATCH_SIZE=4          # MSR 点云密集 + 8G 显存,保守起步;OOM 则降到 2
 WORKERS=2
 EPOCHS=80
 GPU=0
-EXTRA_TAG="msr_baseline"
+EXTRA_TAG="msr_repdwc32"
 
 # [output 覆写: 让 train/test 直接写到 output/train_log/msr/<datetime>_msr_baseline/]
 OUTPUT_ROOT="output/train_log/msr/$(date +%Y%m%d%H%M)_${EXTRA_TAG}"

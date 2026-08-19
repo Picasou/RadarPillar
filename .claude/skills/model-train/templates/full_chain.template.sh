@@ -35,7 +35,25 @@ BS=${BS:-8}
 GPU=${GPU:-0}
 WORKERS=${WORKERS:-2}
 LAST_N=${LAST_N:-10}
-DATAROOT=${DATAROOT:-data/VoD/view_of_delft_PUBLIC/radar_5frames}
+# 默认每个 split（train + val）生成 10 帧 BEV 可视化 = 20 张总图
+VIZ_NUM=${VIZ_NUM:-10}
+# seed 固定 (train.py --fix_random_seed → set_random_seed(42), 压过 cfg 的 FIX_RANDOM_SEED:false); FIX_SEED=False 关闭
+FIX_SEED=${FIX_SEED:-True}
+
+# 数据集感知: 从 cfg _BASE_CONFIG_ 推 DS → OUTPUT_ROOT 子目录 / resbag --dataset / eval 跳过 / viz 分派
+DS_YAML=$(python3 - "$CFG" <<'PY'
+import re, sys
+txt = open(sys.argv[1]).read()
+m = re.search(r'_BASE_CONFIG_:\s*(\S+)', txt)
+print(m.group(1) if m else '')
+PY
+)
+case "$DS_YAML" in
+    *msr_dataset.yaml*) DS=msr ;;
+    *nuscenes*)         DS=nuscenes ;;
+    *)                  DS=vod ;;
+esac
+echo "[__TAG__] dataset=${DS} (base=${DS_YAML:-无})"
 
 # H6: OUTPUT_ROOT 首次生成记入 output/<TAG>.root; retry/watchdog 重启时复用旧 root
 #     → train.py 同 root auto-resume 生效, 中断不再整链重训。
@@ -50,7 +68,7 @@ if [ -z "${OUTPUT_ROOT:-}" ] && [ -f "$ROOT_FILE" ]; then
 fi
 if [ -z "${OUTPUT_ROOT:-}" ]; then
     TS=$(date +%Y%m%d%H%M)
-    OUTPUT_ROOT="output/train_log/vod/${TS}_${MODEL}_${TAG}"
+    OUTPUT_ROOT="output/train_log/${DS}/${TS}_${MODEL}_${TAG}"
 fi
 echo "$OUTPUT_ROOT" > "$ROOT_FILE"
 LOG_DIR=${OUTPUT_ROOT}/logs
@@ -63,11 +81,12 @@ mkdir -p "$LOG_DIR"
 echo "[__TAG__] start  ts=$TS  bs=$BS  ep=$EPOCHS  OUTPUT_ROOT=$OUTPUT_ROOT"
 
 # === step 1: train (--skip_eval, 训后补 eval) ===
+SEED_ARGS=(); [ "$FIX_SEED" = True ] && SEED_ARGS=(--fix_random_seed)
 python -u tools/train.py \
     --cfg_file "$CFG" \
     --batch_size "$BS" --workers "$WORKERS" --epochs "$EPOCHS" \
     --extra_tag "$TAG" --output_root "$OUTPUT_ROOT" \
-    --skip_eval \
+    --skip_eval "${SEED_ARGS[@]}" \
     --set "OPTIMIZATION.early_stop.enabled" "False" "OPTIMIZATION.LR_WARMUP" "False" 2>&1 | tee "$LOG"
 
 # NaN/inf 守卫
@@ -75,8 +94,11 @@ if grep -aiE "loss=nan|loss=inf" "$LOG" | tail -5 | grep -qaiE "nan|inf"; then
     echo "[__TAG__] FATAL: train log 含 nan/inf, 中止 (不落 marker, 触发 retry)"; exit 1
 fi
 
-# === step 2: eval 末 N ckpt ===
+# === step 2: eval 末 N ckpt (MSR 无 evaluation 方法 → 跳过, 避免每 ckpt 必崩空转) ===
 START_EPOCH=$(( EPOCHS - LAST_N ))
+if [ "$DS" = msr ]; then
+    echo "[__TAG__] MSR 无 evaluation, 跳过 eval — pickbest 将走 fallback(最新 ckpt 双落)"
+else
 for ep in $(seq $START_EPOCH $((EPOCHS - 1))); do
     CKPT="${OUTPUT_ROOT}/ckpt/checkpoint_epoch_${ep}.pth"
     [ -f "$CKPT" ] || { echo "[__TAG__] skip ep${ep} (ckpt 不在)"; continue; }
@@ -86,6 +108,7 @@ for ep in $(seq $START_EPOCH $((EPOCHS - 1))); do
         --extra_tag "${MODEL}_ep${ep}" --eval_tag default \
         --output_root "$OUTPUT_ROOT" 2>&1 | tee "${LOG_DIR}/eval_ep${ep}.log" || true
 done
+fi
 
 # === step 3: pickbest (max + median 双落) ===
 START_EPOCH="$START_EPOCH" OUTPUT_ROOT="$OUTPUT_ROOT" python3 <<'PY'
@@ -131,14 +154,34 @@ PY
 
 [ -f "${OUTPUT_ROOT}/best.pth" ] || { echo "[__TAG__] ERROR: best.pth 未生成"; exit 1; }
 
-# === step 4: resbag 落袋 ===
+# === step 4: viz (best.pth 对 train/val 各 VIZ_NUM 帧, GT 实线+pred 虚线) ===
+# 按 DS 分派 viz 脚本 (推导见配置区);图落 OUTPUT_ROOT/viz/, 随 resbag 归档。
+# 默认 VIZ_NUM=10 × VIZ_SPLITS=both(train+val) = 20 张总图
+VIZ_NUM=${VIZ_NUM:-10}
+case "$DS" in
+    msr)      VIZ_SCRIPT="tools/utils/visual_utils/visualize_msr.py" ;;
+    nuscenes) VIZ_SCRIPT="tools/utils/visual_utils/visualize_nuscenes.py" ;;
+    vod)      VIZ_SCRIPT="tools/utils/visual_utils/visualize_kitti.py" ;;
+    *) echo "[__TAG__] WARN: 未知数据集 ${DS}, 跳过 viz"; VIZ_SCRIPT="" ;;
+esac
+VIZ_SPLITS="both"
+if [ -n "$VIZ_SCRIPT" ]; then
+    echo "[__TAG__] viz: $VIZ_SCRIPT --split $VIZ_SPLITS --num $VIZ_NUM -> ${OUTPUT_ROOT}/viz/"
+    python -u "$VIZ_SCRIPT" \
+        --cfg_file "$CFG" --ckpt "${OUTPUT_ROOT}/best.pth" \
+        --split "$VIZ_SPLITS" --num "$VIZ_NUM" \
+        --out_dir "${OUTPUT_ROOT}/viz" 2>&1 | tee "${LOG_DIR}/viz.log" \
+        || echo "[__TAG__] WARN: viz 失败(不阻塞链路, 继续落袋)"
+fi
+
+# === step 5: resbag 落袋 ===
 python .claude/skills/resbag/resbag.py make \
-    --output_root "$OUTPUT_ROOT" --dataset vod \
+    --output_root "$OUTPUT_ROOT" --dataset "$DS" \
     --tag "$TAG" --model "$MODEL" \
     --cfg_file "$CFG" --batch_size "$BS" 2>&1 | tee "${LOG_DIR}/resbag.log"
 
 [ -f "${OUTPUT_ROOT}/model_store.yaml" ] || { echo "[__TAG__] ERROR: model_store.yaml 未落盘"; exit 1; }
 
-# === step 5: 落 marker (workflow oracle 判 idempotent) ===
+# === step 6: 落 marker (workflow oracle 判 idempotent) ===
 touch "$MARKER"
 echo "[__TAG__] ALL DONE  $OUTPUT_ROOT  marker=$MARKER  $(date)"

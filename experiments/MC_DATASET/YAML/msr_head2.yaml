@@ -1,4 +1,5 @@
-# MSR RadarPillar baseline (口径同 a1.yaml: PointPillars + PillarAttention, 载体 MC_RadarPillars)
+# MSR RadarPillar 变体: PillarAttention 2 头 (baseline NUM_HEADS=1 -> 2)
+# 派生自 msr_radarpillar.yaml, 唯一差异: BACKBONE_3D.NUM_HEADS = 2 (embed_dim 32 -> 每头 16)
 # 类别: 1=轿车 2=行人 4=二轮车 5=卡车 | x 上限 200(GT 最远 141.7m) | anchor=GT 中位尺寸
 
 # ============================================================================================================================
@@ -21,8 +22,6 @@ DATA_CONFIG:
     MAX_NUMBER_OF_VOXELS:
       train: 2048
       test: 3096
-      
-# ============================================================================================================================
   DATA_AUGMENTOR:
     DISABLE_AUG_LIST: [gt_sampling, placeholder]
     AUG_CONFIG_LIST:
@@ -49,7 +48,7 @@ MODEL:
   BACKBONE_3D:
     NAME: PillarAttention
     ATTN_CHANNELS: 32
-    NUM_HEADS: 1
+    NUM_HEADS: 2            # 变体点: 1 -> 2 (32 % 2 == 0, 每头 dim 16)
     DROPOUT: 0.0
     FFN_CHANNELS: 32
     USE_LAYER_NORM: true
@@ -74,6 +73,7 @@ MODEL:
     DIR_LIMIT_OFFSET: 0.0
     NUM_DIR_BINS: 2
     ANCHOR_GENERATOR_CONFIG:
+    # anchor 尺寸按真实 GT 中位数(z 中心全 0,bottom_heights=-h/2);rotations 各类必须等长(张量拼接)
     - class_name: '1'            # 轿车 l5.0 w2.0 h1.5
       anchor_sizes: [[5.0, 2.0, 1.5]]
       anchor_rotations: [0, 1.57]

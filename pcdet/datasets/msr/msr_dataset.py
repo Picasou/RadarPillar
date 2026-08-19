@@ -31,7 +31,7 @@ _POINTS_SCALABLE = {'range_m', 'doppler_mps', 'ang_rad', 'elv_rad'}
 
 
 class MsrDataset(DatasetTemplate):
-    """MSR dataset 类。CLASS_NAMES=['1','4','5'],无 calib,ghost 不过滤,z=0 BEV。"""
+    """MSR dataset 类。CLASS_NAMES=['1','2','4','5'],无 calib,ghost 不过滤,z=0 BEV。"""
 
     def __init__(self, dataset_cfg, class_names, training=True, root_path=None, logger=None):
         super().__init__(
@@ -269,9 +269,19 @@ class MsrDataset(DatasetTemplate):
             return info
 
         sample_id_list = sample_id_list if sample_id_list is not None else self.sample_id_list
+
+        def _safe_process(sample_idx):
+            """单帧缺文件容忍:9p 挂载盘偶发丢文件(实测 MSRv1 val 缺 00001307.bin),
+            跳过并告警,不让单文件缺失毁掉整次生成。"""
+            points_file = self.root_split_path / 'POINTS' / ('%s.bin' % sample_idx)
+            if not points_file.exists():
+                print('WARN: POINTS file missing, skip %s: %s' % (self.split, sample_idx))
+                return None
+            return process_single_scene(sample_idx)
+
         with futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
-            infos = executor.map(process_single_scene, sample_id_list)
-        return list(infos)
+            infos = executor.map(_safe_process, sample_id_list)
+        return [i for i in infos if i is not None]
 
     def create_groundtruth_database(self, info_path=None, used_classes=None, split='train'):
         """读 train pkl → 每个 gt box 抠点存 gt_database/{idx}_{name}_{i}.bin → 收集 dbinfos pkl。
@@ -430,7 +440,7 @@ if __name__ == '__main__':
         dataset_cfg = EasyDict(yaml.full_load(open(sys.argv[2])))
         create_msr_infos(
             dataset_cfg=dataset_cfg,
-            class_names=['1', '4', '5'],
-            data_path=Path('/mnt/d/DataSet/11111111111'),
-            save_path=Path('/mnt/d/DataSet/11111111111'),
+            class_names=['1', '2', '4', '5'],
+            data_path=Path('/mnt/d/DataSet/MSRv1'),
+            save_path=Path('/mnt/d/DataSet/MSRv1'),
         )

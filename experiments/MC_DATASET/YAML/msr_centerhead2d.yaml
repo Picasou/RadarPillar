@@ -1,5 +1,9 @@
-# MSR RadarPillar baseline (口径同 a1.yaml: PointPillars + PillarAttention, 载体 MC_RadarPillars)
-# 类别: 1=轿车 2=行人 4=二轮车 5=卡车 | x 上限 200(GT 最远 141.7m) | anchor=GT 中位尺寸
+# MSR RadarPillar 变体: head 换 CenterHead(2D) — RadarNeXtCenterHead2D (去 z 预测, height 按类填 anchor 底高)
+# 派生自 msr_radarpillar.yaml, 差异: DENSE_HEAD AnchorHeadSingle -> RadarNeXtCenterHead2D;
+#   MODEL.NAME MC_RadarPillars -> CenterPoint (center head eval 走 pred_dicts, 详见 msr_centerhead3d.yaml 头注)
+# 写法对齐 PUBLIC_DATASET head_2d.yaml (stage4 已训通的参照), 换 MSR 类别/范围/anchor;
+# ANCHOR_BOTTOM_HEIGHTS 必须与各类 anchor_bottom_heights 一致('1'-0.75 '2'-0.85 '4'-0.85 '5'-1.5)
+# 类别: 1=轿车 2=行人 4=二轮车 5=卡车
 
 # ============================================================================================================================
 CLASS_NAMES: ['1', '2', '4', '5']
@@ -21,8 +25,6 @@ DATA_CONFIG:
     MAX_NUMBER_OF_VOXELS:
       train: 2048
       test: 3096
-      
-# ============================================================================================================================
   DATA_AUGMENTOR:
     DISABLE_AUG_LIST: [gt_sampling, placeholder]
     AUG_CONFIG_LIST:
@@ -33,7 +35,7 @@ DATA_CONFIG:
 
 # ============================================================================================================================
 MODEL:
-  NAME: MC_RadarPillars
+  NAME: CenterPoint
   # ------------------------
   VFE:
     NAME: PillarVFE
@@ -67,7 +69,7 @@ MODEL:
     NUM_UPSAMPLE_FILTERS: [32, 32, 32]
   # ------------------------
   DENSE_HEAD:
-    NAME: AnchorHeadSingle
+    NAME: RadarNeXtCenterHead2D    # 变体点: anchor-free center 2D 版(去 z, BEV 口径)
     CLASS_AGNOSTIC: false
     USE_DIRECTION_CLASSIFIER: true
     DIR_OFFSET: 0.78539
@@ -82,7 +84,7 @@ MODEL:
       feature_map_stride: 2
       matched_threshold: 0.6
       unmatched_threshold: 0.45
-    - class_name: '2'            # 行人 l0.6 w0.6 h1.7(小目标,IoU 阈值降档)
+    - class_name: '2'            # 行人 l0.6 w0.6 h1.7
       anchor_sizes: [[0.6, 0.6, 1.7]]
       anchor_rotations: [0, 1.57]
       anchor_bottom_heights: [-0.85]
@@ -119,6 +121,27 @@ MODEL:
         loc_weight: 2.0
         dir_weight: 0.2
         code_weights: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    TASKS:
+    - num_class: 4
+      class_names: ['1', '2', '4', '5']
+    CODE_WEIGHTS: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]   # reg2+height1+dim3+rot2 = 8
+    COMMON_HEADS:
+      reg: [2, 2]
+      height: [1, 2]
+      dim: [3, 2]
+      rot: [2, 2]
+    WEIGHT: 1.0
+    IOU_WEIGHT: 1.0
+    IOU_REG_WEIGHT: 0.5
+    OUT_SIZE_FACTOR: 2
+    ANCHOR_BOTTOM_HEIGHTS: [-0.75, -0.85, -0.85, -1.5]       # 2D 口径: z 按类填 anchor 底高
+    NMS_CONFIG:
+      NMS_TYPE: nms_gpu
+      NMS_THRESH: 0.1
+      NMS_PRE_MAXSIZE: 4096
+      NMS_POST_MAXSIZE: 500
+    SCORE_THRESHOLD: 0.2
+    POST_CENTER_LIMIT_RANGE: [0, -20, -10, 200, 20, 10]
   # ------------------------
   POST_PROCESSING:
     RECALL_THRESH_LIST: [0.3, 0.5, 0.7]

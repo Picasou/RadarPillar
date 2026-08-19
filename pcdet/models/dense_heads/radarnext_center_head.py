@@ -141,6 +141,51 @@ def center_to_corner_box2d(center, dim, angles, origin=0.5):
     return corners
 
 
+def gaussian_radius_np(det_size, min_overlap=0.5):
+    """numpy 版 gaussian_radius — float32 全程, 与 torch 版数值一致。"""
+    height, width = det_size
+    h, w, mo = np.float32(height), np.float32(width), np.float32(min_overlap)
+
+    a1 = np.float32(1)
+    b1 = h + w
+    c1 = w * h * (np.float32(1) - mo) / (np.float32(1) + mo)
+    sq1 = np.sqrt(b1 ** 2 - np.float32(4) * a1 * c1)
+    r1 = (b1 + sq1) / np.float32(2)
+
+    a2 = np.float32(4)
+    b2 = np.float32(2) * (h + w)
+    c2 = (np.float32(1) - mo) * w * h
+    sq2 = np.sqrt(b2 ** 2 - np.float32(4) * a2 * c2)
+    r2 = (b2 + sq2) / np.float32(2)
+
+    a3 = np.float32(4) * mo
+    b3 = np.float32(-2) * mo * (h + w)
+    c3 = (mo - np.float32(1)) * w * h
+    sq3 = np.sqrt(b3 ** 2 - np.float32(4) * a3 * c3)
+    r3 = (b3 + sq3) / np.float32(2)
+    return min(r1, r2, r3)
+
+
+def draw_heatmap_gaussian_np(heatmap, center_x, center_y, radius, k=1):
+    """CPU/numpy 版 draw_heatmap_gaussian — 就地局部窗口取 max, 与 torch 版逐位一致
+    (gaussian 先 cast float32 再 *k 再 max, cast 时机与 torch 路径对齐)。
+    heatmap: (H, W) float32 numpy 数组; center/radius 同 torch 版语义。
+    """
+    diameter = 2 * radius + 1
+    gaussian = gaussian_2d((diameter, diameter), sigma=diameter / 6)
+
+    x, y = int(center_x), int(center_y)
+    height, width = heatmap.shape[0:2]
+    left, right = min(x, radius), min(width - x, radius + 1)
+    top, bottom = min(y, radius), min(height - y, radius + 1)
+
+    masked_heatmap = heatmap[y - top:y + bottom, x - left:x + right]
+    masked_gaussian = gaussian[radius - top:radius + bottom,
+                               radius - left:radius + right].astype(np.float32) * k
+    if min(masked_gaussian.shape) > 0 and min(masked_heatmap.shape) > 0:
+        np.maximum(masked_heatmap, masked_gaussian, out=masked_heatmap)
+
+
 # --------------------------------------------------------------------------- #
 # ConvBlock (ported from projects/PillarNeXt/pillarnext/utils/conv.py)         #
 # --------------------------------------------------------------------------- #
@@ -554,144 +599,121 @@ class RadarNeXtCenterHead(nn.Module):
     def get_targets_single(self, gt_labels_3d, gt_bboxes_3d):
         """Generate training targets for a single sample (per-task lists).
 
-        Faithful port of RadarNeXt's ``get_targets_single``. OpenPCDet gt boxes
-        are already volume-center, so the ``gravity_center`` call from the
-        original is dropped. gt labels are 1-based (OpenPCDet convention) and
-        are mapped to per-task 0-based ``cls_id`` via the task's class_names.
+        Faithful port of RadarNeXt's ``get_targets_single`` (数值语义不变),
+        实现已向量化: 开头一次批量下卡(labels/boxes->numpy), 循环体纯 numpy
+        (高斯斑局部窗口取 max), 结尾每 task 一次上卡 — 消除原实现每目标 ~20 次
+        GPU launch/sync (曾占训练 70% CPU, 见 CLAUDE.md 性能规范)。
+        输出张量形状/dtype 与旧 torch 版一致, 数值逐位/1ulp 等价。
+        OpenPCDet gt boxes are already volume-center; gt labels are 0-based
+        (mmdet3d convention) and mapped to per-task ``cls_id`` via class_names.
         """
         device = gt_labels_3d.device
         max_objs = int(self.model_cfg.get('MAX_OBJS', 500)) * int(self.model_cfg.get('DENSE_REG', 1))
-        grid_size = torch.tensor(self.grid_size, device=device)
-        pc_range = torch.tensor(self.point_cloud_range, device=device)
-        voxel_size = torch.tensor(self.voxel_size, device=device)
         gt_annotation_num = len(self.code_weights)
 
-        feature_map_size = (grid_size[:2] // self.out_size_factor).int()
+        # 一次批量下卡 (代替原实现循环内每目标数次 GPU<->CPU 往返)
+        labels_np = gt_labels_3d.detach().cpu().numpy()
+        boxes_np = gt_bboxes_3d.detach().cpu().numpy()
 
-        # Reorganize gt by tasks. gt_labels_3d are 0-based (matching the
-        # original mmdet3d convention); the per-task class list defines the
-        # local 0-based index space.
-        task_masks = []
-        flag = 0
-        for class_name in self.class_names:
-            task_masks.append([
-                torch.where(gt_labels_3d == class_name.index(i) + flag)
-                for i in class_name
-            ])
-            flag += len(class_name)
+        # float32 全程 — 与原 torch float32 tensor 路径一致 (防 python float 提升 f64)
+        pcr = np.asarray(self.point_cloud_range, dtype=np.float32)
+        vs = np.asarray(self.voxel_size, dtype=np.float32)
+        osf = np.float32(self.out_size_factor)
+        fm_w = int(self.grid_size[0]) // self.out_size_factor
+        fm_h = int(self.grid_size[1]) // self.out_size_factor
+        min_overlap = float(self.model_cfg.get('GAUSSIAN_OVERLAP', 0.1))
+        min_radius = int(self.model_cfg.get('MIN_RADIUS', 2))
 
-        task_boxes = []
-        task_classes = []
+        # Reorganize gt by tasks: 0-based 全局 label -> per-task 1-based (0 留背景)
+        # 与旧 torch 版一致: task 内目标按【类别分桶】排序 (先所有第 1 类, 再第 2 类...)
+        task_boxes, task_classes = [], []
         flag2 = 0
-        for idx, mask in enumerate(task_masks):
-            task_box = []
-            task_class = []
-            for m in mask:
-                task_box.append(gt_bboxes_3d[m])
-                # 0 is background for each task, so add 1 here.
-                task_class.append(gt_labels_3d[m] + 1 - flag2)
-            task_boxes.append(torch.cat(task_box, axis=0).to(device))
-            task_classes.append(torch.cat(task_class).long().to(device))
-            flag2 += len(mask)
+        for class_name in self.class_names:
+            parts_box, parts_cls = [], []
+            for local_idx, name in enumerate(class_name):
+                hit = labels_np == (local_idx + flag2)
+                parts_box.append(boxes_np[hit])
+                parts_cls.append(np.full(int(hit.sum()), local_idx + 1, dtype=np.int64))
+            task_boxes.append(np.concatenate(parts_box, axis=0))
+            task_classes.append(np.concatenate(parts_cls, axis=0))
+            flag2 += len(class_name)
 
-        draw_gaussian = draw_heatmap_gaussian
         heatmaps, anno_boxes, inds, masks, corner_heatmaps, cat_labels, gt_boxes = \
             [], [], [], [], [], [], []
 
         for idx in range(len(self.tasks)):
-            heatmap = gt_bboxes_3d.new_zeros(
-                (len(self.class_names[idx]), feature_map_size[1], feature_map_size[0]))
-            corner_heatmap = torch.zeros(
-                (1, feature_map_size[1], feature_map_size[0]),
-                dtype=torch.float32, device=device)
+            heatmap = np.zeros((len(self.class_names[idx]), fm_h, fm_w), dtype=np.float32)
+            corner_heatmap = np.zeros((1, fm_h, fm_w), dtype=np.float32)
 
-            anno_box = gt_bboxes_3d.new_zeros((max_objs, gt_annotation_num), dtype=torch.float32)
-            gt_box = gt_bboxes_3d.new_zeros((max_objs, 7), dtype=torch.float32)
+            anno_box = np.zeros((max_objs, gt_annotation_num), dtype=np.float32)
+            gt_box = np.zeros((max_objs, 7), dtype=np.float32)
 
-            ind = gt_labels_3d.new_zeros((max_objs), dtype=torch.int64)
-            mask = gt_bboxes_3d.new_zeros((max_objs), dtype=torch.uint8)
-            cat_label = gt_bboxes_3d.new_zeros((max_objs), dtype=torch.int64)
+            ind = np.zeros((max_objs), dtype=np.int64)
+            mask = np.zeros((max_objs), dtype=np.uint8)
+            cat_label = np.zeros((max_objs), dtype=np.int64)
 
-            num_objs = min(task_boxes[idx].shape[0], max_objs)
+            boxes = task_boxes[idx]
+            classes = task_classes[idx]
+            num_objs = min(boxes.shape[0], max_objs)
 
             for k in range(num_objs):
-                cls_id = task_classes[idx][k] - 1
+                cls_id = int(classes[k]) - 1
 
                 # gt boxes [xyz dx dy dz heading] -> length,width in feature cells
-                length = task_boxes[idx][k][3]
-                width = task_boxes[idx][k][4]
-                length = length / voxel_size[0] / self.out_size_factor
-                width = width / voxel_size[1] / self.out_size_factor
+                length = boxes[k, 3] / vs[0] / osf
+                width = boxes[k, 4] / vs[1] / osf
 
                 if width > 0 and length > 0:
-                    radius = gaussian_radius(
-                        (width, length),
-                        min_overlap=float(self.model_cfg.get('GAUSSIAN_OVERLAP', 0.1)))
-                    radius = max(int(self.model_cfg.get('MIN_RADIUS', 2)), int(radius))
+                    radius = gaussian_radius_np((length, width), min_overlap)
+                    radius = max(min_radius, int(radius))
 
-                    x, y, z = task_boxes[idx][k][0], task_boxes[idx][k][1], task_boxes[idx][k][2]
+                    x, y, z = boxes[k, 0], boxes[k, 1], boxes[k, 2]
 
-                    coor_x = (x - pc_range[0]) / voxel_size[0] / self.out_size_factor
-                    coor_y = (y - pc_range[1]) / voxel_size[1] / self.out_size_factor
+                    coor_x = (x - pcr[0]) / vs[0] / osf
+                    coor_y = (y - pcr[1]) / vs[1] / osf
+                    cx, cy = int(coor_x), int(coor_y)
 
-                    center = torch.tensor([coor_x, coor_y], dtype=torch.float32, device=device)
-                    center_int = center.to(torch.int32)
-
-                    if not (0 <= center_int[0] < feature_map_size[0]
-                            and 0 <= center_int[1] < feature_map_size[1]):
+                    if not (0 <= cx < fm_w and 0 <= cy < fm_h):
                         continue
 
-                    draw_gaussian(heatmap[cls_id], center_int, radius)
+                    draw_heatmap_gaussian_np(heatmap[cls_id], cx, cy, radius)
 
                     radius = radius // 2
-                    rot = task_boxes[idx][k][6]
+                    rot = boxes[k, 6]
                     corner_keypoints = center_to_corner_box2d(
-                        center.unsqueeze(0).cpu().numpy(),
-                        torch.tensor([[length, width]], dtype=torch.float32).numpy(),
-                        angles=rot.cpu().numpy().reshape(1),
+                        np.asarray([[coor_x, coor_y]], dtype=np.float32),
+                        np.asarray([[length, width]], dtype=np.float32),
+                        angles=np.asarray([rot], dtype=np.float32),
                         origin=0.5)
-                    corner_keypoints = torch.from_numpy(corner_keypoints).to(center)
 
-                    draw_gaussian(corner_heatmap[0], center_int, radius)
-                    draw_gaussian(corner_heatmap[0],
-                                  (corner_keypoints[0, 0] + corner_keypoints[0, 1]) / 2, radius)
-                    draw_gaussian(corner_heatmap[0],
-                                  (corner_keypoints[0, 2] + corner_keypoints[0, 3]) / 2, radius)
-                    draw_gaussian(corner_heatmap[0],
-                                  (corner_keypoints[0, 0] + corner_keypoints[0, 3]) / 2, radius)
-                    draw_gaussian(corner_heatmap[0],
-                                  (corner_keypoints[0, 1] + corner_keypoints[0, 2]) / 2, radius)
+                    draw_heatmap_gaussian_np(corner_heatmap[0], cx, cy, radius)
+                    for a, b in ((0, 1), (2, 3), (0, 3), (1, 2)):
+                        draw_heatmap_gaussian_np(
+                            corner_heatmap[0],
+                            int((corner_keypoints[0, a, 0] + corner_keypoints[0, b, 0]) / 2),
+                            int((corner_keypoints[0, a, 1] + corner_keypoints[0, b, 1]) / 2),
+                            radius)
 
-                    new_idx = k
-                    x, y = center_int[0], center_int[1]
-
-                    assert (y * feature_map_size[0] + x <
-                            feature_map_size[0] * feature_map_size[1])
-
-                    ind[new_idx] = y * feature_map_size[0] + x
-                    mask[new_idx] = 1
-                    cat_label[new_idx] = cls_id
-                    rot = task_boxes[idx][k][6]
-                    box_dim = task_boxes[idx][k][3:6]
-                    box_dim = box_dim.log()
+                    ind[k] = cy * fm_w + cx
+                    mask[k] = 1
+                    cat_label[k] = cls_id
                     # 8-cat 目标：dx, dy, z, log(dx), log(dy), log(dz), sin, cos。
                     # z(height) 必须在内，与 code_weights(len=8) 及 ground-truth 92af058 一致，
                     # 否则 height 头零监督、预测 z 随机、3D AP 塌陷。
-                    anno_box[new_idx] = torch.cat([
-                        center - torch.tensor([x, y], device=device),
-                        z.unsqueeze(0), box_dim,
-                        torch.sin(rot).unsqueeze(0),
-                        torch.cos(rot).unsqueeze(0)
-                    ])
-                    gt_box[new_idx] = task_boxes[idx][k][0:7]
+                    anno_box[k] = np.concatenate([
+                        np.asarray([coor_x - cx, coor_y - cy], dtype=np.float32),
+                        np.asarray([z], dtype=np.float32),
+                        np.log(boxes[k, 3:6]),
+                        np.asarray([np.sin(rot), np.cos(rot)], dtype=np.float32)])
+                    gt_box[k] = boxes[k, 0:7]
 
-            heatmaps.append(heatmap)
-            corner_heatmaps.append(corner_heatmap)
-            anno_boxes.append(anno_box)
-            gt_boxes.append(gt_box)
-            masks.append(mask)
-            inds.append(ind)
-            cat_labels.append(cat_label)
+            heatmaps.append(torch.from_numpy(heatmap).to(device))
+            corner_heatmaps.append(torch.from_numpy(corner_heatmap).to(device))
+            anno_boxes.append(torch.from_numpy(anno_box).to(device))
+            gt_boxes.append(torch.from_numpy(gt_box).to(device))
+            masks.append(torch.from_numpy(mask).to(device))
+            inds.append(torch.from_numpy(ind).to(device))
+            cat_labels.append(torch.from_numpy(cat_label).to(device))
         return heatmaps, anno_boxes, inds, masks, corner_heatmaps, cat_labels, gt_boxes
 
     # ----------------------------------------------------------------- #

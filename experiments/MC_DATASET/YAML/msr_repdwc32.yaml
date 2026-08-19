@@ -1,5 +1,7 @@
-# MSR RadarPillar baseline (口径同 a1.yaml: PointPillars + PillarAttention, 载体 MC_RadarPillars)
-# 类别: 1=轿车 2=行人 4=二轮车 5=卡车 | x 上限 200(GT 最远 141.7m) | anchor=GT 中位尺寸
+# MSR RadarPillar 变体: 2D backbone 换 RepDWC(32,32,32) — RepDWCNoneBackbone (RepBlock 多尺度 + deblock + concat)
+# 派生自 msr_radarpillar.yaml, 唯一差异: BACKBONE_2D BaseBEVBackbone -> RepDWCNoneBackbone
+# 口径对齐 PUBLIC_DATASET b5(OUT_CHANNELS=[32,32,32]): head 输入 96 通道与 baseline 一致,公平对照
+# 类别: 1=轿车 2=行人 4=二轮车 5=卡车 | 推理时 test.py --reparam(默认开)自动融合多分支
 
 # ============================================================================================================================
 CLASS_NAMES: ['1', '2', '4', '5']
@@ -21,8 +23,6 @@ DATA_CONFIG:
     MAX_NUMBER_OF_VOXELS:
       train: 2048
       test: 3096
-      
-# ============================================================================================================================
   DATA_AUGMENTOR:
     DISABLE_AUG_LIST: [gt_sampling, placeholder]
     AUG_CONFIG_LIST:
@@ -59,12 +59,18 @@ MODEL:
     NUM_BEV_FEATURES: 32
   # ------------------------
   BACKBONE_2D:
-    NAME: BaseBEVBackbone
+    NAME: RepDWCNoneBackbone     # 变体点: BaseBEVBackbone -> RepDWC (深度可分离重参数化)
     LAYER_NUMS: [3, 5, 5]
     LAYER_STRIDES: [2, 2, 2]
-    NUM_FILTERS: [32, 32, 32]
+    OUT_CHANNELS: [32, 32, 32]
     UPSAMPLE_STRIDES: [1, 2, 4]
     NUM_UPSAMPLE_FILTERS: [32, 32, 32]
+    NUM_OUTPUTS: 3
+    INFERENCE_MODE: false
+    USE_SE: false
+    NUM_CONV_BRANCHES: 1
+    USE_NORMCONV: false
+    USE_DWCONV: true
   # ------------------------
   DENSE_HEAD:
     NAME: AnchorHeadSingle
@@ -74,6 +80,7 @@ MODEL:
     DIR_LIMIT_OFFSET: 0.0
     NUM_DIR_BINS: 2
     ANCHOR_GENERATOR_CONFIG:
+    # anchor 尺寸按真实 GT 中位数(z 中心全 0,bottom_heights=-h/2);rotations 各类必须等长(张量拼接)
     - class_name: '1'            # 轿车 l5.0 w2.0 h1.5
       anchor_sizes: [[5.0, 2.0, 1.5]]
       anchor_rotations: [0, 1.57]

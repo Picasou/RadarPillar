@@ -71,7 +71,7 @@ def make_full_cfg(data_path):
 
 def main():
     parser = argparse.ArgumentParser(description='MSR single-frame sanity check + BEV plot')
-    parser.add_argument('--data_path', type=str, default='/mnt/d/DataSet/MSR')
+    parser.add_argument('--data_path', type=str, default='/mnt/d/DataSet/MSRv1')
     parser.add_argument('--idx', type=str, default='00000000')
     parser.add_argument('--out_png', type=str, default='/tmp/msr_bev_%s.png',
                         help='output BEV png path (%%s for idx)')
@@ -115,7 +115,7 @@ def main():
     print('4. MsrDataset reader output')
     ds = MsrDataset(
         dataset_cfg=make_full_cfg(str(data_path)),
-        class_names=['1', '4', '5'],
+        class_names=['1', '2', '4', '5'],
         training=False, root_path=None,
     )
     points = ds.get_radar(args.idx)

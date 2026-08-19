@@ -4,17 +4,19 @@
 MSR 多帧点云+GT 可视化脚本。
 
 按 MsrDataset 现有解析策略(struct.json 动态 dtype + POINTS scale + LABELS ×0.01)
-读取若干帧,输出 每帧一图:左=相机图像(仅上下文,无有效标定不可投影),右=BEV 点云+GT 框。
-- 点着色: doppler_gnd(对地多普勒,ego 补偿后地速矢量投影回径向),蓝灰红 diverging,对称色标
-- GT 框:   类别固定槽位色 '1'Car=蓝 '4'Cyclist=橙 '5'Truck=青,框上直接标类名(不单靠颜色)
-- 预测框:  --cfg_file + --ckpt 给出时叠加(同类同色,虚线+score);否则纯数据模式
-- 选帧:    扫 split 内 LABELS,优先类多样性,再按 GT 数;除显式 --split testing 外强制排除测试集帧
-- 输出:    默认 output/res_viz/<cfg名>/(--cfg_file 时)或 output/res_viz/msr_data/
+读取若干帧,输出 每帧一图:左=相机图像(仅上下文,无有效标定不可投影),中/右=BEV 点云框图。
+- 三面板:   [相机 | BEV+GT | BEV+pred],GT 与 pred 分面板独立展示,便于对比
+- BEV 朝向: x 前(屏幕上) / y 左(屏幕左),车规惯例
+- 点着色:   doppler_gnd(对地多普勒,ego 补偿后地速矢量投影回径向),蓝灰红 diverging,对称色标
+- GT 框:    细实线 + 无颜色填充,类别固定槽位色 '1'Car=蓝 '2'Ped=紫 '4'Cyclist=橙 '5'Truck=青
+- 预测框:   粗虚线 + 半透明颜色填充;--cfg_file + --ckpt 给出时才有,否则 pred 面板纯点云
+- 选帧:     扫 split 内 LABELS,优先类多样性,再按 GT 数;除显式 --split testing 外强制排除测试集帧
+- 输出:     默认 output/res_viz/<cfg名>/(--cfg_file 时)或 output/res_viz/msr_data/
 
 用法:
   python tools/utils/visual_utils/visualize_msr.py --split training --num 6
   python tools/utils/visual_utils/visualize_msr.py --indices 00000000 00000500
-  python tools/utils/visual_utils/visualize_msr.py --cfg_file mc/YAML/msr_radarpillar.yaml \
+  python tools/utils/visual_utils/visualize_msr.py --cfg_file experiments/MC_DATASET/YAML/msr_radarpillar.yaml \
       --ckpt output/.../best.pth --split both --num 10
 """
 import argparse
@@ -26,8 +28,10 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # repo 根,供 import pcdet
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'tools' / 'scripts' / 'data'))  # 供 import check_msr
 
-CLASS_LABEL = {'1': 'Car', '4': 'Cyclist', '5': 'Truck'}
-CLASS_COLOR = {'1': '#2a78d6', '4': '#eb6834', '5': '#1baf7a'}
+CLASS_LABEL = {'1': 'Car', '2': 'Pedestrian', '4': 'Cyclist', '5': 'Truck'}
+# 类色避开点云 doppler diverging(蓝↔灰↔红)的色域: 取黄/品红/草绿/青绿,
+# 框与点云色相分离, 不再和蓝点/红点混淆
+CLASS_COLOR = {'1': '#f1c40f', '2': '#d63ee0', '4': '#7cb342', '5': '#00b3a4'}
 INK, INK2, MUTED, GRID = '#0b0b0b', '#52514e', '#898781', '#e1e0d9'
 DIV_BLUE, DIV_GRAY, DIV_RED = '#2a78d6', '#f0efec', '#e34948'  # diverging 蓝↔灰↔红
 
@@ -52,31 +56,33 @@ def plot_frame(ds, sid, split, out_dir, color_by='doppler_gnd', pred=None):
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
-    import matplotlib.patheffects as pe
     from matplotlib.lines import Line2D
-    from matplotlib.patches import Rectangle
     from matplotlib.colors import LinearSegmentedColormap, Normalize
+    from viz_common import draw_box_bev
 
     pts = ds.get_radar(sid)                       # (N, 18) MSR_FEATURE_ORDER 全列
     cols = {n: i for i, n in enumerate(ds.radar_feature_order)}
     boxes, names = ds.get_label(sid)
     param = ds.get_dynamic_param(sid)
 
-    # ---- 左:相机图 ----
+    # ---- 布局: [相机 | BEV+GT | BEV+pred] ----
     img_file = ds.root_split_path / 'IMAGES' / ('%s.png' % sid)
     if img_file.exists():
-        fig, (ax_img, ax) = plt.subplots(
-            1, 2, figsize=(16, 6.2), width_ratios=[1.25, 1],
-            gridspec_kw={'wspace': 0.08})
+        fig, (ax_img, ax_gt, ax_pred) = plt.subplots(
+            1, 3, figsize=(20, 6.2), width_ratios=[1.15, 1, 1],
+            gridspec_kw={'wspace': 0.25})
         from skimage import io
         ax_img.imshow(io.imread(str(img_file)))
-        ax_img.set_title('Camera %s (context only, no valid calib)' % sid,
-                         fontsize=10, color=INK2, pad=8)
+        ax_img.set_title('Camera', fontsize=10, color=INK2, pad=8)
         ax_img.axis('off')
     else:
-        fig, ax = plt.subplots(figsize=(9, 7))
+        fig, (ax_gt, ax_pred) = plt.subplots(
+            1, 2, figsize=(14, 6.8), gridspec_kw={'wspace': 0.15})
+    panels = [ax_gt, ax_pred]
 
-    # ---- 右:BEV ----
+    # ---- BEV 朝向: x 前(屏幕上) / y 左(屏幕左) = 车规惯例 ----
+    # 实现: 数据坐标取 (u,v)=(y,x), 再 invert_xaxis ⇒ 整个场景逆时针转 90°,
+    # 横轴 tick 仍是真实 y 值(左大右小), 无需手写负号
     cmap = LinearSegmentedColormap.from_list('msr_div', [DIV_BLUE, DIV_GRAY, DIV_RED])
     if pts.shape[0]:
         if color_by == 'doppler_gnd':
@@ -88,79 +94,75 @@ def plot_frame(ds, sid, split, out_dir, color_by='doppler_gnd', pred=None):
         else:
             c = pts[:, cols[color_by]]
         vmax = np.percentile(np.abs(c), 99) or 1.0
-        sc = ax.scatter(pts[:, 0], pts[:, 1], c=c, cmap=cmap,
-                        norm=Normalize(vmin=-vmax, vmax=vmax),
-                        s=14, linewidths=0, alpha=0.9, zorder=2)
-        cb = fig.colorbar(sc, ax=ax, fraction=0.046, pad=0.02)
+        norm = Normalize(vmin=-vmax, vmax=vmax)
+        for ax in panels:  # 两个 BEV 面板各画一份(scatter 不能跨 axes 复用)
+            sc = ax.scatter(pts[:, 1], pts[:, 0], c=c, cmap=cmap, norm=norm,
+                            s=2, linewidths=0, alpha=0.9, zorder=2)
+        cb = fig.colorbar(sc, ax=panels, fraction=0.046, pad=0.02)
         cb.set_label(color_by, fontsize=9, color=INK2)
         cb.ax.tick_params(colors=MUTED, labelsize=8)
         cb.outline.set_edgecolor(GRID)
 
-    # GT 框 + 类名直接标注 + 朝向短线
+    # GT 框(ax_gt): 细实线 + 无颜色填充; 统一走 draw_box_bev(Polygon 角点法)
     for b, n in zip(boxes, names):
-        n = str(n)
-        x, y, _z, dx, dy, _dz, hdg = b
-        color = CLASS_COLOR.get(n, '#eda100')
-        rect = Rectangle((x - dx / 2, y - dy / 2), dx, dy,
-                         angle=np.degrees(hdg), linewidth=2,
-                         edgecolor=color, facecolor='none', zorder=4)
-        rect.set_path_effects([pe.withStroke(linewidth=4, foreground='white')])
-        ax.add_patch(rect)
-        ax.plot([x, x + dx / 2 * np.cos(hdg)], [y, y + dx / 2 * np.sin(hdg)],
-                color=color, linewidth=1.2, zorder=4)  # 朝向(车头)
-        label = CLASS_LABEL.get(n, n)
-        ax.text(x, y + max(dy, 1.2) * 0.7 + 0.6, label, fontsize=8, color=INK,
-                ha='center', zorder=5)
-        ax.texts[-1].set_path_effects([pe.withStroke(linewidth=3, foreground='white')])
+        color = CLASS_COLOR.get(str(n), '#eda100')
+        draw_box_bev(ax_gt, b, color, linestyle='-', linewidth=1.2, zorder=4,
+                     swap_xy=True)
 
-    # 预测框(虚线 + score;同类同色,与 GT 虚实区分)
+    # 预测框(ax_pred): 与 GT 同款细实线空心,风格统一(区分只靠分面板+各自计数)
     n_pred = 0
     if pred is not None:
-        from viz_common import draw_box_bev
-        cls_names = ['1', '4', '5']  # MsrDataset CLASS_NAMES(顺序即 label 1/2/3 槽位)
+        cls_names = ['1', '2', '4', '5']  # MsrDataset CLASS_NAMES(顺序即 label 1/2/3/4 槽位)
         for b, lb, sc_ in zip(pred.get('pred_boxes', []),
                               pred.get('pred_labels', []),
                               pred.get('pred_scores', [])):
             li = int(lb)
             n = cls_names[li - 1] if 0 < li <= len(cls_names) else str(li)
             color = CLASS_COLOR.get(n, '#eda100')
-            draw_box_bev(ax, b, color, label=CLASS_LABEL.get(n, n),
-                         linestyle='--', score=float(sc_), linewidth=1.5, zorder=3.5)
+            draw_box_bev(ax_pred, b, color, linestyle='-', linewidth=1.2,
+                         zorder=4, swap_xy=True)
             n_pred += 1
 
     # ego 位置
-    ax.scatter([0], [0], marker='o', s=5, color=INK, zorder=5)
-    ax.annotate('ego', (0, 0), textcoords='offset points', xytext=(6, 6),
-                fontsize=8, color=INK2)
+    for ax in panels:
+        ax.scatter([0], [0], marker='o', s=5, color=INK, zorder=5)
+    ax_gt.annotate('ego', (0, 0), textcoords='offset points', xytext=(6, 6),
+                   fontsize=8, color=INK2)
 
-    # 范围:点与框联合外沿 + 3m 边距,等比
+    # 范围:点与框联合外沿 + 3m 边距,两面板同 range 便于对比; 等比
     if pts.shape[0] or boxes.shape[0]:
         xs = np.concatenate([pts[:, 0], boxes[:, 0]]) if pts.shape[0] else boxes[:, 0]
         ys = np.concatenate([pts[:, 1], boxes[:, 1]]) if pts.shape[0] else boxes[:, 1]
         m = 3.0
-        ax.set_xlim(min(xs.min(), 0) - m, xs.max() + m)
-        ax.set_ylim(min(ys.min(), 0) - m, ys.max() + m)
-    ax.set_aspect('equal')
+        xlo, xhi = min(xs.min(), 0) - m, xs.max() + m
+        ylo, yhi = min(ys.min(), 0) - m, ys.max() + m
+    else:
+        xlo, xhi, ylo, yhi = -10, 10, -10, 10
+    for ax in panels:
+        ax.set_xlim(ylo, yhi)          # 显示横轴 = y
+        ax.set_ylim(xlo, xhi)          # 显示纵轴 = x
+        ax.invert_xaxis()              # +y 朝左
+        ax.set_aspect('equal')
+        ax.set_xlabel('y (m)', fontsize=9, color=INK2)
+        ax.set_ylabel('x (m)', fontsize=9, color=INK2)
+        ax.tick_params(colors=MUTED, labelsize=8)
+        for s in ax.spines.values():
+            s.set_color(GRID)
+        ax.grid(True, color=GRID, linewidth=0.6, alpha=0.9)
+        ax.set_axisbelow(True)
 
-    ax.set_xlabel('x (m)', fontsize=9, color=INK2)
-    ax.set_ylabel('y (m)', fontsize=9, color=INK2)
-    ax.tick_params(colors=MUTED, labelsize=8)
-    for s in ax.spines.values():
-        s.set_color(GRID)
-    ax.grid(True, color=GRID, linewidth=0.6, alpha=0.9)
-    ax.set_axisbelow(True)
+    # 图例: 全 4 类固定槽位色, 两面板各带一份; title 带各自目标数, 一眼看出 GT/pred 数量差
+    class_handles = [Line2D([0], [0], color=CLASS_COLOR[k], linewidth=2,
+                            label=CLASS_LABEL.get(k, k))
+                     for k in ['1', '2', '4', '5']]
+    for ax, ttl in zip(panels, ['GT (%d)' % boxes.shape[0], 'Pred (%d)' % n_pred]):
+        ax.legend(handles=class_handles, loc='upper right', fontsize=8,
+                  framealpha=0.9, edgecolor=GRID, labelcolor=INK2,
+                  title='Class', title_fontsize=9)
+        ax.set_title(ttl, fontsize=10, color=INK2, pad=8)
 
-    present = [k for k in CLASS_COLOR if k in set(str(n) for n in names)]
-    handles = [Line2D([0], [0], color=CLASS_COLOR[k], linewidth=2,
-                      label=CLASS_LABEL.get(k, k)) for k in present]
-    if handles:
-        ax.legend(handles=handles, loc='upper right', fontsize=8, framealpha=0.9,
-                  edgecolor=GRID, labelcolor=INK2)
-
-    ax.set_title('BEV radar points + GT(solid) + pred(dashed)  (color = %s)' % color_by,
-                 fontsize=10, color=INK2, pad=8)
-    fig.suptitle('MSR %s  idx=%s   |   %d points, %d GT, %d pred   |   ego_speed %.1f m/s'
-                 % (split, sid, pts.shape[0], boxes.shape[0], n_pred, param['ego_speed']),
+    fig.suptitle('MSR %s %s  |  %d GT, %d pred  |  ego %.1f m/s'
+                 % (split, sid, boxes.shape[0], n_pred, param['ego_speed']),
                  fontsize=12, color=INK, y=0.99)
 
     out = out_dir / ('%s_bev_%s.png' % (split, sid))
@@ -171,9 +173,9 @@ def plot_frame(ds, sid, split, out_dir, color_by='doppler_gnd', pred=None):
 
 def main():
     parser = argparse.ArgumentParser(description='MSR multi-frame BEV + GT(+pred) visualization')
-    parser.add_argument('--data_path', type=str, default='/mnt/d/DataSet/MSR')
+    parser.add_argument('--data_path', type=str, default='/mnt/d/DataSet/MSRv1')
     parser.add_argument('--cfg_file', type=str, default=None,
-                        help='模型 cfg;与 --ckpt 连用开启预测叠加模式(如 mc/YAML/msr_radarpillar.yaml)')
+                        help='模型 cfg;与 --ckpt 连用开启预测叠加模式(如 experiments/MC_DATASET/YAML/msr_radarpillar.yaml)')
     parser.add_argument('--ckpt', type=str, default=None, help='checkpoint(best.pth)')
     parser.add_argument('--split', type=str, default='training',
                         choices=['training', 'val', 'testing', 'both'],
@@ -196,7 +198,7 @@ def main():
         Path('output/res_viz') / (Path(args.cfg_file).stem if args.cfg_file else 'msr_data'))
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    net = build_viz_net(args.cfg_file, args.ckpt) if args.ckpt is not None else None
+    net, _loader, _ds, _cfg = build_viz_net(args.cfg_file, args.ckpt) if args.ckpt is not None else (None, None, None, None)
 
     for split in splits:
         if args.cfg_file is not None:
@@ -212,7 +214,7 @@ def main():
                             training=False, root_path=None)
         else:
             ds = MsrDataset(dataset_cfg=make_full_cfg(str(Path(args.data_path))),
-                            class_names=['1', '4', '5'], training=False, root_path=None)
+                            class_names=['1', '2', '4', '5'], training=False, root_path=None)
             ds.set_split(split)
 
         ids = args.indices if args.indices else pick_frames(ds, ds.sample_id_list, args.num,

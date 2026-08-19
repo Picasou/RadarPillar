@@ -48,7 +48,7 @@ def ds():
     from pcdet.datasets.msr.msr_dataset import MsrDataset
     ds = MsrDataset(
         dataset_cfg=_make_minimal_cfg(['x', 'y', 'z', 'rcs', 'doppler_mps']),
-        class_names=['1', '4', '5'], training=False, root_path=None,
+        class_names=['1', '2', '4', '5'], training=False, root_path=None,
     )
     ds.set_split('training')
     return ds
@@ -139,7 +139,7 @@ def test_get_label_shape_and_classes(ds):
     boxes, names = ds.get_label('00000000')
     assert boxes.shape[1] == 7
     assert names.shape[0] == boxes.shape[0]
-    assert set(np.unique(names)).issubset({'1', '4', '5'})
+    assert set(np.unique(names)).issubset({'1', '2', '4', '5'})
 
 
 def test_get_label_geometry_in_meters(ds):
@@ -175,7 +175,7 @@ def test_use_gnd_velocity_off():
         ['x', 'y', 'z', 'dop_x', 'dop_y', 'dop_x_gnd', 'dop_y_gnd']
     )
     cfg.USE_GND_VELOCITY = False
-    ds = MsrDataset(dataset_cfg=cfg, class_names=['1', '4', '5'], training=False, root_path=None)
+    ds = MsrDataset(dataset_cfg=cfg, class_names=['1', '2', '4', '5'], training=False, root_path=None)
     ds.set_split('training')
     pts = ds.get_radar('00000000')
     # 18 列 src 顺序:dop_x(14), dop_y(15), dop_x_gnd(16), dop_y_gnd(17)
