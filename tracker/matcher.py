@@ -1,110 +1,152 @@
-"""数据关联 - 欧氏/马氏代价建表 + KM 顶标法最大权匹配."""
+"""数据关联 - 代价建表 + KM 最大权匹配."""
 from __future__ import annotations
 import numpy as np
 
 from .schemas import Cfg, Trk, Obj, Matches
 
-
-# 不可连边权重: 最大权匹配中不可连边须是最小权 -inf.
-_W_NEG_INF: float = -np.inf
-
-
-class _GapMetric:
-    """距离度量 - 单条 (trk, obj) 的关联代价 gap, 越小越优."""
-
-    def __init__(self, gap_type: int, weight: list[float]):
-        self.gap_type = gap_type  # 1=欧氏  2=马氏
-        self.weight = weight      # [x_weight, y_weight, v_weight]
-
-    def gap(self, trk: Trk, obj: Obj) -> float:
-        """计算 trk↔obj 关联代价: 位置项 (欧氏/马氏) + 多普勒加权平方."""
-        if self.gap_type == 1:
-            # 欧氏: 位置差 + 多普勒差的加权平方和
-            pos = (self.weight[0] * (trk.x_m - obj.x) ** 2 +
-                   self.weight[1] * (trk.y_m - obj.y) ** 2)
-        else:
-            # 马氏: x/y 纯马氏距离 (weight 不参与位置项)
-            diff = np.array([trk.x_m - obj.x, trk.y_m - obj.y])
-            pos = diff @ np.linalg.inv(trk.cov[0:2, 0:2]) @ diff
-        dpl = self.weight[2] * (trk.doppler_mps - obj.doppler) ** 2
-        return float(pos + dpl)
-
-
-
-class _KMSolver:
-    """KM 顶标法最大权匹配 - 仅在冲突子图 (match 未定型位) 上增广."""
-
-    def __init__(self, W: np.ndarray, match: np.ndarray):
-        self.W = W.astype(np.float64).copy()
-        self.n_trk, self.n_obj = W.shape
-        self.Li = np.zeros(self.n_trk)            # 行顶标
-        self.Lj = np.zeros(self.n_obj)            # 列顶标
-        self.match = match.astype(int).copy()     # 预填确定性配对, 冲突位 -1 待增广
-        self.Vi = np.zeros(self.n_trk, dtype=bool)
-        self.Vj = np.zeros(self.n_obj, dtype=bool)
-        self.inc = np.inf                         # 本次 DFS 最小松弛量
-
-    def solve(self) -> np.ndarray:
-        """逐行增广."""
-        # TODO: 空矩阵短路; Li=max_j W; for i 增广 (失败则松弛顶标重试)
-        return self.match
-
-    def _init_labels(self) -> None:
-        """Li[i] = max_j W[i,j]."""
-        # TODO: self.Li = np.max(self.W, axis=1)
-        ...
-
-    def _km_dfs(self, i: int) -> bool:
-        """相等子图内找增广路, 回溯翻转匹配."""
-        # TODO: 标 Vi; 遍历未访问列记 slack; 相等子图边深搜, 找到写 match
-        ...
-
-    def _slack_inc(self) -> float:
-        """未访问列上 (Li+Lj-W) 的 min."""
-        # TODO: 矢量化取 min
-        ...
-
-    def _update_label(self, inc: float) -> None:
-        """松弛顶标: Li[Vi]-=inc, Lj[Vj]+=inc."""
-        # TODO: self.Li[self.Vi] -= inc; self.Lj[self.Vj] += inc
-        ...
+_EPS = 1e-6
+_UNMATCHED = -1
+_MAHA_SCALE = 1.2                    # 马氏椭圆长宽放大系数 (对齐 C maha_covariance 输入)
 
 
 class Matcher:
-    """关联主类 - 合并 → 建表 → 建图 → KM → 取结果."""
+    """关联主类 - 建表 → 建图 → KM → 取结果."""
 
     def __init__(self, cfg: Cfg):
-        self.cfg = cfg
-        self.thresh = cfg.MATCH.thresh            # 代价门限
-        self.metric = self._build_gap_metric(cfg)
-
-    def _build_gap_metric(self, cfg: Cfg) -> _GapMetric:
-        return _GapMetric(gap_type=cfg.MATCH.gap_type, weight=cfg.MATCH.gap_weight)
+        self.thresh = cfg.MATCH.thresh
+        self.gap_type = cfg.MATCH.gap_type            # 1=欧氏  2=马氏
+        self.gap_weight = cfg.MATCH.gap_weight        # [x_w, y_w, dpl_w]
+        self.gap_dim = cfg.MATCH.gap_dim              # 2=x/y  3=x/y/dpl
 
     def run(self, trks: list[Trk], objs: list[Obj]) -> Matches:
-        """统一关联入口."""
-        objs = self._merge_objs(trks, objs)          # 合并分裂检测
-        W = self._build_cost_table(trks, objs)       # 建代价表
-        match = self._build_graph(W)                 # 一对一直接配对, 冲突留 KM
-        match = _KMSolver(W, match).solve()          # 冲突子图跑 KM
-        return self._post_result(trks, objs, match)  # 汇总输出
+        W = self._build_cost_table(trks, objs)
+        match = self._build_graph(W)
+        match = self._km_solve(W, match)
+        return self._post_result(trks, objs, match)
 
-    def _merge_objs(self, trks: list[Trk], objs: list[Obj]) -> list[Obj]:
-        """用 trk 检查 obj 分裂, 相近则合并."""
-        # TODO: 对每个 trk 找马氏距离内的 obj 合并
-        ...
+    def _maha_inv(self, trk: Trk) -> np.ndarray | None:
+        """
+        目标外接椭圆协方差逆: 长宽×1.2 + 航向构造 (对齐 C maha_covariance); 退化解返回 None
+        """
+        cos_h = np.cos(np.deg2rad(trk.heading_deg))
+        sin_h = np.sin(np.deg2rad(trk.heading_deg))
+        hx = 0.5 * trk.length_m * _MAHA_SCALE
+        hy = 0.5 * trk.width_m * _MAHA_SCALE
+        r00, r01 = hx * cos_h, -hy * sin_h
+        r10, r11 = hx * sin_h, hy * cos_h
+        c00, c10 = r00 * r00 + r01 * r01, r00 * r10 + r01 * r11
+        d = c00 * (r10 * r10 + r11 * r11) - c10 * c10
+        if d <= 0:
+            return None
+        return np.array([[r10 * r10 + r11 * r11, -c10], [-c10, c00]]) / d
+
+    def _gap(self, trk: Trk, obj: Obj, inv: np.ndarray | None = None) -> float:
+        if self.gap_type == 1:
+            pos = (self.gap_weight[0] * (trk.x_m - obj.x) ** 2 +
+                   self.gap_weight[1] * (trk.y_m - obj.y) ** 2)
+        else:
+            if inv is None:
+                inv = self._maha_inv(trk)
+            if inv is None:
+                return float('inf')
+            diff = np.array([trk.x_m - obj.x, trk.y_m - obj.y])
+            pos = diff @ inv @ diff
+        if self.gap_dim == 3:
+            pos += self.gap_weight[2] * (trk.doppler_mps - obj.doppler) ** 2
+        return float(pos)
 
     def _build_cost_table(self, trks: list[Trk], objs: list[Obj]) -> np.ndarray:
-        """权重矩阵 W: W=thresh-gap, gap>=thresh 填 -inf."""
-        # TODO: 双循环填表; 马氏分支预缓存 inv_Σ
-        ...
+        # W = thresh - gap, gap >= thresh 不可连填 0; 马氏逆每 trk 预计算一次
+        W = np.zeros((len(trks), len(objs)))
+        invs = [self._maha_inv(t) for t in trks] if self.gap_type == 2 else None
+        for i, trk in enumerate(trks):
+            for j, obj in enumerate(objs):
+                gap = self._gap(trk, obj, invs[i] if invs else None)
+                if gap < self.thresh:
+                    W[i][j] = self.thresh - gap
+        return W
 
     def _build_graph(self, W: np.ndarray) -> np.ndarray:
-        """一对一剪枝: 可连边唯一则直接配对, 冲突 (>1) 留 KM, 0 标未匹配."""
-        # TODO: Ti/Tj 计数, 确定性写 match, 冲突位留 -1
-        ...
+        # 可连边唯一 → 直接配对; 冲突 (>1) 留 KM
+        n_trk, n_obj = W.shape
+        match = np.full(n_obj, _UNMATCHED, dtype=int)
+        if n_trk == 0 or n_obj == 0:
+            return match
+        Ti = np.sum(W > _EPS, axis=1)
+        Tj = np.sum(W > _EPS, axis=0)
+        for i in range(n_trk):
+            for j in range(n_obj):
+                if W[i][j] > _EPS and Ti[i] == 1 and Tj[j] == 1:
+                    match[j] = i
+        return match
+
+    def _km_solve(self, W: np.ndarray, match: np.ndarray) -> np.ndarray:
+        n_trk, n_obj = W.shape
+        if n_obj == 0:
+            return match
+        # 冲突子图: Cj = 待解列; Ci = 未被预填占用的行且有待解可连边
+        Cj = [j for j in range(n_obj) if match[j] == _UNMATCHED]
+        prematched_trks = {match[j] for j in range(n_obj) if match[j] != _UNMATCHED}
+        Ci = [i for i in range(n_trk)
+              if i not in prematched_trks
+              and any(W[i][j] > _EPS and match[j] == _UNMATCHED for j in range(n_obj))]
+        if not Ci:
+            return match
+        Ni, Nj = len(Ci), len(Cj)
+        Nji = max(Ni, Nj)
+        Ws = np.zeros((Ni, Nji))
+        for ii in range(Ni):
+            for jj in range(Nj):
+                Ws[ii][jj] = W[Ci[ii]][Cj[jj]]
+        # 行顶标 = 行最大权, 列顶标 = 0
+        Li = np.zeros(Nji)
+        Lj = np.zeros(Nji)
+        if Nji:
+            Li[:Ni] = np.max(Ws, axis=1)
+        gm = np.full(Nji, _UNMATCHED, dtype=int)
+
+        def dfs(i, Vi, Vj, slack):
+            # 相等子图内找增广路, 回溯翻 gm
+            Vi[i] = True
+            for j in range(Nji):
+                if Vj[j]:
+                    continue
+                d = Li[i] + Lj[j] - Ws[i][j]
+                if d <= _EPS:
+                    Vj[j] = True
+                    if gm[j] == _UNMATCHED or dfs(gm[j], Vi, Vj, slack):
+                        gm[j] = i
+                        return True
+                elif d < slack[j]:
+                    slack[j] = d
+            return False
+
+        for i in range(Ni):
+            while True:
+                Vi = np.zeros(Nji, dtype=bool)
+                Vj = np.zeros(Nji, dtype=bool)
+                slack = np.full(Nji, np.inf)
+                if dfs(i, Vi, Vj, slack):
+                    break
+                inc = np.min(slack[~Vj])
+                Li[Vi] -= inc
+                Lj[Vj] += inc
+
+        for jj in range(Nj):
+            ii = gm[jj]
+            if ii != _UNMATCHED and ii < Ni and Ws[ii][jj] > _EPS:
+                match[Cj[jj]] = int(Ci[ii])
+        return match
 
     def _post_result(self, trks: list[Trk], objs: list[Obj], match: np.ndarray) -> Matches:
-        """match → matched/unmatched."""
-        # TODO: 遍历 match 收集配对与未匹配项
-        ...
+        res = Matches()
+        matched_trk, matched_obj = set(), set()
+        for j in range(len(match)):
+            i = match[j]
+            if 0 <= i < len(trks):
+                res.matched.append((trks[i], objs[j]))
+                matched_trk.add(i)
+                matched_obj.add(j)
+        res.unmatched_trks = [trks[i] for i in range(len(trks)) if i not in matched_trk]
+        res.unmatched_objs = [objs[j] for j in range(len(objs)) if j not in matched_obj]
+        return res

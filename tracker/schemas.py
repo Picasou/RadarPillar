@@ -106,7 +106,14 @@ class Objs:
 
 @dataclass
 class Matches:
-    """匹配 - match 过程 + 结果。"""
+    """
+    匹配 - match 过程 + 结果。
+
+    契约:
+        matched        : list[tuple[Trk, Obj]] - 关联成功的 (航迹, 观测) 对
+        unmatched_trks : list[Trk]             - 未关联航迹
+        unmatched_objs : list[Obj]             - 未关联观测
+    """
     matched: list = field(default_factory=list)
     unmatched_trks: list = field(default_factory=list)
     unmatched_objs: list = field(default_factory=list)
@@ -181,12 +188,12 @@ class Trk:
     yaw_rate_std_degs: float
 
     # --- 分类 / 概率 / 状态 ---
-    type: int                   # 目标类型 (枚举整数)
+    type: int                 # 目标类型 (枚举整数)
     type_confi: int           # 类型置信度 [0-100]
-    obstacle_prob: int        # 障碍概率 [0-100]
+    obstacle_prob: int        # 输出锁存 [0:未上桌 | 1:输出中]
     existence_prob: int       # 存在概率 [0-100]
     motion_status: int          # [0:静止 | 1:运动 | 2:慢速] (枚举)
-    measurement_status: int     # [0:coasting | 1:normal] (枚举)
+    measurement_status: int     # 连续未量测帧数 (0=当帧有量测)
     passable_status: int        # [0:不可通行 | 1:可通行] (枚举)
     rel_vel: int                # [0:绝对速度 | 1:相对速度] (标志)
     rel_acc: int                # [0:绝对加速度 | 1:相对加速度] (标志)
@@ -262,12 +269,13 @@ class CfgModel:
     cfg: str                    # 模型结构 yaml
     ckpt: str                   # 权重路径
     score_thresh: float
+    device: str = 'auto'        # auto | cuda | cpu (auto=有 GPU 走 cuda 否则 cpu)
 
 
 @dataclass
 class CfgFilterParaKf:
-    """KF 参数 - 对齐 FILTER.para.para_kf。"""
-    dim: int                    # 2=(x/y)  4=(x/y/vx/vy)
+    """KF 参数 - 对齐 FILTER.para.para_kf。dim 是量测维(状态恒 4 维)。"""
+    dim: int                    # 量测维: 2=仅(x/y)  4=(x/y/vx/vy); 状态恒 [x,y,vx,vy]
     q: float
     r: float
 
@@ -292,7 +300,7 @@ class CfgFilter:
 class CfgMatch:
     """关联配置 - 对齐 MATCH。"""
     gap_type: int               # 1=欧氏  2=马氏
-    gap_dim: int                # 2=x/y  3=x/y/z  4=x/y/dpl_gnd
+    gap_dim: int                # 2=x/y  3=x/y/dpl
     gap_weight: list[float]
     thresh: float
 
@@ -322,6 +330,7 @@ class CfgManager:
     dt: float
     history_horizon: float
     adapter: dict               # smooth/markov
+    prob_output: int = 80       # 上桌存在概率线
 
 
 @dataclass
@@ -404,6 +413,8 @@ class Cfg:
         if not isinstance(self.MODEL.ckpt, str) or not self.MODEL.ckpt:
             raise ValueError(f"MODEL.ckpt must be non-empty str, got {self.MODEL.ckpt}")
         self._check_float(self.MODEL.score_thresh, 0, 1, 'MODEL.score_thresh')
+        if self.MODEL.device not in ('auto', 'cuda', 'cpu'):
+            raise ValueError(f"MODEL.device must be 'auto'|'cuda'|'cpu', got {self.MODEL.device}")
 
         # FILTER
         self._check_int(self.FILTER.type, 1, 4, 'FILTER.type')
@@ -414,20 +425,22 @@ class Cfg:
         self._check_float_gt(self.FILTER.para.para_abf['alpha'], 0, 'FILTER.para.para_abf.alpha')
         self._check_float_gt(self.FILTER.para.para_abf['beta'], 0, 'FILTER.para.para_abf.beta')
         self._check_int(self.FILTER.para.para_kf.dim, 2, 4, 'FILTER.para.para_kf.dim')
-        self._check_matrix(self.FILTER.para.para_kf.q, self.FILTER.para.para_kf.dim, 'FILTER.para.para_kf.q')
+        # 状态恒 4 维 → Q 恒 4×4; R 按量测维 dim
+        self._check_matrix(self.FILTER.para.para_kf.q, 4, 'FILTER.para.para_kf.q')
         self._check_matrix(self.FILTER.para.para_kf.r, self.FILTER.para.para_kf.dim, 'FILTER.para.para_kf.r')
         if self.FILTER.type >= 3:
             self._check_int(self.FILTER.para.para_ekf.get('dim', 4), 2, 4, 'FILTER.para.para_ekf.dim')
-            self._check_matrix(self.FILTER.para.para_ekf.get('q'), self.FILTER.para.para_ekf.get('dim', 4), 'FILTER.para.para_ekf.q')
+            self._check_matrix(self.FILTER.para.para_ekf.get('q'), 4, 'FILTER.para.para_ekf.q')
             self._check_matrix(self.FILTER.para.para_ekf.get('r'), self.FILTER.para.para_ekf.get('dim', 4), 'FILTER.para.para_ekf.r')
 
         # MATCH
         self._check_int(self.MATCH.gap_type, 1, 2, 'MATCH.gap_type')
-        self._check_int(self.MATCH.gap_dim, 2, 4, 'MATCH.gap_dim')
+        self._check_int(self.MATCH.gap_dim, 2, 3, 'MATCH.gap_dim')
         if not isinstance(self.MATCH.gap_weight, list):
             raise ValueError(f"MATCH.gap_weight must be list, got {type(self.MATCH.gap_weight).__name__}")
-        if len(self.MATCH.gap_weight) < self.MATCH.gap_dim:
-            raise ValueError(f"MATCH.gap_weight length ({len(self.MATCH.gap_weight)}) < gap_dim ({self.MATCH.gap_dim})")
+        # gap() 索引 weight[0/1] (位置x/y), weight[2] (多普勒) 仅 gap_dim=3 用; 须 >=3
+        if len(self.MATCH.gap_weight) < 3:
+            raise ValueError(f"MATCH.gap_weight length ({len(self.MATCH.gap_weight)}) must be >= 3 (x/y/doppler)")
         for i, w in enumerate(self.MATCH.gap_weight):
             if not isinstance(w, (int, float)) or w < 0:
                 raise ValueError(f"MATCH.gap_weight[{i}] must be >=0 number, got {w}")
@@ -450,10 +463,17 @@ class Cfg:
         # MANAGER
         self._check_int(self.MANAGER.birth_heat, 0, None, 'MANAGER.birth_heat')
         self._check_int(self.MANAGER.death_heat, 0, None, 'MANAGER.death_heat')
+        self._check_int(self.MANAGER.prob_output, 0, 100, 'MANAGER.prob_output')
         self._check_float_gt(self.MANAGER.dt, 0, 'MANAGER.dt')
         self._check_float_gt(self.MANAGER.history_horizon, 0, 'MANAGER.history_horizon')
         self._check_int(self.MANAGER.adapter.get('smooth', 0), 0, 1, 'MANAGER.adapter.smooth')
         self._check_int(self.MANAGER.adapter.get('markov', 0), 0, 1, 'MANAGER.adapter.markov')
+        tm = self.MANAGER.adapter.get('type_markov', {})
+        cn = tm.get('class_names', ['Car', 'Pedestrian', 'Cyclist'])
+        if not isinstance(cn, list) or not cn or not all(isinstance(x, str) and x for x in cn):
+            raise ValueError(f"MANAGER.adapter.type_markov.class_names 须为非空字符串列表, got {cn}")
+        self._check_float(tm.get('p_stay', 0.95), 0, 1, 'MANAGER.adapter.type_markov.p_stay')
+        self._check_float(tm.get('accuracy', 0.7), 0, 1, 'MANAGER.adapter.type_markov.accuracy')
 
         return True
 
