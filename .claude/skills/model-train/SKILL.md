@@ -67,7 +67,7 @@ bash $SKILL/helpers/tmux_spawn.sh rpillar_<TASK> /path/to/project \
 ) | crontab -
 ```
 
-> **禁止用 CronCreate 加第二层汇报。** brief.sh 已每 10min 写进度到 `/tmp/<TASK>.brief.out`，用户用 `tail -f` 查看。agent 不需要再用 Claude session cron 读文件再汇报——那是重复且无法自动清理。
+> **必须用 CronCreate 装会话内汇报（用户明确要求）：每 10min 向用户推送进度**（读 `/tmp/<TASK>.brief.out` 尾部 + 当前 epoch，2-4 行）。用 session 级 cron（非 durable），且 prompt 里必须带自毁条件：检测到 `/tmp/<TASK>.done`（全批完成）或用户确认叫停后，报告最后一次并 `CronDelete` 自己 —— 保证训练结束自动停止汇报、不留空转任务。
 
 ## 4 类保护机制
 
