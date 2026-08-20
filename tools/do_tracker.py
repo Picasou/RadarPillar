@@ -4,15 +4,15 @@
 tracker 全链路跑真实序列数据 (loader→detector→filter→match→manager→visualizer)。
 
 用法(仓库根):
-  python tools/scripts/debug/run_tracker.py [--cfg tracker/cfg/cfg.yaml]
+  python tools/do_tracker.py [--cfg tracker/cfg/cfg.yaml]
 """
 import argparse
 import os
 import sys
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
-os.chdir(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tracker.tracker import Tracker
 
