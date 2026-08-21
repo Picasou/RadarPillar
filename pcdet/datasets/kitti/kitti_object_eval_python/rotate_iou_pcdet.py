@@ -66,6 +66,11 @@ def rotate_iou_gpu_eval(boxes, query_boxes, criterion=-1, device_id=0):
     b = _as_torch(boxes)
     q = _as_torch(query_boxes)
 
+    # 空输入短路: grid(0,·) 的 kernel launch 会异步报 invalid configuration,
+    # 毒化 CUDA 上下文使后续无关 kernel 连锁崩(WSL2 实测);IoU 空集=零矩阵,直接返回。
+    if b.shape[0] == 0 or q.shape[0] == 0:
+        return np.zeros((b.shape[0], q.shape[0]), dtype=np.float32)
+
     if b.shape[1] == q.shape[1] == 7:
         iou_t = iou3d_nms_utils.boxes_iou_bev(b, q)
         a1 = b[:, 3] * b[:, 4]   # 7D [x,y,z,dx,dy,dz,h] -> dx*dy

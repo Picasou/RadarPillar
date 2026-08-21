@@ -81,24 +81,40 @@ mkdir -p "$LOG_DIR"
 echo "[__TAG__] start  ts=$TS  bs=$BS  ep=$EPOCHS  OUTPUT_ROOT=$OUTPUT_ROOT"
 
 # === step 1: train (--skip_eval, 训后补 eval) ===
+# OOM 回退: bs>4 时 OOM → 清 ckpt 以 bs4 全量重训 (record BS_EFF 供汇报/落袋)
 SEED_ARGS=(); [ "$FIX_SEED" = True ] && SEED_ARGS=(--fix_random_seed)
-python -u tools/train.py \
-    --cfg_file "$CFG" \
-    --batch_size "$BS" --workers "$WORKERS" --epochs "$EPOCHS" \
-    --extra_tag "$TAG" --output_root "$OUTPUT_ROOT" \
-    --skip_eval "${SEED_ARGS[@]}" \
-    --set "OPTIMIZATION.early_stop.enabled" "False" "OPTIMIZATION.LR_WARMUP" "False" 2>&1 | tee "$LOG"
+run_train() {
+    python -u tools/train.py \
+        --cfg_file "$CFG" \
+        --batch_size "$1" --workers "$WORKERS" --epochs "$EPOCHS" \
+        --extra_tag "$TAG" --output_root "$OUTPUT_ROOT" \
+        --skip_eval "${SEED_ARGS[@]}" \
+        --set "OPTIMIZATION.early_stop.enabled" "False" "OPTIMIZATION.LR_WARMUP" "False" 2>&1 | tee "$LOG"
+}
+BS_EFF="$BS"
+echo "[__TAG__] train attempt bs=$BS"
+run_train "$BS"; RC=$?
+if [ "$RC" -ne 0 ] && grep -aiE "out of memory|cuda error" "$LOG" | grep -qiE "out of memory|cuda error"; then
+    if [ "$BS" -gt 4 ]; then
+        echo "[__TAG__] OOM @bs${BS} → 清 ckpt, 回退 bs4 全量重训"
+        BS_EFF=4
+        rm -rf "${OUTPUT_ROOT}/ckpt"
+        run_train 4; RC=$?
+    else
+        echo "[__TAG__] OOM @bs${BS} (已最低), 中止 (触发 retry)"; exit 1
+    fi
+fi
+[ "$RC" -ne 0 ] && { echo "[__TAG__] train 失败 (rc=$RC)"; exit 1; }
+echo "$BS_EFF" > "${OUTPUT_ROOT}/.bs_effective"
+echo "[__TAG__] train done, BS_EFF=$BS_EFF"
 
 # NaN/inf 守卫
 if grep -aiE "loss=nan|loss=inf" "$LOG" | tail -5 | grep -qaiE "nan|inf"; then
     echo "[__TAG__] FATAL: train log 含 nan/inf, 中止 (不落 marker, 触发 retry)"; exit 1
 fi
 
-# === step 2: eval 末 N ckpt (MSR 无 evaluation 方法 → 跳过, 避免每 ckpt 必崩空转) ===
+# === step 2: eval 末 N ckpt (MSR 亦有 evaluation, 全 DS 统一跑, 供 BEV pickbest) ===
 START_EPOCH=$(( EPOCHS - LAST_N ))
-if [ "$DS" = msr ]; then
-    echo "[__TAG__] MSR 无 evaluation, 跳过 eval — pickbest 将走 fallback(最新 ckpt 双落)"
-else
 for ep in $(seq $START_EPOCH $((EPOCHS - 1))); do
     CKPT="${OUTPUT_ROOT}/ckpt/checkpoint_epoch_${ep}.pth"
     [ -f "$CKPT" ] || { echo "[__TAG__] skip ep${ep} (ckpt 不在)"; continue; }
@@ -108,25 +124,42 @@ for ep in $(seq $START_EPOCH $((EPOCHS - 1))); do
         --extra_tag "${MODEL}_ep${ep}" --eval_tag default \
         --output_root "$OUTPUT_ROOT" 2>&1 | tee "${LOG_DIR}/eval_ep${ep}.log" || true
 done
-fi
 
-# === step 3: pickbest (max + median 双落) ===
+# === step 3: pickbest (max + median 双落; 口径=2D/BEV mean, 2DNoZ 系 3D AP 恒 0 勿用) ===
 START_EPOCH="$START_EPOCH" OUTPUT_ROOT="$OUTPUT_ROOT" python3 <<'PY'
 import os, re, shutil
 from pathlib import Path
 start_epoch = int(os.environ['START_EPOCH'])
 out = Path(os.environ['OUTPUT_ROOT'])
-pattern = re.compile(r'Car_3d/moderate_R40[^0-9-]*([0-9.]+)')
+BEV_RE = re.compile(r'^[A-Za-z]+_bev/moderate_R40$')
+R3D_RE = re.compile(r'^[A-Za-z]+_3d/moderate_R40$')
+
+def bev_mean(ret):
+    """2D 口径: 全部 *_bev/moderate_R40 均值 (4 类齐全即 2D mAP)。无 bev → None。"""
+    vals = [v for k, v in ret.items()
+            if BEV_RE.match(k) and isinstance(v, (int, float))]
+    return sum(vals) / len(vals) if vals else None
+
+def car3d(ret):
+    for k, v in ret.items():
+        if k == 'Car_3d/moderate_R40' and isinstance(v, (int, float)):
+            return v
+    return None
+
 results = []
-for r in (out / 'eval').rglob('*.json'):
+for r in (out / 'eval').rglob('results.json'):
     m = re.search(r'epoch_(\d+)', str(r))
     if not m: continue
     ep = int(m.group(1))
     if ep < start_epoch: continue
     try:
-        c = r.read_text(encoding='utf-8', errors='ignore')
-        m2 = pattern.search(c)
-        if m2: results.append((float(m2.group(1)), ep))
+        import json
+        ret = json.loads(r.read_text(encoding='utf-8', errors='ignore')).get('ret_dict', {})
+        score = bev_mean(ret)
+        if score is None:
+            score = car3d(ret)          # 兜底: 无 bev 键时退 3D Car
+        if score is not None:
+            results.append((float(score), ep))
     except Exception: pass
 
 if not results:
@@ -178,7 +211,8 @@ fi
 python .claude/skills/resbag/resbag.py make \
     --output_root "$OUTPUT_ROOT" --dataset "$DS" \
     --tag "$TAG" --model "$MODEL" \
-    --cfg_file "$CFG" --batch_size "$BS" 2>&1 | tee "${LOG_DIR}/resbag.log"
+    --cfg_file "$CFG" --batch_size "$BS_EFF" \
+    --note "train_bs=$BS_EFF" 2>&1 | tee "${LOG_DIR}/resbag.log"
 
 [ -f "${OUTPUT_ROOT}/model_store.yaml" ] || { echo "[__TAG__] ERROR: model_store.yaml 未落盘"; exit 1; }
 

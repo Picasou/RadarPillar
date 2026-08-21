@@ -54,7 +54,7 @@ LATEST_MTIME=0
 while IFS= read -r log; do
     mt=$(stat -c %Y "$log" 2>/dev/null || echo 0)
     [ "$mt" -gt "$LATEST_MTIME" ] && { LATEST_MTIME=$mt; LATEST_LOG="$log"; }
-done < <(find . -name "$LOG_PATTERN" -type f 2>/dev/null | head -50)
+done < <(find . -name "$LOG_PATTERN" -type f 2>/dev/null -not -path "./.git/*" | head -500)
 
 [ -n "$LATEST_LOG" ] || { echo "[$NOW] brief: 无活跃 log" >> "$BRIEF_OUT"; exit 0; }
 

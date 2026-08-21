@@ -1,0 +1,162 @@
+# MSR 行13: RadarNeXt 原版复刻 — VFE PN[64] + 论文金字塔 RepDWC[64,128,256] + MDFEN[384] + RadarNeXtCenterHead
+# 数据域/OPTIMIZATION 抄 msr_centerhead3d.yaml (MSR 4 类口径); MODEL 骨架抄
+#   tools/cfgs/model/vod_models/radarnext/vod_radarnext_mdfen.yaml (论文复刻已跑通范本),
+#   REP_DWC/MDFEN_NECK 逐参数对齐原工程 /home/admin/projects/RadarNeXt/.../configs/radarnext.py;
+#   与范本差异仅: tasks/类名 3 类 -> MSR 4 类单 task, RECTIFIER 按类 3 项 -> 4 项 (代码按 labels 索引,
+#   少 1 项推理越界), POST_CENTER_LIMIT_RANGE 换 MSR range。
+# 无 BACKBONE_3D (3DBACKBONE='—'); MDFEN fused 输出 grid/4=50x20, SepHead STRIDES [2] 上采到
+#   grid/2=100x40 对齐 OUT_SIZE_FACTOR 2 (与范本 80x80->160x160 同构)。
+# NMS 论文口径: DENSE_HEAD 内 nms_gpu / 0.2 / pre 1000 / post 83。
+# 类别: 1=轿车 2=行人 4=二轮车 5=卡车
+
+# ============================================================================================================================
+CLASS_NAMES: ['1', '2', '4', '5']
+
+# ============================================================================================================================
+DATA_CONFIG:
+  _BASE_CONFIG_: tools/cfgs/dataset/msr_dataset.yaml
+  POINT_CLOUD_RANGE: [0, -20, -10, 200, 20, 10]
+  DATA_PROCESSOR:
+  - NAME: mask_points_and_boxes_outside_range
+    REMOVE_OUTSIDE_BOXES: true
+  - NAME: shuffle_points
+    SHUFFLE_ENABLED:
+      train: true
+      test: false
+  - NAME: transform_points_to_voxels
+    VOXEL_SIZE: [1.0, 0.5, 20.0]
+    MAX_POINTS_PER_VOXEL: 16
+    MAX_NUMBER_OF_VOXELS:
+      train: 2048
+      test: 3096
+  DATA_AUGMENTOR:
+    DISABLE_AUG_LIST: [gt_sampling, placeholder]
+    AUG_CONFIG_LIST:
+    - NAME: random_world_flip
+      ALONG_AXIS_LIST: [x]
+    - NAME: random_world_scaling
+      WORLD_SCALE_RANGE: [0.95, 1.05]
+
+# ============================================================================================================================
+MODEL:
+  NAME: CenterPoint
+  # ------------------------
+  VFE:
+    NAME: PillarVFE
+    WITH_DISTANCE: false
+    USE_ABSOLUTE_XYZ: true
+    USE_NORM: true
+    USE_VELOCITY_DECOMPOSITION: false
+    USE_REL_VELOCITY_DECOMPOSITION: false
+    USE_VELOCITY_OFFSET: false
+    USE_REL_VELOCITY_OFFSET: false
+    NUM_FILTERS: [64]
+  # ------------------------
+  MAP_TO_BEV:
+    NAME: PointPillarScatter
+    NUM_BEV_FEATURES: 64
+  # ------------------------
+  BACKBONE_2D:
+    NAME: RadarNeXtMDFENBackbone     # RepDWC 金字塔 + MDFENNeck 折叠单块 (论文原版拓扑)
+    REP_DWC:                         # = 原工程 radarnext.py backbone 块 (逐参数)
+      LAYER_NUMS: [3, 5, 5]
+      LAYER_STRIDES: [2, 2, 2]
+      OUT_CHANNELS: [64, 128, 256]
+      NUM_OUTPUTS: 3
+      INFERENCE_MODE: false
+      USE_SE: false
+      NUM_CONV_BRANCHES: 1
+      USE_NORMCONV: false
+      USE_DWCONV: true
+    MDFEN_NECK:                      # = 原工程 radarnext.py neck 块 (逐参数)
+      CHANNELS_LIST: [64, 128, 256, 128, 64, 128, 256]
+      NUM_REPEATS: [1, 1, 1, 1]
+      DCN_LAYER: false
+      DCN_INDEX: [1]
+      DCN_IDS: [2]
+      FORMER: true
+      LATTER: false
+      GROUP: 4
+      USE_FFN: false
+      USE_NORM: false
+      INFERENCE_MODE: false
+      USE_SE: false
+      NUM_CONV_BRANCHES: 1
+      USE_DWCONV: true
+      USE_NORMCONV: false
+      MULTI_FUSION: true
+      FUSED_CHANNELS: [128, 128, 128]
+      FUSION_STRIDES: [1, 2]         # 融合到 grid/4=50x20, 输出 384
+  # ------------------------
+  DENSE_HEAD:
+    NAME: RadarNeXtCenterHead
+    CLASS_AGNOSTIC: false
+    TASKS:
+    - num_class: 4
+      class_names: ['1', '2', '4', '5']
+    COMMON_HEADS:
+      reg: [2, 2]
+      height: [1, 2]
+      dim: [3, 2]
+      rot: [2, 2]
+      iou: [1, 2]
+    CODE_WEIGHTS: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]   # reg2+height1+dim3+rot2 = 8
+    BBOX_CODE_SIZE: 7
+    STRIDES: [2]                     # MDFEN fused 50x20 (grid/4) 上采 x2 -> 100x40 = grid/2
+    SHARE_CONV_CHANNEL: 64
+    NUM_HM_CONV: 2
+    NUM_CORNER_HM_CONV: 2
+    INIT_BIAS: -2.19
+    FINAL_KERNEL: 3
+    OUT_SIZE_FACTOR: 2
+    MAX_OBJS: 500
+    DENSE_REG: 1
+    GAUSSIAN_OVERLAP: 0.1
+    MIN_RADIUS: 2
+    WEIGHT: 1.0
+    CORNER_WEIGHT: 1.0
+    IOU_WEIGHT: 1.0
+    IOU_REG_WEIGHT: 0.5
+    WITH_CORNER: true
+    WITH_REG_IOU: true
+    RECTIFIER: [[0.5, 0.5, 0.5, 0.5]]    # 论文 0.5 口径, MSR 4 类 4 项 (vod 范本 3 类 3 项)
+    POST_CENTER_LIMIT_RANGE: [0, -20, -10, 200, 20, 10]
+    SCORE_THRESHOLD: 0.1
+    NMS_CONFIG:                      # 论文口径
+      NMS_TYPE: nms_gpu
+      NMS_THRESH: 0.2
+      NMS_PRE_MAXSIZE: 1000
+      NMS_POST_MAXSIZE: 83
+  # ------------------------
+  POST_PROCESSING:
+    RECALL_THRESH_LIST: [0.3, 0.5, 0.7]
+    SCORE_THRESH: 0.2
+    OUTPUT_RAW_SCORE: false
+    EVAL_METRIC: vod          # MSR 无独立 eval,借用 vod;SKIP_EVAL 跳过实际评估
+    NMS_CONFIG:
+      MULTI_CLASSES_NMS: true
+      NMS_TYPE: nms_gpu
+      NMS_THRESH: 0.1
+      NMS_PRE_MAXSIZE: 4096
+      NMS_POST_MAXSIZE: 500
+
+# ============================================================================================================================
+OPTIMIZATION:
+  FIX_RANDOM_SEED: false
+  BATCH_SIZE_PER_GPU: 4       # MSR 点云密集 + 8G 显存,保守起步
+  NUM_EPOCHS: 80
+  eval_interval: 80
+  early_stop:
+    enabled: false
+  OPTIMIZER: adam_onecycle
+  LR: 0.003
+  WEIGHT_DECAY: 0.01
+  MOMENTUM: 0.9
+  MOMS: [0.95, 0.85]
+  PCT_START: 0.4
+  DIV_FACTOR: 10
+  DECAY_STEP_LIST: [35, 45]
+  LR_DECAY: 0.1
+  LR_CLIP: 1.0e-07
+  LR_WARMUP: false
+  GRAD_NORM_CLIP: 10

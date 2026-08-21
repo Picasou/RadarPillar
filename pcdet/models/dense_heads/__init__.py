@@ -11,6 +11,12 @@ from .radarnext_center_head_2d_noz import RadarNeXtCenterHead2DNoZ
 from .radarnext_center_head_2d_lossup import RadarNeXtCenterHead2DLossUp
 from .radarnext_center_head_abl_z import RadarNeXtCenterHeadAblZ
 from .radarnext_center_head_abl_h import RadarNeXtCenterHeadAblH
+from .radarnext_center_head_narrow import RadarNeXtCenterHeadNarrow
+from .radarnext_center_head_merged import RadarNeXtCenterHeadMerged
+from .radarnext_center_head_trunk import RadarNeXtCenterHeadTrunk
+from .radarnext_center_head_2d_narrow import RadarNeXtCenterHead2DNarrow
+from .radarnext_center_head_2d_merged import RadarNeXtCenterHead2DMerged
+from .radarnext_center_head_2d_trunk import RadarNeXtCenterHead2DTrunk
 from .radarpillar_anchor_head_single import RadarPillarAnchorHeadSingle
 from .radarpillar_center_head import RadarPillarCenterHead
 
@@ -33,6 +39,12 @@ __all__ = {
     'RadarNeXtCenterHead2DLossUp': RadarNeXtCenterHead2DLossUp,
     'RadarNeXtCenterHeadAblZ': RadarNeXtCenterHeadAblZ,
     'RadarNeXtCenterHeadAblH': RadarNeXtCenterHeadAblH,
+    'RadarNeXtCenterHeadNarrow': RadarNeXtCenterHeadNarrow,
+    'RadarNeXtCenterHeadMerged': RadarNeXtCenterHeadMerged,
+    'RadarNeXtCenterHeadTrunk': RadarNeXtCenterHeadTrunk,
+    'RadarNeXtCenterHead2DNarrow': RadarNeXtCenterHead2DNarrow,
+    'RadarNeXtCenterHead2DMerged': RadarNeXtCenterHead2DMerged,
+    'RadarNeXtCenterHead2DTrunk': RadarNeXtCenterHead2DTrunk,
     'RadarPillarAnchorHeadSingle': RadarPillarAnchorHeadSingle,
     'RadarPillarCenterHead': RadarPillarCenterHead,
     # 移植（第一批）

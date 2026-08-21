@@ -1,10 +1,6 @@
-# MSR RadarPillar 变体: head 换真 2D — RadarNeXtCenterHead2DNoZ (网络无 z/h 预测: 无 height 头, dim 只 l/w,
-#   6-cat 监督 offset_xy+log_lw+sin_cos; 推理 z 按 hm argmax 查 ANCHOR_BOTTOM_HEIGHTS, dz 置 0)
-# 真 2D 口径: 3D AP 恒 0, 只看 BEV AP (pickbest/eval 走 BEV 口径)
-# 派生自 msr_radarpillar.yaml, 差异: DENSE_HEAD AnchorHeadSingle -> RadarNeXtCenterHead2DNoZ;
-#   MODEL.NAME MC_RadarPillars -> CenterPoint (center head eval 走 pred_dicts, 详见 msr_centerhead3d.yaml 头注)
-# ANCHOR_BOTTOM_HEIGHTS 必须与各类 anchor_bottom_heights 一致('1'-0.75 '2'-0.85 '4'-0.85 '5'-1.5)
-# 类别: 1=轿车 2=行人 4=二轮车 5=卡车
+# MSR 行26: RepDWC(64,64,64) + MDFEN neck + ch2d trunk head
+# 骨架=msr_centerhead2d_trunk.yaml, 差异: BACKBONE_2D -> RadarNeXtMDFENBackbone (方案二 a=64),
+#   MDFEN fused 输出 grid/4=50x20 (CONCAT 192), head OUT_SIZE_FACTOR 2->4 对齐坐标
 
 # ============================================================================================================================
 CLASS_NAMES: ['1', '2', '4', '5']
@@ -62,15 +58,39 @@ MODEL:
     NUM_BEV_FEATURES: 32
   # ------------------------
   BACKBONE_2D:
-    NAME: BaseBEVBackbone
-    LAYER_NUMS: [3, 5, 5]
-    LAYER_STRIDES: [2, 2, 2]
-    NUM_FILTERS: [32, 32, 32]
-    UPSAMPLE_STRIDES: [1, 2, 4]
-    NUM_UPSAMPLE_FILTERS: [32, 32, 32]
+    NAME: RadarNeXtMDFENBackbone  # 变体点: RepDWC + MDFENNeck 折叠单块 (方案二 a 通道)
+    REP_DWC:                      # 对齐论文 backbone 拓扑, 通道按表格行锁定
+      LAYER_NUMS: [3, 5, 5]
+      LAYER_STRIDES: [2, 2, 2]
+      OUT_CHANNELS: [64, 64, 64]
+      NUM_OUTPUTS: 3
+      INFERENCE_MODE: false
+      USE_SE: false
+      NUM_CONV_BRANCHES: 1
+      USE_NORMCONV: false
+      USE_DWCONV: true
+    MDFEN_NECK:                   # 对齐论文 neck 拓扑 (PAN+DCN+MultiMAPFusion)
+      CHANNELS_LIST: [64, 64, 64, 128, 64, 128, 256]
+      NUM_REPEATS: [1, 1, 1, 1]
+      DCN_LAYER: false
+      DCN_INDEX: [1]
+      DCN_IDS: [2]
+      FORMER: true
+      LATTER: false
+      GROUP: 4
+      USE_FFN: false
+      USE_NORM: false
+      INFERENCE_MODE: false
+      USE_SE: false
+      NUM_CONV_BRANCHES: 1
+      USE_DWCONV: true
+      USE_NORMCONV: false
+      MULTI_FUSION: true
+      FUSED_CHANNELS: [64, 64, 64]
+      FUSION_STRIDES: [1, 2]      # 融合到 grid/4=50x20, head OUT_SIZE_FACTOR=4 对齐
   # ------------------------
   DENSE_HEAD:
-    NAME: RadarNeXtCenterHead2DNoZ    # 变体点: 真 2D 版(网络无 z/h 头, BEV 口径)
+    NAME: RadarNeXtCenterHead2DTrunk    # abl⑤ 2D 全共享
     CLASS_AGNOSTIC: false
     USE_DIRECTION_CLASSIFIER: true
     DIR_OFFSET: 0.78539
@@ -133,7 +153,7 @@ MODEL:
     WEIGHT: 1.0
     IOU_WEIGHT: 1.0
     IOU_REG_WEIGHT: 0.5
-    OUT_SIZE_FACTOR: 2
+    OUT_SIZE_FACTOR: 4         # MDFEN fused 在 grid/4, 必须 4 (否则坐标错位)
     ANCHOR_BOTTOM_HEIGHTS: [-0.75, -0.85, -0.85, -1.5]       # 2D 口径: z 按类填 anchor 底高
     NMS_CONFIG:
       NMS_TYPE: nms_gpu

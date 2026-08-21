@@ -111,11 +111,12 @@ L = w1×L(location) + w2×L(size) + w3×L(heading) + w4×L(type) + w5×L(vel) + 
 **input  :** [N_Fneck ,H ,W]   
 **output :** [N_cand × (location, size, vel, type, ispassable)]  
 **keyWord :** 从 BEV feature map 解码目标（location/size/vel/type/ispassable）  
-**candidate:**   
+**candidate:**
 - AnchorHeadSingle (anchor 回归) ；
 - RadarNeXtCenterHead (center heatmap)
 
 **pipeline :**   
+
 
 ### **NMS**
 **input  :** Head 候选 [N_cand × (score, location, size, vel, type, ispassable)]  
@@ -126,3 +127,21 @@ L = w1×L(location) + w2×L(size) + w3×L(heading) + w4×L(type) + w5×L(vel) + 
 - NMS_PRE_MAXSIZE : [4096(dense) → 1024(mask)]   
 
 **pipeline :** 
+
+## 模型表命名规则（experiments/<DATASET>/model.xlsx · MODEL sheet）
+
+各列命名语法，模块缩写与上文网络结构一一对应：
+
+- **MODEL_TAG** : yaml 文件名去扩展名（`msr_radarpillar` ↔ `YAML/msr_radarpillar.yaml`）
+- **INPUT** : 输入特征列表 `[]`，直接列 used_feature_list（如 `[x,y,z,dop_x_gnd,dop_y_gnd,rcs]`）
+- **VFE** : PointNet 风格 `PN[N]`，N=NUM_FILTERS，候选 32/64/128（如 `PN[32]`）
+- **3DBACKBONE** : attention 类 `PAtt[head:H]`，H=NUM_HEADS（如 `PAtt[head:1]`、`PAtt[head:2]`）
+- **2DBACKBONE** : `块风格[LAYER_NUMS]*[CHANNELS]`
+  - PointPillars 分割风格：`PP[3,5,5]*[32,32,32]`
+  - RepDWC 风格：`RepDwc[3,5,5]*[32,32,32]`（参数量/FLOPs 取 reparam 融合后口径）
+- **NECK** : 内置 deblock 上采样写 `UPSAMPLE[strides]+CONCAT[C]`（如 `UPSAMPLE[1,2,4]+CONCAT[96]`，C=各级上采样通道之和）；独立 neck 写 `FPN[C]` / `MDFEN[C]`
+- **HEAD** : `anchorbased`（AnchorHead 系）/ `anchorfree`（CenterHead 系）
+- **NMS** : 传统 NMS 写 `NMS[impl,iou]`（如 `NMS[gpu,0.1]`，多类 NMS 加 `,mc`）；pillar mask 免 NMS 写 `MASK`
+- **FLOPs / PARAMs** : 数值+单位（`5.597G` / `0.187M`），thop bs=4 实测口径
+- **mAP 列** : 3D moderate R40；`mAP`=全部类别均值；`OBmAP`=障碍物（原始标签 type 7），未参与训练/评估时留空
+- 无该模块统一写 `—`

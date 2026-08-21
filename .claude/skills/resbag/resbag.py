@@ -160,15 +160,23 @@ def _make_locked(output_root, dataset, tag, name, cfg_path, model,
     if cfg_path and cfg_path.exists():
         shutil.copy2(cfg_path, resbag_dir / "cfg.yaml")
 
-    # train.sh（model-train gen 在 experiments/SH/ 下，命名 train_*<model>*.sh）
+    # train.sh（优先 experiments/SH/；MSR 系在 experiments/MC_DATASET/SH/，
+    # model=rpillar_<tag> 时去掉 rpillar_ 前缀再 glob，兼容 train_msr_<tag>.sh）
     sh_candidates = sorted((ROOT / "experiments" / "SH").glob(
         f"train_*{model}*.sh"))
+    if not sh_candidates:
+        model_alt = model[8:] if model.startswith("rpillar_") else model
+        for _sd in sorted((ROOT / "experiments").glob("*/SH")):
+            if _sd.name == "SH":
+                continue
+            sh_candidates += sorted(_sd.glob(f"train_*{model_alt}*.sh"))
     # 排除 eval 壳
     sh_candidates = [p for p in sh_candidates if "eval" not in p.name]
     if sh_candidates:
         shutil.copy2(sh_candidates[0], resbag_dir / "train.sh")
     else:
-        _log(f"train.sh 源缺失：experiments/SH/train_*{model}*.sh", "WARN")
+        _log(f"train.sh 源缺失：experiments/SH/train_*{model}*.sh "
+             f"(fallback: experiments/*/SH/train_*{model_alt}*.sh)", "WARN")
 
     # best.pth
     if has_best:

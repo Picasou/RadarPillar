@@ -1,10 +1,5 @@
-# MSR RadarPillar 变体: head 换真 2D — RadarNeXtCenterHead2DNoZ (网络无 z/h 预测: 无 height 头, dim 只 l/w,
-#   6-cat 监督 offset_xy+log_lw+sin_cos; 推理 z 按 hm argmax 查 ANCHOR_BOTTOM_HEIGHTS, dz 置 0)
-# 真 2D 口径: 3D AP 恒 0, 只看 BEV AP (pickbest/eval 走 BEV 口径)
-# 派生自 msr_radarpillar.yaml, 差异: DENSE_HEAD AnchorHeadSingle -> RadarNeXtCenterHead2DNoZ;
-#   MODEL.NAME MC_RadarPillars -> CenterPoint (center head eval 走 pred_dicts, 详见 msr_centerhead3d.yaml 头注)
-# ANCHOR_BOTTOM_HEIGHTS 必须与各类 anchor_bottom_heights 一致('1'-0.75 '2'-0.85 '4'-0.85 '5'-1.5)
-# 类别: 1=轿车 2=行人 4=二轮车 5=卡车
+# MSR 行20: RepDWC(32,32,32) backbone + ch2d trunk head — RepDwc 轻量档 × 全共享 trunk
+# 骨架=msr_centerhead2d_trunk.yaml, 唯一差异: BACKBONE_2D -> RepDWCNoneBackbone (CONCAT 96)
 
 # ============================================================================================================================
 CLASS_NAMES: ['1', '2', '4', '5']
@@ -62,15 +57,21 @@ MODEL:
     NUM_BEV_FEATURES: 32
   # ------------------------
   BACKBONE_2D:
-    NAME: BaseBEVBackbone
+    NAME: RepDWCNoneBackbone      # 变体点: BaseBEVBackbone -> RepDWC 32 轻量档 (CONCAT 96, head 输入通道由 detector 自动适配)
     LAYER_NUMS: [3, 5, 5]
     LAYER_STRIDES: [2, 2, 2]
-    NUM_FILTERS: [32, 32, 32]
+    OUT_CHANNELS: [32, 32, 32]
     UPSAMPLE_STRIDES: [1, 2, 4]
     NUM_UPSAMPLE_FILTERS: [32, 32, 32]
+    NUM_OUTPUTS: 3
+    INFERENCE_MODE: false
+    USE_SE: false
+    NUM_CONV_BRANCHES: 1
+    USE_NORMCONV: false
+    USE_DWCONV: true
   # ------------------------
   DENSE_HEAD:
-    NAME: RadarNeXtCenterHead2DNoZ    # 变体点: 真 2D 版(网络无 z/h 头, BEV 口径)
+    NAME: RadarNeXtCenterHead2DTrunk    # abl⑤ 2D 全共享
     CLASS_AGNOSTIC: false
     USE_DIRECTION_CLASSIFIER: true
     DIR_OFFSET: 0.78539
@@ -157,7 +158,7 @@ MODEL:
 
 # ============================================================================================================================
 OPTIMIZATION:
-  FIX_RANDOM_SEED: false
+  FIX_RANDOM_SEED: true
   BATCH_SIZE_PER_GPU: 4       # MSR 点云密集 + 8G 显存,保守起步
   NUM_EPOCHS: 80
   eval_interval: 80

@@ -20,6 +20,7 @@ from ...utils import box_utils
 from ..dataset import DatasetTemplate
 from .msr_utils import (
     MSR_FEATURE_ORDER,
+    boxes_lidar_to_pseudo_camera,
     build_msr_features,
     load_struct_dtype,
     parse_label_boxes,
@@ -28,6 +29,10 @@ from .msr_utils import (
 # POINTS 中带 scale 的字段集合(get_radar 在 build 之前对它们应用 json scale)。
 # 这些字段对应 MSR_FEATURE_ORDER 的前 4 列(range/doppler/azi/elv)。
 _POINTS_SCALABLE = {'range_m', 'doppler_mps', 'ang_rad', 'elv_rad'}
+
+# type id → 语义类名(eval anno 用;与 visualize_msr.py 的 CLASS_LABEL 一致)。
+# kitti eval 的 clean_data 按语义名匹配,anno 必须写语义名而非 '1'/'2'/'4'/'5'。
+MSR_CLASS_LABEL = {'1': 'Car', '2': 'Pedestrian', '4': 'Cyclist', '5': 'Truck'}
 
 
 class MsrDataset(DatasetTemplate):
@@ -345,6 +350,89 @@ class MsrDataset(DatasetTemplate):
             pickle.dump(all_db_infos, f)
 
     # ---------- DatasetTemplate 契约 ----------
+
+    def generate_prediction_dicts(self, batch_dict, pred_dicts, class_names, output_path=None):
+        """
+        pred 张量 → KITTI 风格 anno 字典列表: 每帧一份 {name, score, boxes_lidar, location, dimensions, rotation_y, ...}
+
+        camera 字段经 boxes_lidar_to_pseudo_camera 免 calib 轴变换填入(供 kitti eval 内核);
+        alpha=-10 关 AOS,bbox=0(无图像,不适用);output_path 给定时逐帧落盘 pk。
+        """
+        def get_template_prediction(num_samples):
+            ret_dict = {
+                'name': np.zeros(num_samples), 'alpha': np.full(num_samples, -10.),
+                'bbox': np.zeros([num_samples, 4]), 'dimensions': np.zeros([num_samples, 3]),
+                'location': np.zeros([num_samples, 3]), 'rotation_y': np.zeros(num_samples),
+                'score': np.zeros(num_samples), 'boxes_lidar': np.zeros([num_samples, 7]),
+            }
+            return ret_dict
+
+        def generate_single_sample_dict(box_dict):
+            pred_scores = box_dict['pred_scores'].cpu().numpy()
+            pred_boxes = box_dict['pred_boxes'].cpu().numpy()
+            pred_labels = box_dict['pred_labels'].cpu().numpy()
+            pred_dict = get_template_prediction(pred_scores.shape[0])
+            if pred_scores.shape[0] == 0:
+                return pred_dict
+
+            location, dimensions, rotation_y = boxes_lidar_to_pseudo_camera(pred_boxes)
+            pred_dict['name'] = np.array([MSR_CLASS_LABEL[n] for n in class_names])[pred_labels - 1]
+            pred_dict['score'] = pred_scores
+            pred_dict['boxes_lidar'] = pred_boxes
+            pred_dict['location'] = location
+            pred_dict['dimensions'] = dimensions
+            pred_dict['rotation_y'] = rotation_y
+            return pred_dict
+
+        annos = []
+        for index, box_dict in enumerate(pred_dicts):
+            single_pred_dict = generate_single_sample_dict(box_dict)
+            single_pred_dict['frame_id'] = batch_dict['frame_id'][index]
+            if output_path is not None:
+                cur_out_file = output_path / ('%s.pkl' % batch_dict['frame_id'][index])
+                with open(cur_out_file, 'wb') as f:
+                    pickle.dump(single_pred_dict, f)
+            annos.append(single_pred_dict)
+
+        return annos
+
+    def evaluation(self, det_annos, class_names, **kwargs):
+        """
+        全集聚合 det_annos vs GT annos → AP/mAP: 逐类 BEV/3D IoU 匹配,返回 (result_str, result_dict)
+
+        GT 侧从 msr_infos annos 的 gt_boxes_lidar 轴变换成 camera 格式,det 同变换,
+        调 kitti_object_eval_python.get_msr_eval_result(阈值 Car/Truck BEV0.5·3D0.25, Ped/Cyc 0.25/0.25)。
+        """
+        if 'annos' not in self.msr_infos[0].keys():
+            return None, {}
+
+        from ..kitti.kitti_object_eval_python import eval as kitti_eval
+        import copy
+
+        eval_det_annos = copy.deepcopy(det_annos)
+        eval_gt_annos = []
+        for info in self.msr_infos:
+            gt_boxes = info['annos']['gt_boxes_lidar']
+            gt_names = np.array([MSR_CLASS_LABEL.get(n, n) for n in info['annos']['name']])
+            gt_annos = {
+                'name': gt_names,
+                'alpha': np.full(len(info['annos']['name']), -10.),
+                'bbox': np.zeros([len(info['annos']['name']), 4]),
+                'score': np.ones(len(info['annos']['name'])),
+            }
+            if len(gt_boxes) > 0:
+                location, dimensions, rotation_y = boxes_lidar_to_pseudo_camera(gt_boxes)
+                gt_annos['location'] = location
+                gt_annos['dimensions'] = dimensions
+                gt_annos['rotation_y'] = rotation_y
+            else:
+                gt_annos['location'] = np.zeros([0, 3])
+                gt_annos['dimensions'] = np.zeros([0, 3])
+                gt_annos['rotation_y'] = np.zeros(0)
+            eval_gt_annos.append(gt_annos)
+
+        ap_result_str, ap_dict = kitti_eval.get_msr_eval_result(eval_gt_annos, eval_det_annos, class_names)
+        return ap_result_str, ap_dict
 
     def __len__(self):
         if self._merge_all_iters_to_one_epoch:

@@ -171,3 +171,18 @@ def parse_label_boxes(label_raw, output_names):
     gt_boxes = np.stack([x, y, z, l, w, h, heading], axis=1).astype(np.float32)
     gt_names = np.array([str(t) for t in type_col])
     return gt_boxes, gt_names
+
+
+def boxes_lidar_to_pseudo_camera(boxes_lidar):
+    """
+    lidar 框 → camera 风格字段: (N,7)[x,y,z,dx,dy,dz,heading] → (location(N,3)[x右,y底心,z前], dimensions(N,3)[l,h,w], rotation_y(N))
+
+    免 calib 纯轴变换,与 boxes3d_lidar_to_kitti_camera 在单位 calib 下逐元素一致;
+    GT/pred 同变换,BEV/3D IoU 与 lidar 系严格等价。
+    """
+    boxes = np.asarray(boxes_lidar, dtype=np.float64)
+    x, y, z, dx, dy, dz, heading = [boxes[:, i:i + 1] for i in range(7)]
+    location = np.concatenate([-y, -(z - dz / 2), x], axis=1)
+    dimensions = np.concatenate([dx, dz, dy], axis=1)
+    rotation_y = (-heading - np.pi / 2)[:, 0]
+    return location, dimensions, rotation_y

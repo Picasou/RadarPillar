@@ -1,9 +1,10 @@
-# MSR RadarPillar 变体: head 换真 2D — RadarNeXtCenterHead2DNoZ (网络无 z/h 预测: 无 height 头, dim 只 l/w,
-#   6-cat 监督 offset_xy+log_lw+sin_cos; 推理 z 按 hm argmax 查 ANCHOR_BOTTOM_HEIGHTS, dz 置 0)
-# 真 2D 口径: 3D AP 恒 0, 只看 BEV AP (pickbest/eval 走 BEV 口径)
-# 派生自 msr_radarpillar.yaml, 差异: DENSE_HEAD AnchorHeadSingle -> RadarNeXtCenterHead2DNoZ;
-#   MODEL.NAME MC_RadarPillars -> CenterPoint (center head eval 走 pred_dicts, 详见 msr_centerhead3d.yaml 头注)
-# ANCHOR_BOTTOM_HEIGHTS 必须与各类 anchor_bottom_heights 一致('1'-0.75 '2'-0.85 '4'-0.85 '5'-1.5)
+# MSR head ablation⑤ 全共享 trunk — RadarNeXtCenterHeadTrunk, 全头共用 1 层 hidden 64->64 3×3 + 每头仅 1×1 final(规格 ~0.093M)
+# 派生自 msr_radarpillar.yaml, 差异: DENSE_HEAD AnchorHeadSingle -> RadarNeXtCenterHead;
+#   MODEL.NAME MC_RadarPillars -> CenterPoint (center head 在 predict 内自做 NMS 写 pred_dicts,
+#   PointPillar 模板 eval 走 anchor 的 batch_box_preds 断言会 KeyError; CenterPoint eval 直接消费
+#   pred_dicts — 见 pcdet/models/detectors/centerpoint.py 设计注释, PUBLIC_DATASET stage4 同口径)
+# 写法对齐 PUBLIC_DATASET head_center.yaml (stage4 已训通的参照), 换 MSR 类别/范围/anchor;
+# anchor/target_assigner/loss_weights 块沿参照结构保留
 # 类别: 1=轿车 2=行人 4=二轮车 5=卡车
 
 # ============================================================================================================================
@@ -70,7 +71,7 @@ MODEL:
     NUM_UPSAMPLE_FILTERS: [32, 32, 32]
   # ------------------------
   DENSE_HEAD:
-    NAME: RadarNeXtCenterHead2DNoZ    # 变体点: 真 2D 版(网络无 z/h 头, BEV 口径)
+    NAME: RadarNeXtCenterHeadTrunk    # abl⑤ 全共享: 共用 trunk hidden + 各头 1×1 final
     CLASS_AGNOSTIC: false
     USE_DIRECTION_CLASSIFIER: true
     DIR_OFFSET: 0.78539
@@ -125,16 +126,13 @@ MODEL:
     TASKS:
     - num_class: 4
       class_names: ['1', '2', '4', '5']
-    CODE_WEIGHTS: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]   # reg2+dim2+rot2 = 6 (无 z/h 监督)
+    CODE_WEIGHTS: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]   # reg2+height1+dim3+rot2 = 8
     COMMON_HEADS:
       reg: [2, 2]
-      dim: [2, 2]
+      height: [1, 2]
+      dim: [3, 2]
       rot: [2, 2]
-    WEIGHT: 1.0
-    IOU_WEIGHT: 1.0
-    IOU_REG_WEIGHT: 0.5
     OUT_SIZE_FACTOR: 2
-    ANCHOR_BOTTOM_HEIGHTS: [-0.75, -0.85, -0.85, -1.5]       # 2D 口径: z 按类填 anchor 底高
     NMS_CONFIG:
       NMS_TYPE: nms_gpu
       NMS_THRESH: 0.1
