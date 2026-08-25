@@ -42,10 +42,10 @@ class Detector:
         self.logger = common_utils.create_logger()
 
         pcdet_cfg = cfg_from_yaml_file(cfg.MODEL.cfg, pcdet_global_cfg)
-        self.class_names = pcdet_cfg.CLASS_NAMES
+        self.class_names = pcdet_cfg.CLASS_NAMES  # type: ignore[attr-defined]
 
         self.dataset = _PcdetDataset(pcdet_cfg, self.class_names, self.logger)
-        self.model: Detector3DTemplate = build_network(model_cfg=pcdet_cfg.MODEL, num_class=len(self.class_names), dataset=self.dataset)
+        self.model: Detector3DTemplate = build_network(model_cfg=pcdet_cfg.MODEL, num_class=len(self.class_names), dataset=self.dataset)  # type: ignore[attr-defined]
         self.model.load_params_from_file(filename=cfg.MODEL.ckpt, logger=self.logger, to_cpu=(self.device == 'cpu'))
         if self.device == 'cuda':
             self.model.cuda()
@@ -93,7 +93,7 @@ class Detector:
         else:
             cpu_patch.load_data_to_cpu(data_dict)
         with torch.no_grad():
-            pred_dicts, _ = self.model.forward(data_dict)
+            pred_dicts, _ = self.model.forward(data_dict)  # type: ignore[call-arg]
         return pred_dicts
 
     def _to_objs(self, pred: dict) -> List[Obj]:

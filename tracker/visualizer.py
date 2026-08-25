@@ -15,15 +15,15 @@ from PIL import Image, ImageDraw
 
 # 复用 tools 侧可视化公共件(与 visualize_msr_seq.py 同款 sys.path 方式)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools' / 'utils' / 'visual_utils'))
-from viz_common import draw_box_bev
+from viz_common import draw_box_bev  # type: ignore[import-not-found]
 
 # CJK 字体注册: 序列名含中文, DejaVu 无 CJK 字形; 依次尝试系统 Noto Sans CJK / WSL Windows SimHei
 for _fp in ('/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
             '/mnt/c/Windows/Fonts/simhei.ttf'):
     try:
-        matplotlib.font_manager.fontManager.addfont(_fp)
+        matplotlib.font_manager.fontManager.addfont(_fp)  # type: ignore[attr-defined]
         plt.rcParams['font.sans-serif'] = [
-            matplotlib.font_manager.FontProperties(fname=_fp).get_name()] + plt.rcParams['font.sans-serif']
+            matplotlib.font_manager.FontProperties(fname=_fp).get_name()] + plt.rcParams['font.sans-serif']  # type: ignore[attr-defined]
         break
     except Exception:
         pass
@@ -48,7 +48,7 @@ class Visualizer:
     """
     逐帧出图(三面板 [Camera | BEV+GT | BEV+pred]): step7 调 run, 序列结束调 on_seq_end
     """
-    def __init__(self, cfg, class_names: list = None) -> None:
+    def __init__(self, cfg, class_names: list[str] | None = None) -> None:
         v = cfg.VISUAL
         self.enable = (v.enable == 1)
         self.save = v.save
@@ -66,13 +66,14 @@ class Visualizer:
         self._cam = None
         self._cam_fps = 30.0
         # figure 复用: 布局/legend/坐标轴只建一次, 每帧只更新动态元素(散点/框/标题)
-        self._fig = None
+        self._fig = None  # 惰性创建, begin_seq 后非 None; matplotlib 动态属性族见各行 ignore
         self._ax = {}
         self._dyn = {}                        # 每帧重建的动态 artist 容器
 
     # ---- 对外入口 ----
-    def begin_seq(self, seq_name: str, seq_path: str = None,
-                  data_extent: tuple = None, is_test: bool = False) -> None:
+    def begin_seq(self, seq_name: str, seq_path: str | None = None,
+                  data_extent: tuple[float, float, float, float] | None = None,
+                  is_test: bool = False) -> None:
         """
         序列切换: 记录序列名/相机流; data_extent=(xmin,xmax,ymin,ymax) 全程点云外沿,
         照 visualize_msr 口径 外沿+3m 边距(含 0) 定死固定范围; is_test 命中 test/val 时图加黑边框
@@ -125,17 +126,17 @@ class Visualizer:
         if self.show.get('points', 1) and pts.shape[0]:
             c = pts[:, 5]
             vmax = np.percentile(np.abs(c), 99) or 1.0
-            norm = Normalize(vmin=-vmax, vmax=vmax)
+            norm = Normalize(vmin=-vmax, vmax=vmax)  # type: ignore[arg-type]
             for ax in panels:
                 artists.append(ax.scatter(pts[:, 1], pts[:, 0], c=c, cmap=DOPPLER_CMAP,
                                           norm=norm, s=2, linewidths=0, alpha=0.9, zorder=2))
             cb = self._dyn.get('cb')
             if cb is None:
                 sc = artists[-1]
-                cb = fig.colorbar(sc, ax=panels, fraction=0.046, pad=0.02)
+                cb = fig.colorbar(sc, ax=panels, fraction=0.046, pad=0.02)  # type: ignore[union-attr]
                 cb.set_label('doppler_gnd', fontsize=9, color=INK2)
                 cb.ax.tick_params(colors=MUTED, labelsize=8)
-                cb.outline.set_edgecolor(GRID)
+                cb.outline.set_edgecolor(GRID)  # type: ignore[union-attr]
                 self._dyn['cb'] = cb
             else:                                       # 复用 colorbar, 只更新归一化域
                 cb.norm.vmin, cb.norm.vmax = -vmax, vmax
@@ -159,7 +160,7 @@ class Visualizer:
         ax_gt.set_title('GT (%d)' % n_gt, fontsize=12, color=INK2, pad=8)
         ax_pred.set_title('Pred (%d)' % (n_obj + n_trk), fontsize=12, color=INK2, pad=8)
         vdd = frame.vdd
-        fig.suptitle('%s\nframe %s  |  pts - %d, gts - %d, objs - %d, trks - %d  |  '
+        fig.suptitle('%s\nframe %s  |  pts - %d, gts - %d, objs - %d, trks - %d  |  '  # type: ignore[union-attr]
                      'ego - %.1f m/s, yaw - %.3f'
                      % (self._cur_seq, frame.frame_id, pts.shape[0], n_gt, n_obj, n_trk,
                         vdd.speed_ms if vdd else 0.0, vdd.yaw_rate if vdd else 0.0),
@@ -168,15 +169,15 @@ class Visualizer:
         # ---- 单次渲染: PNG 字节一份, 写盘 + 视频缓存共用; test/val 加黑边框 ----
         if self._is_test:
             from matplotlib.patches import Rectangle
-            fig.patches.append(Rectangle((0, 0), 1, 1, transform=fig.transFigure,
+            fig.patches.append(Rectangle((0, 0), 1, 1, transform=fig.transFigure,  # type: ignore[union-attr]
                                          fill=False, edgecolor='black',
                                          linewidth=TEST_BORDER_W, zorder=100))
         buf = io.BytesIO()
-        fig.savefig(buf, format='png', dpi=FIG_DPI, facecolor='white')
+        fig.savefig(buf, format='png', dpi=FIG_DPI, facecolor='white')  # type: ignore[union-attr]
         data = buf.getvalue()
         buf.close()
         if self._is_test:
-            fig.patches.pop()
+            fig.patches.pop()  # type: ignore[union-attr]
         out_dir = OUT_ROOT / self._cur_seq
         if 2 in self.save:
             out_dir.mkdir(parents=True, exist_ok=True)
@@ -290,10 +291,10 @@ class Visualizer:
         """
         import imageio.v2 as imageio
         fps = max(1, round(1.0 / self.cycle_s))
-        with imageio.get_writer(out, fps=fps, codec='libx264', macro_block_size=1,
+        with imageio.get_writer(out, fps=fps, codec='libx264', macro_block_size=1,  # type: ignore[union-attr]
                                 ffmpeg_params=['-pix_fmt', 'yuv420p', '-crf', '18']) as w:
             for im in frames:
-                w.append_data(np.asarray(im))
+                w.append_data(np.asarray(im))  # type: ignore[attr-defined]
 
     # ---- 相机 ----
     def _read_cam(self, frame: FRAME):

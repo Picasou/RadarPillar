@@ -62,22 +62,70 @@ class Raw_Trk(c_struct):
     """单个跟踪目标"""
     _fields_ = [
         ('id', c_uint16),
-        ('x', c_int16),
-        ('y', c_int16),
-        ('z', c_int16),
-        ('vx', c_int16),
-        ('vy', c_int16),
-        ('ax', c_int16),
-        ('ay', c_int16),
-        ('heading', c_int16),
-        ('width', c_uint16),
-        ('length', c_uint16),
-        ('height', c_uint16),
-        ('classification', c_uint8),
-        ('confidence', c_uint8),
-        ('pad1', c_uint16),
-        ('pad2', c_uint16),
-        ('pad3', c_uint16)]
+        
+        # 位置
+        ('x_m', c_int16),
+        ('y_m', c_int16),
+        ('z_m', c_int16),
+        
+        # 速度
+        ('vx_mps', c_int16),
+        ('vy_mps', c_int16),
+        
+        # 加速度
+        ('ax_mps2', c_int16),
+        ('ay_mps2', c_int16),
+        
+        # 朝向
+        ('heading_deg', c_int16),
+        
+        # 尺寸
+        ('width_m', c_uint16),
+        ('length_m', c_uint16),
+        ('height_m', c_uint16),
+        
+        # 语义信息
+        ('type', c_uint8),              # classification
+        ('type_confi', c_uint8),        # confidence [0-100]
+        
+        ('lifetime_s', c_uint16),
+        
+        # 状态信息
+        ('motion_status', c_uint8),     # 0:静止 | 1:运动 | 2:慢速
+        ('measurement_status', c_uint8),# 0:coasting | 1:normal
+        ('existence_prob', c_uint8),    # [0-100]
+        ('obstacle_prob', c_uint8),     # [0-100]
+        ('passable_status', c_uint8),   # 0:不可通行 | 1:可通行    
+        ('rel_vel', c_uint8),            # 0:absolute | 1:relative
+        ('rel_acc', c_uint8),            # 0:absolute | 1:relative
+        
+        # 速度不确定性
+        ('vx_std_mps', c_uint16),
+        ('vy_std_mps', c_uint16),
+        ('xy_vel_cov', c_uint16),
+        
+        # 加速度不确定性
+        ('ax_std_mps2', c_uint16),
+        ('ay_std_mps2', c_uint16),
+        ('xy_acc_cov', c_uint16),
+        
+        # 位置不确定性
+        ('x_std_m', c_uint16),
+        ('y_std_m', c_uint16),
+        ('z_std_m', c_uint16),
+        ('xy_pos_cov', c_uint16),
+        
+        # 朝向不确定性
+        ('heading_std', c_uint8),
+        
+        # 横摆角速度 (注意C结构体中yaw_rate在heading_std之后)
+        ('yaw_rate_degs', c_int16),
+        ('yaw_rate_std', c_uint8),
+        
+        # 尺寸不确定性
+        ('length_std', c_uint8),
+        ('width_std', c_uint8),
+        ('height_std', c_uint8),]
 
 
 class Raw_Vdd(c_struct):

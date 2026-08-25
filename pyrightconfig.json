@@ -1,0 +1,12 @@
+{
+  "extraPaths": ["./", "./tools", "./pcdet"],
+  "venvPath": "/home/admin/anaconda3",
+  "venv": "base",
+  "typeCheckingMode": "basic",
+  "executionEnvironments": [
+    {
+      "root": "tracker/tests",
+      "typeCheckingMode": "off"
+    }
+  ]
+}

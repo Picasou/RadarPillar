@@ -11,14 +11,15 @@ from .utils.rw_struct import (struct_read,
                               Raw_Vdd, Raw_Vds)
 from .utils.common import c_state_compensate
 
-# AUTOSIL GTT 导出的稠密 GT bin 布局 (28B/记录, 标度 ×0.01, 已与 gt_metadata json 对拍实证)
+# AUTOSIL GT_RADAR_TARGET v2.0 bin 布局 (头 8B + 记录 27B 紧凑无 pad, 标度 ×0.01)
 _GT_HEAD_DTYPE = np.dtype([('version', '<u2'), ('frame_cnt', '<u2'),
-                           ('gtt_num', '<u2'), ('reserved', '<u2')])
+                           ('trk_num', '<u2'), ('reserved', '<u2')])
 _GT_REC_DTYPE = np.dtype([('id', '<u2'), ('x', '<i2'), ('y', '<i2'), ('z', '<i2'),
                           ('vx', '<i2'), ('vy', '<i2'), ('heading', '<i2'),
                           ('width', '<u2'), ('length', '<u2'), ('height', '<u2'),
-                          ('type', 'u1'), ('is_keyframe', 'u1'),
-                          ('birth', '<i2'), ('dead', '<i2'), ('tail', '<u2')])
+                          ('type', 'u1'), ('type_confi', 'u1'), ('is_ghost', 'u1'),
+                          ('is_unpassable', 'u1'), ('is_attention', 'u1'),
+                          ('point_count', 'u1'), ('point_quality', 'u1')])
 
 
 
@@ -151,17 +152,17 @@ class Loader:
             for j in range(num):
                 t = trk_list[offset + j]
                 x, y, vx, vy = c_state_compensate(
-                    t.x / 100.0, t.y / 100.0,
-                    t.vx / 100.0, t.vy / 100.0,
+                    t.x_m / 100.0, t.y_m / 100.0,
+                    t.vx_mps / 100.0, t.vy_mps / 100.0,
                     v, cycle_s
                 )
                 objs.append(Obj(
                     id=t.id,
                     x=x, y=y, vx=vx, vy=vy,
-                    length=t.length / 100.0,
-                    width=t.width / 100.0,
-                    heading=t.heading / 100.0,
-                    type=t.classification,
+                    length=t.length_m / 100.0,
+                    width=t.width_m / 100.0,
+                    heading=t.heading_deg / 100.0,
+                    type=t.type,
                     isghost=0,
                     ispassable=0,
                 ))
@@ -187,7 +188,7 @@ class Loader:
         gts_list = []
         offset, limit = 0, len(recs)
         for head in heads:
-            num = int(head['gtt_num'])
+            num = int(head['trk_num'])
             if offset + num > limit:
                 num = limit - offset
             if num < 0:
@@ -201,10 +202,14 @@ class Loader:
                     vx=r['vx'] * 0.01, vy=r['vy'] * 0.01,
                     length=r['length'] * 0.01, width=r['width'] * 0.01,
                     height=r['height'] * 0.01, heading=r['heading'] * 0.01,
-                    type=int(r['type']), isghost=0, ispassable=0,
+                    type=int(r['type']), type_confi=int(r['type_confi']),
+                    isghost=int(r['is_ghost']), ispassable=1 - int(r['is_unpassable']),
+                    is_attention=int(r['is_attention']),
+                    point_count=int(r['point_count']),
+                    point_quality=int(r['point_quality']),
                 ))
             gts_list.append(GTs(num=len(gts), Lst=gts))
-            offset += int(head['gtt_num'])
+            offset += int(head['trk_num'])
         return gts_list
 
     def _load_VDD(self, path: str) -> list[VDD]:

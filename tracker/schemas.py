@@ -75,6 +75,10 @@ class GT:
     isghost: int
     ispassable: int
     id: int = 0                  # 标注持久编号 (gt bin 加载填, IDSW/Frag 依赖)
+    type_confi: int = 0          # 分类置信度 [0-100]
+    is_attention: int = 1        # 可关注目标标记 [0|1]
+    point_count: int = 0         # 落 BEV 框内雷达点数 [0-255]
+    point_quality: int = 0       # 点密度 4*count/(w*l), 钳 [0-100]
 
 @dataclass
 class GTs:

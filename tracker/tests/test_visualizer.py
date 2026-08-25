@@ -64,7 +64,7 @@ def make_frame(frame_id='000001', n_pts=20):
 def test_cfg_visual_parse_and_valid():
     cfg = Cfg.get_cfg(CFG_PATH)
     assert cfg.isvalid()
-    assert cfg.VISUAL.enable == 1
+    assert cfg.VISUAL.enable == 0
     assert cfg.VISUAL.save == [2, 3]
     assert set(cfg.VISUAL.show) == {'points', 'tracks', 'objs', 'gts'}
 
