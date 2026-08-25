@@ -87,7 +87,7 @@ bash $SKILL/helpers/tmux_spawn.sh rpillar_<TASK> /path/to/project \
 | H3 | brief 扫 nvidia-smi, 显存 >7G 告警 | `scripts/brief.sh` | GPU OOM 无痕 |
 | H4 | done_notifier 校验所有 marker 齐才标 complete | `helpers/done_notifier.sh` | 部分任务空洞 |
 | H5 | generate_workflow.sh 末尾 `bash -n` 语法检查 | `scripts/generate_workflow.sh` | 生成脚本有语法 bug |
-| H6 | retry/重启 复用 OUTPUT_ROOT（`output/<TAG>.root`），train.py auto-resume 接管 → 中断自动续训 | `templates/full_chain.template.sh` | 断电后整链从头重训烧数小时 |
+| H6 | retry/重启 复用 OUTPUT_ROOT（按目录名尾匹配 `_${MODEL}_${TAG}` 找回, `<TAG>.root` 在 OUTPUT_ROOT 内），train.py auto-resume 接管 → 中断自动续训 | `templates/full_chain.template.sh` | 断电后整链从头重训烧数小时 |
 | H7 | auto-resume 自 mtime 新到旧校验 ckpt 可加载，损坏自动回退更早 | `tools/train.py` | 断电截断"正在写的最新 ckpt"，resume 撞上即崩 |
 | H8 | 维护锁：`touch /tmp/<TASK>.maintenance` 后 watchdog 跳过，手术完删锁 | `helpers/watchdog.sh` | 人工抢救与 watchdog 自愈打架→双训练 |
 
@@ -97,14 +97,14 @@ bash $SKILL/helpers/tmux_spawn.sh rpillar_<TASK> /path/to/project \
 |---|---|---|
 | 模板 | `templates/full_chain.template.sh` | 链逻辑只写一份；按 tag 渲染出各 `_full.sh` |
 | 链 | 生成的 `train_<tag>_full.sh` | train（`--skip_eval`）+ eval 末 N ckpt + pickbest（**max + median 双落**：`best.pth` + `best_median.pth`）+ resbag + 落 marker |
-| 调度 | 生成的 `workflow_<task>.sh`（`run_model`） | marker 跳过 + 整链 retry N 次，串行调 `_full.sh` |
+| 调度 | 生成的 `workflow_<task>.sh`（`run_model`） | 退出码契约 + 整链 retry N 次，串行调 `_full.sh`（marker 跳过自含在 `_full.sh` 开头） |
 | 报告 | `make_conclusion.py` + `实验报告模板.md` | 数据表（喂模板核心结果段）+ 模板骨架 |
 
-marker = `output/<TAG>.done`（`_full.sh` 末尾落）。pickbest 口径 = `Car_3d/moderate_R40`。
+marker = `<OUTPUT_ROOT>/<TAG>.done`（`_full.sh` 末尾落，`.root` 同目录；output/ 根不留散文件）。done_notifier 的 MARKERS_FILE 每行写 glob 展开结果：`output/train_log/<DS>/*_<TAG>/<TAG>.done`。pickbest 口径 = `Car_3d/moderate_R40`。
 
 ## 任务 spec 格式
 
-每项一个 `_full.sh` 路径（TAG 从文件名推，marker 自动 = `output/<TAG>.done`）：
+每项一个 `_full.sh` 路径（TAG 从文件名推，完成标记在各自 OUTPUT_ROOT 内，`_full.sh` 自检跳过）：
 
 ```bash
 --tasks "experiments/SH/train_n2_full.sh,experiments/SH/train_n3_full.sh"
@@ -129,7 +129,7 @@ touch /tmp/<TASK>.maintenance            # 上维护锁, watchdog 跳过
 rm -f /tmp/<TASK>.maintenance            # 手术完解锁
 ```
 
-**强制全新重训某 tag**（默认 retry 会续用旧 root 续训）：`FRESH=1 bash train_<tag>_full.sh`，或删 `output/<tag>.root`。
+**强制全新重训某 tag**（默认 retry 会按目录名尾匹配续用旧 OUTPUT_ROOT 续训）：`FRESH=1 bash train_<tag>_full.sh`，或删该 tag 的整个旧 OUTPUT_ROOT。
 
 ## 任务用完清理（workflow done 后必须执行）
 

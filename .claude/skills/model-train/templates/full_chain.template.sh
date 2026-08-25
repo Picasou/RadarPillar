@@ -55,28 +55,34 @@ case "$DS_YAML" in
 esac
 echo "[__TAG__] dataset=${DS} (base=${DS_YAML:-无})"
 
-# H6: OUTPUT_ROOT 首次生成记入 output/<TAG>.root; retry/watchdog 重启时复用旧 root
+# H6: <TAG>.root/.done 落在 OUTPUT_ROOT 内 (output/ 根不留散文件);
+#     retry/watchdog 重启时按目录名尾匹配 (_${MODEL}_${TAG}) 找回最近 root
 #     → train.py 同 root auto-resume 生效, 中断不再整链重训。
-#     强制全新训练: FRESH=1 (或删 output/<TAG>.root)
-ROOT_FILE="output/${TAG}.root"
+#     强制全新训练: FRESH=1 (或删整个旧 OUTPUT_ROOT)
 if [ -n "${FRESH:-}" ]; then
-    rm -f "$ROOT_FILE"
+    OUTPUT_ROOT=""
 fi
-if [ -z "${OUTPUT_ROOT:-}" ] && [ -f "$ROOT_FILE" ]; then
-    SAVED_ROOT="$(cat "$ROOT_FILE")"
-    [ -d "$SAVED_ROOT" ] && OUTPUT_ROOT="$SAVED_ROOT"
+if [ -z "${OUTPUT_ROOT:-}" ]; then
+    OUTPUT_ROOT="$(ls -1d output/train_log/${DS}/*_${MODEL}_${TAG} 2>/dev/null | tail -n1)"
+    [ -n "$OUTPUT_ROOT" ] && [ ! -f "${OUTPUT_ROOT}/${TAG}.root" ] && OUTPUT_ROOT=""
 fi
 if [ -z "${OUTPUT_ROOT:-}" ]; then
     TS=$(date +%Y%m%d%H%M)
     OUTPUT_ROOT="output/train_log/${DS}/${TS}_${MODEL}_${TAG}"
 fi
-echo "$OUTPUT_ROOT" > "$ROOT_FILE"
 LOG_DIR=${OUTPUT_ROOT}/logs
 LOG=${LOG_DIR}/train_$(date +%Y%m%d-%H%M%S).log
-MARKER=output/${TAG}.done
+MARKER=${OUTPUT_ROOT}/${TAG}.done
+
+# 幂等自跳过: 上次整链已完成 (marker 在 OUTPUT_ROOT 内) → 直接成功退出
+if [ -f "$MARKER" ]; then
+    echo "[__TAG__] 已完成 (marker=$MARKER), 跳过"
+    exit 0
+fi
 
 export CUDA_VISIBLE_DEVICES=$GPU
 mkdir -p "$LOG_DIR"
+echo "$OUTPUT_ROOT" > "${OUTPUT_ROOT}/${TAG}.root"
 
 echo "[__TAG__] start  ts=${TS:-?}  bs=$BS  ep=$EPOCHS  OUTPUT_ROOT=$OUTPUT_ROOT"
 

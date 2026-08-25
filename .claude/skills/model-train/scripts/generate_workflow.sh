@@ -138,13 +138,13 @@ rm -f "$DONE_FILE"
 
 derive_tag() { local b; b="$(basename "$1")"; b="${b#train_}"; printf '%s' "${b%_full.sh}"; }
 
-run_model() {   # run_model <full.sh> <tag>: marker 跳过 + retry N
-    local fs="$1" tag="$2" marker="${ROOT}/output/$2.done" try rc
+run_model() {   # run_model <full.sh> <tag>: 退出码契约 (_full.sh 自含 marker 跳过) + retry N
+    local fs="$1" tag="$2" try rc
     for try in $(seq 1 "$MAX_RETRY"); do
-        [ -f "$marker" ] && { echo "[workflow] ${tag} marker 命中, 跳过"; return 0; }
         echo "[workflow] ${tag} try ${try}/${MAX_RETRY}"
-        bash "$fs" && [ -f "$marker" ] && { echo "[workflow] ${tag} ✓"; return 0; }
-        rc=$?; echo "[workflow] ${tag} ✗ (rc=$rc 或 marker 缺)"
+        bash "$fs"; rc=$?
+        if [ "$rc" -eq 0 ]; then echo "[workflow] ${tag} ✓"; return 0; fi
+        echo "[workflow] ${tag} ✗ (rc=$rc)"
         [ "$try" -lt "$MAX_RETRY" ] && sleep 5
     done
     echo "[workflow] ${tag} 最终失败"; return 1
