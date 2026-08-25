@@ -70,9 +70,9 @@ else
     done
 fi
 
-# conda env fallback helper — 探测顺序: ${DESIRED_ENV:-angle} -> angle -> base
+# conda env fallback helper — 探测顺序: ${DESIRED_ENV:-base} -> base
 find_conda_env() {
-    local try_envs=("${DESIRED_ENV:-angle}" "angle" "base")
+    local try_envs=("${DESIRED_ENV:-base}" "base")
     local installed
     installed="$(conda env list 2>/dev/null | awk 'NF && $1 != "#" {print $1}')"
     for env in "${try_envs[@]}"; do
@@ -83,8 +83,8 @@ find_conda_env() {
     return 1
 }
 TARGET_ENV="$(find_conda_env)" || {
-    echo "[ERROR] 无可用 conda env (尝试过: ${DESIRED_ENV:-angle} -> angle -> base)"
-    echo "[ERROR] 请先创建 env: conda create -n angle python=3.x && conda activate angle && pip install -r requirements.txt"
+    echo "[ERROR] 无可用 conda env (尝试过: ${DESIRED_ENV:-base} -> base)"
+    echo "[ERROR] 本机唯一 conda 是 /home/admin/anaconda3 的 base，请检查 conda 安装"
     exit 1
 }
 echo "[train] 使用 conda env: $TARGET_ENV"

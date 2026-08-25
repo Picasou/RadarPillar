@@ -47,7 +47,7 @@ else
 fi
 
 find_conda_env() {
-    local try_envs=("${DESIRED_ENV:-angle}" "angle" "base")
+    local try_envs=("${DESIRED_ENV:-base}" "base")
     local installed; installed="$(conda env list 2>/dev/null | awk 'NF && $1 != "#" {print $1}')"
     for env in "${try_envs[@]}"; do
         if echo "$installed" | grep -qx "$env"; then echo "$env"; return 0; fi

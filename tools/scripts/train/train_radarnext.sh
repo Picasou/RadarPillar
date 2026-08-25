@@ -64,9 +64,9 @@ EXTRA_TAG="rn_mdfen_0716"
 # train.py 自适应脚本
 # ============================================================
 cd "$(dirname "$0")/../.."
-# conda/env 参考 .claude/projects/.../memory/conda-and-tools-env.md
-source /home/dministrator1/miniconda3/etc/profile.d/conda.sh
-conda activate angle
+# 本机真实 conda：/home/admin/anaconda3 + env base（dministrator1/angle 是死路径，参见 memory/env-conda-base.md）
+source /home/admin/anaconda3/etc/profile.d/conda.sh
+conda activate base
 export CUDA_VISIBLE_DEVICES="$GPU"
 
 ARGS=(
@@ -91,7 +91,7 @@ ARGS=(
 [ "$SKIP_EVAL" = True ]           && ARGS+=(--skip_eval)
 [ ${#SET_CFGS[@]} -gt 0 ]         && ARGS+=(--set "${SET_CFGS[@]}")
 
-LOG_DIR="/home/dministrator1/RadarPillar/output/train_log/vod/radarnext_mdfen/${EXTRA_TAG}/logs"
+LOG_DIR="output/train_log/vod/radarnext_mdfen/${EXTRA_TAG}/logs"
 mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/train_$(date +%Y%m%d-%H%M%S).log"
 

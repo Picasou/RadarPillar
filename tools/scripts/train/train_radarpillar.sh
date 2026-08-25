@@ -68,7 +68,7 @@ OUTPUT_ROOT="output/train_log/vod/$(date +%Y%m%d%H%M)_radarpiller_bs8"
 # train.py 自适应脚本
 # ============================================================
 cd "$(dirname "$0")/../.."
-# conda 自探测（不写死 /home/xxx），env=angle
+# conda 自探测（不写死 /home/xxx），env=base（本机唯一环境）
 if command -v conda >/dev/null 2>&1; then
     source "$(conda info --base)/etc/profile.d/conda.sh"
 else
@@ -76,7 +76,7 @@ else
         [ -f "$_c/etc/profile.d/conda.sh" ] && { source "$_c/etc/profile.d/conda.sh"; break; }
     done
 fi
-conda activate angle
+conda activate base
 export CUDA_VISIBLE_DEVICES="$GPU"
 
 ARGS=(
