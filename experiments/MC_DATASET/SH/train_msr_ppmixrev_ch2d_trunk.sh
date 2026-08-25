@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# eg. bash experiments/MC_DATASET/SH/train_msr_repdwc32_mdfen_ch2d_trunk.sh
-# MSR (MC_Single_Radar) RadarPillar RepDWC(32,32,32) + MDFEN[96] + ch2d trunk head 变体
+# eg. bash experiments/MC_DATASET/SH/train_msr_ppmixrev_ch2d_trunk.sh
+# MSR (MC_Single_Radar) RadarPillar 行33 BaseBEVBackbone 通道递减(64,32,32) + ch2d trunk head 变体
 # 数据: /mnt/d/DataSet/MSRv1  | 类别: ['1','2','4','5'] (1=轿车 2=行人 4=二轮车 5=卡车)
 
 # —— 可选 ——
@@ -31,7 +31,7 @@
 # [wandb]
 # USE_WANDB=True
 
-# [跳过评估] — 仅跳过 train.py 训后收尾 eval;MSR eval 已实现(tools/test.py 出 bbox/bev/3d 三口径),训后单独补跑
+# [跳过评估] — MSR 无独立 evaluation 方法,必须 SKIP
 SKIP_EVAL=True
 
 # [运行模式]
@@ -44,12 +44,12 @@ RUN_MODE="background"
 SET_CFGS=("OPTIMIZATION.early_stop.enabled" "False" "OPTIMIZATION.LR_WARMUP" "False")
 
 # —— 必改 ——
-CFG_FILE="experiments/MC_DATASET/YAML/msr_repdwc32_mdfen_ch2d_trunk.yaml"
-BATCH_SIZE=4          # MSR 点云密集 + 8G 显存,保守起步;OOM 则降到 2
-WORKERS=2
+CFG_FILE="experiments/MC_DATASET/YAML/msr_ppmixrev_ch2d_trunk.yaml"
+BATCH_SIZE=8          # MSR 点云密集 + 8G 显存,保守起步;OOM 则降到 2
+WORKERS=4
 EPOCHS=80
 GPU=0
-EXTRA_TAG="msr_repdwc32_mdfen_ch2d_trunk"
+EXTRA_TAG="msr_ppmixrev_ch2d_trunk"
 
 # [output 覆写: 让 train/test 直接写到 output/train_log/msr/<datetime>_msr_baseline/]
 OUTPUT_ROOT="output/train_log/msr/$(date +%Y%m%d%H%M)_${EXTRA_TAG}"

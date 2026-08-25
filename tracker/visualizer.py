@@ -55,12 +55,10 @@ class Visualizer:
         self.show = v.show
         self.cycle_s = cfg.RUN.vds.cycle_s
         # 落盘总门: mode=0/1 图恒落盘; mode=2 与航迹数据同受 RUN.save 门控
-        # (save=0 时整帧不渲染, 与 enable=0 同款短路, 不白烧画图 CPU)
         self.save_enabled = (cfg.RUN.mode != 2) or (cfg.RUN.save == 1)
         self.class_names = list(class_names) if class_names else list(DEFAULT_CLASS_NAMES)
         self.cam_rotate = v.cam_rotate
         # 固定坐标范围(xlo,xhi,ylo,yhi): cfg.VISUAL.range 显式指定;
-        # 未配置时 begin_seq 按全程数据外沿+3m 定死, 跨帧一致
         self.range_xy = tuple(v.range) if v.range else None
         self._cur_seq = 'seq'
         self._is_test = False
@@ -339,7 +337,8 @@ class Visualizer:
         if not self.show.get('objs', 1):
             return 0
         for o in objs:
-            draw_box_bev(ax, [o.x, o.y, 0, o.length, o.width, 1.5, o.heading],
+            # Obj.heading 契约为度, draw_box_bev 吃弧度(与 _draw_tracks 的 np.radians 同口径)
+            draw_box_bev(ax, [o.x, o.y, 0, o.length, o.width, 1.5, np.radians(o.heading)],
                          self._color(o.type), linestyle='-', linewidth=1.2,
                          zorder=4, swap_xy=True)
         return len(objs)

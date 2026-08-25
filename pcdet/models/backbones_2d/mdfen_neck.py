@@ -15,7 +15,7 @@ Translation points honored (per Task 7 brief, config from
       (``pcdet.ops.dcnv3.DCNv3_pytorch``) — the §6 never-fail floor.
     * ``num_repeats=[1,1,1,1]`` -> n=1 makes ``RepBlock.block`` None.
     * ``multi_fusion=True`` + ``fusion_strides=[1,2]`` -> the 3 PAN outputs
-      are fused into a single ``(B, 384, H_largest, W_largest)`` tensor.
+      are fused to the MIDDLE scale (grid/4): ``(B, sum(out_channels), H_mid, W_mid)``.
     * mmdet3d ``@MODELS.register_module`` stripped.
 
 DCNv3 input is channels-last; the module does the permute internally
@@ -421,7 +421,8 @@ class MDFENNeck(nn.Module):
         Args:
             input (list or tuple of 3 tensors): the multi-scale features from
                 the backbone, in mmdet3d order ``(x2, x1, x0)`` where ``x2``
-                has the SMALLEST spatial size and ``x0`` the LARGEST.
+                has the LARGEST spatial size and ``x0`` the SMALLEST
+                (RepDWC largest-first forward order).
 
         Returns:
             list[Tensor]: if ``multi_fusion`` is True, ``[fused]`` where

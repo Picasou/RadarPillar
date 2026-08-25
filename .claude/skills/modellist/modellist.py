@@ -222,6 +222,8 @@ def write_xlsx(xlsx: Path, rows: list[dict], stage: str):
         if rng.min_row in tgt_rows and (rng.min_col in tgt_cols or rng.max_col in tgt_cols):
             ws.unmerge_cells(str(rng))
 
+    skipped = []  # arch 防覆写跳过的列名(仅统计)
+
     for row in rows:
         tag = row['MODEL_TAG']
         r = row_of.get(tag)
@@ -238,10 +240,26 @@ def write_xlsx(xlsx: Path, rows: list[dict], stage: str):
                 continue  # 空值不覆盖已有内容
             if c == 'MODEL_TAG' and not is_new:
                 continue  # 已有行不覆盖 tag；新增行必须写 tag
-            ws.cell(row=r, column=hm[c]).value = row[c]
+            # arch 列防覆写: 已有非空值(如用户手填的 RepDwc+MDFEN 拆分写法)不重写,
+            # 只有空单元格才落盘(YAML 原样编码无法表达人工拆分知识, 覆写即丢失)
+            if stage in ('arch', 'all') and c in ARCH_COLS and not is_new:
+                cur = ws.cell(row=r, column=hm[c]).value
+                if cur not in (None, ''):
+                    skipped.append(f'{c}')
+                    continue
+            cell = ws.cell(row=r, column=hm[c])
+            # 只写值不动格式: 既有样式原样保留; 无样式单元格落盘前套模板数据行(第2行)同列样式
+            # (防新写单元格变成工作簿默认字体/无线型, 与表内其他单元格观感不一致)
+            if not cell.has_style:
+                cell._style = copy(ws.cell(row=2, column=hm[c])._style)
+            cell.value = row[c]
 
     if (xlsx.parent / f'~${xlsx.name}').exists():
         _log('检测到 Excel 锁文件(~$)，文件可能在 Excel 中打开，保存后请勿从 Excel 侧覆盖', 'WARN')
+    if skipped:
+        from collections import Counter
+        cnt = ', '.join(f'{k}×{v}' for k, v in Counter(skipped).most_common())
+        _log(f'arch 防覆写: {len(skipped)} 处已有值跳过 ({cnt})——确需重写请先手动清空对应单元格', 'WARN')
     wb.save(xlsx)
     _log(f'stage={stage} 已落盘 {len(rows)} 行 -> {xlsx}')
 

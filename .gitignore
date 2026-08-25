@@ -36,3 +36,6 @@ doc/
 .claude/projects/
 
 store/
+
+# Excel 打开时的锁文件
+~$*

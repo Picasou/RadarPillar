@@ -103,7 +103,7 @@ MODEL:
       anchor_rotations: [0, 1.57]
       anchor_bottom_heights: [-0.75]
       align_center: false
-      feature_map_stride: 2
+      feature_map_stride: 4
       matched_threshold: 0.6
       unmatched_threshold: 0.45
     - class_name: '2'            # 行人 l0.6 w0.6 h1.7
@@ -111,7 +111,7 @@ MODEL:
       anchor_rotations: [0, 1.57]
       anchor_bottom_heights: [-0.85]
       align_center: false
-      feature_map_stride: 2
+      feature_map_stride: 4
       matched_threshold: 0.5
       unmatched_threshold: 0.35
     - class_name: '4'            # 二轮车 l1.8 w0.7 h1.7
@@ -119,7 +119,7 @@ MODEL:
       anchor_rotations: [0, 1.57]
       anchor_bottom_heights: [-0.85]
       align_center: false
-      feature_map_stride: 2
+      feature_map_stride: 4
       matched_threshold: 0.5
       unmatched_threshold: 0.35
     - class_name: '5'            # 卡车 l15.0 w2.5 h3.0
@@ -127,7 +127,7 @@ MODEL:
       anchor_rotations: [0, 1.57]
       anchor_bottom_heights: [-1.5]
       align_center: false
-      feature_map_stride: 2
+      feature_map_stride: 4
       matched_threshold: 0.5
       unmatched_threshold: 0.35
     TARGET_ASSIGNER_CONFIG:

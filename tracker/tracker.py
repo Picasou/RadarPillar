@@ -23,10 +23,13 @@ class Tracker:
         self.cfg = Cfg.get_cfg(cfg_path)
         self.cfg.isvalid()
         self.mode = self.cfg.RUN.mode   # 0=display 1=just_model 2=full
+        self.do_save = (self.cfg.RUN.save == 1)
+        self.eval_mode = self.cfg.EVALUATE.type   # 0=off 1=online 2=offline
+        self.is_visualize = (self.cfg.VISUAL.enable == 1)
         self.trks: list[Trk] = []
         self.accum_frames = self.cfg.RUN.accum_frames
-        # 点云过滤范围以模型训练口径为准(MODEL.cfg 的 POINT_CLOUD_RANGE),
-        # 兜底旧 astyx data cfg(点云截短会让模型看不到远处目标)
+
+        # 按照模型配置获得 point_cloud_range
         import yaml as _yaml
         with open(self.cfg.MODEL.cfg, 'r', encoding='utf-8') as f:
             _mcfg = _yaml.safe_load(f) or {}
@@ -35,7 +38,7 @@ class Tracker:
             or load_data_cfg().POINT_CLOUD_RANGE)
 
         self.loader    = loader.Loader(self.cfg)
-        # display(0) 不加载模型: 只读数据可视化, detector 惰性不建
+
         self.detector  = None if self.mode == 0 else detector.Detector(self.cfg)
         self.updater   = updater.Updater(self.cfg)
         self.matcher   = matcher.Matcher(self.cfg)
@@ -45,97 +48,105 @@ class Tracker:
             self.cfg, class_names=self.detector.class_names if self.detector else None)
 
     def run(self) -> None:
-        run_mode  = self.mode                   # 0=display  1=just_model  2=full
-        do_save   = (self.cfg.RUN.save == 1)
-        eval_mode = self.cfg.EVALUATE.type  # 0=off  1=online  2=offline
-        is_visualize = (self.cfg.VISUAL.enable == 1)
-
         history = []
         for path in self.cfg.DATA.paths:
-            trk_rows = []           # 序列级航迹收集: [(frame_id, [Trk...])], 序列末统一写 bin
+            trk_rows = []           # 序列级结果收集: [(frame_id, [Trk|Obj...])], 序列末统一写 bin
             frames = self.loader.getframes(path)
             vds    = self.loader.getvds(path)
-            if is_visualize:
-                # 全程点云外沿 → 固定坐标范围(外沿+3m, 跨帧一致)
-                ext = (min(p.x_m for f in frames.Lst for p in f.pts.Lst),
+            if self.is_visualize:
+                aix_lim = (min(p.x_m for f in frames.Lst for p in f.pts.Lst),
                        max(p.x_m for f in frames.Lst for p in f.pts.Lst),
                        min(p.y_m for f in frames.Lst for p in f.pts.Lst),
                        max(p.y_m for f in frames.Lst for p in f.pts.Lst)) \
                     if any(f.pts.Lst for f in frames.Lst) else None
-                self.visualizer.begin_seq(Path(path).name, path, data_extent=ext,
+                self.visualizer.begin_seq(Path(path).name, path, data_extent=aix_lim,
                                           is_test=Path(path).name in (self.cfg.VISUAL.test_val or []))
 
             tracks_list = []
             for i, frame in enumerate(frames.Lst):
 
-                self.step(frame, frames, self.trks, vds, i)
+                objs = self.tracker_step(frame, frames, self.trks, vds, i)
 
-                if run_mode == 2:
+                if self.mode == 2:
                     tracks_list.append([copy.deepcopy(t) for t in self.trks if t.obstacle_prob])
-                    if eval_mode == 1:
+                    if self.eval_mode == 2:
                         self.evaluator.online(frame)
-                    if do_save:
-                        trk_rows.append((frame.frame_id,
-                                         [copy.deepcopy(t) for t in self.trks if t.obstacle_prob]))
+                if self.do_save and self.mode >= 1:
+                    # mode=2 落航迹 / mode=1 落检测(非航迹, 落盘 id 恒 0)
+                    rows = [t for t in self.trks if t.obstacle_prob] if self.mode == 2 else objs
+                    trk_rows.append((frame.frame_id, [copy.deepcopy(t) for t in rows]))
 
-            if run_mode == 2:
+            if self.mode == 2:
                 history.append((frame.gts, tracks_list.copy()))
-                if do_save and trk_rows:
-                    self.write(Path(path).name, trk_rows)
+            if self.do_save and trk_rows:
+                self.write(path, trk_rows)
 
-            if is_visualize:
+            if self.is_visualize:
                 self.visualizer.on_seq_end()
 
-        if eval_mode == 2:
+        if self.eval_mode == 2:
             self.evaluator.evaluate(history)
 
-    def step(self, frame: FRAME, frames: FRAMEs, trks: list[Trk], vds: VDS, i: int) -> None:
-        # 1. 点云准备(三模式共用: display 也要点云出图)
+    def tracker_step(self, frame: FRAME, frames: FRAMEs, trks: list[Trk], vds: VDS, i: int) -> list:
+        # 1. 加载数据
         frame.proc.points = c_points_prepare(frames, i, vds, self.accum_frames, self.point_cloud_range)
         frame.frame_id = '%06d' % i      # bin 点级 frame 号未填(恒 0), 用帧序号
 
-        # 2. 检测(mode>=1; mode=0 display 零处理)
+        # 2. 检测
         objs = []
         if self.mode >= 1:
             objs = self.detector.run(frame)
 
-        # 3~6. 航迹链路(仅 mode=2: 预测→关联→更新→管理)
         if self.mode == 2:
+            # 3. 预测
             self.updater.predict(trks, frame.vdd, vds.cycle_s)
+            # 4. 关联
             matches = self.matcher.run(trks, objs)
+            # 5. 更新
             self.updater.run(matches, vds.cycle_s)
+            # 6. 管理
             self.manager.run(matches, trks, vds.cycle_s)
 
-        # 7. 可视化(0=点云+GT / 1=+det / 2=+trk 带 ID)
-        if self.cfg.VISUAL.enable == 1:
+        # 7. 可视化
+        if self.is_visualize:
             self.visualizer.run(frame, objs, trks if self.mode == 2 else [])
 
-    def write(self, seq_name: str, trk_rows: list) -> None:
-        """
-        航迹落盘: 序列上桌航迹按 bin 格式写 0200(帧头)/0201(目标) 仿数据源布局,
-        overlap=0 且文件已存在时跳过
-        """
-        out_dir = Path('output/tracks') / seq_name
-        rec_file = out_dir / '0201.00000.bin'
-        head_file = out_dir / '0200.00000.bin'
+        return objs
+
+    def write(self, seq_path: str, trk_rows: list) -> None:
+        out_dir = Path(seq_path) / self.loader.relpath
+        suffix = '00000' if self.cfg.RUN.overlap == 1 else '00001'
+        rec_file = out_dir / ('0201.%s.bin' % suffix)
+        head_file = out_dir / ('0200.%s.bin' % suffix)
         if rec_file.exists() and self.cfg.RUN.overlap == 0:
             return
         heads, records = [], []
-        for frame_id, trks in trk_rows:
+        for frame_id, items in trk_rows:
             h = Raw_TrkHead()
-            h.version, h.frame_cnt, h.trk_num, h.reserved = 1, int(frame_id), len(trks), 0
+            h.version, h.frame_cnt, h.trk_num, h.reserved = 1, int(frame_id), len(items), 0
             heads.append(h)
-            for t in trks:
+            for t in items:
                 r = Raw_Trk()
-                r.id = int(t.id)
-                r.x, r.y, r.z = (int(round(v * 100)) for v in (t.x_m, t.y_m, t.z_m))
-                r.vx, r.vy = (int(round(v * 100)) for v in (t.vx_mps, t.vy_mps))
-                r.ax, r.ay = (int(round(v * 100)) for v in (t.ax_mps2, t.ay_mps2))
-                r.heading = int(round(t.heading_deg * 100))
-                r.width, r.length, r.height = (int(round(v * 100)) for v in
-                                               (t.width_m, t.length_m, t.height_m))
+                if isinstance(t, Trk):
+                    r.id = int(t.id)
+                    r.x, r.y, r.z = (int(round(v * 100)) for v in (t.x_m, t.y_m, t.z_m))
+                    r.vx, r.vy = (int(round(v * 100)) for v in (t.vx_mps, t.vy_mps))
+                    r.ax, r.ay = (int(round(v * 100)) for v in (t.ax_mps2, t.ay_mps2))
+                    r.heading = int(round(t.heading_deg * 100))
+                    r.width, r.length, r.height = (int(round(v * 100)) for v in
+                                                   (t.width_m, t.length_m, t.height_m))
+                    r.confidence = int(t.existence_prob)
+                else:   # Obj(检测, mode=1): 非航迹 id 恒 0, z/ax/ay/height 无来源置 0
+                    r.id = 0
+                    r.x, r.y = int(round(t.x * 100)), int(round(t.y * 100))
+                    r.z = 0
+                    r.vx, r.vy = int(round(t.vx * 100)), int(round(t.vy * 100))
+                    r.ax, r.ay = 0, 0
+                    r.heading = int(round(t.heading * 100))
+                    r.width, r.length = int(round(t.width * 100)), int(round(t.length * 100))
+                    r.height = 0
+                    r.confidence = int(round(t.score * 100))
                 r.classification = int(t.type)
-                r.confidence = int(t.existence_prob)
                 records.append(r)
         struct_write(str(rec_file), records, heads=heads, head_filepath=str(head_file))
         print('  [tracker] %d frames, %d trks -> %s' % (len(heads), len(records), rec_file))

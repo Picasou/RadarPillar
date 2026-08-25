@@ -31,7 +31,7 @@
 # [wandb]
 # USE_WANDB=True
 
-# [跳过评估] — MSR 无独立 evaluation 方法,必须 SKIP
+# [跳过评估] — 仅跳过 train.py 训后收尾 eval;MSR eval 已实现(tools/test.py 出 bbox/bev/3d 三口径),训后单独补跑
 SKIP_EVAL=True
 
 # [运行模式]

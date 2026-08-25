@@ -29,18 +29,21 @@ RUN:
 # ==================================================
 DATA:
   paths:
-    - /mnt/d/DataSet/DATASETv1/自车驶向_行人_运动_001_20260409_174740_366
-    - /mnt/d/DataSet/DATASETv1/自车驶向_行人_运动_002_20260414_134124_326
-    - /mnt/d/DataSet/DATASETv1/自车前进_二轮车_运动_001_20260414_155155_137
-    - /mnt/d/DataSet/DATASETv1/自车前进_二轮车_运动_003_20260512_153714_638
-    - /mnt/d/DataSet/DATASETv1/自车前进_轿车_运动_001_20260409_173152_170
+    - /mnt/d/DataSet/.generalization/msr_centerhead2d_trunk/自车跟车_轿车_急刹_002_20260414_142548_308
+    - /mnt/d/DataSet/.generalization/msr_centerhead2d_trunk/自车静止_二轮车_运动_001_20260401_143808_603
+    - /mnt/d/DataSet/.generalization/msr_centerhead2d_trunk/自车静止_二轮车_运动_002_20260401_143906_343
+    - /mnt/d/DataSet/.generalization/msr_centerhead2d_trunk/自车静止_行人_横穿_003_20260413_143427_413
+    - /mnt/d/DataSet/.generalization/msr_centerhead2d_trunk/自车静止_轿车_启停_001_20260413_173838_659
+    - /mnt/d/DataSet/.generalization/msr_centerhead2d_trunk/自车静止_轿车_启停_002_20260413_174021_829
+    - /mnt/d/DataSet/.generalization/msr_centerhead2d_trunk/自车驶向_行人_运动_006_20260414_152645_905
+    - /mnt/d/DataSet/.generalization/msr_centerhead2d_trunk/自车驶向_行人_运动_008_20260511_164402_575
 
 # ==================================================
 # -------------------- 模型配置 --------------------
 # ==================================================
 MODEL:
-  cfg: /home/admin/projects/RadarPillar/output/train_log/msr/202608181912_rpillar_msr_msr/resbag/cfg.yaml
-  ckpt: /home/admin/projects/RadarPillar/output/train_log/msr/202608181912_rpillar_msr_msr/resbag/best.pth
+  cfg: /home/admin/projects/RadarPillar/output/train_log/msr/202608220357_rpillar_msr_centerhead2d_trunk_msr_centerhead2d_trunk/resbag/cfg.yaml
+  ckpt: /home/admin/projects/RadarPillar/output/train_log/msr/202608220357_rpillar_msr_centerhead2d_trunk_msr_centerhead2d_trunk/resbag/best.pth
   score_thresh: 0.3
 # device: auto | cuda | cpu (默认 auto: 有 GPU 走 cuda, 无 GPU 自动落 cpu)
   device: auto

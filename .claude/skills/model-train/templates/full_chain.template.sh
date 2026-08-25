@@ -78,7 +78,7 @@ MARKER=output/${TAG}.done
 export CUDA_VISIBLE_DEVICES=$GPU
 mkdir -p "$LOG_DIR"
 
-echo "[__TAG__] start  ts=$TS  bs=$BS  ep=$EPOCHS  OUTPUT_ROOT=$OUTPUT_ROOT"
+echo "[__TAG__] start  ts=${TS:-?}  bs=$BS  ep=$EPOCHS  OUTPUT_ROOT=$OUTPUT_ROOT"
 
 # === step 1: train (--skip_eval, 训后补 eval) ===
 # OOM 回退: bs>4 时 OOM → 清 ckpt 以 bs4 全量重训 (record BS_EFF 供汇报/落袋)

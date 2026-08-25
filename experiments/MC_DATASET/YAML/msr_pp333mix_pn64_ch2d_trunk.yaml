@@ -1,6 +1,5 @@
-# MSR 行29: RepDWC(32,64,64) 渐进通道 + MDFEN neck + ch2d trunk head
-# 骨架=msr_centerhead2d_trunk.yaml, 差异: BACKBONE_2D -> RadarNeXtMDFENBackbone (渐进+方案二,
-#   CONCAT 160), head OUT_SIZE_FACTOR 2->4
+# MSR 行32: BaseBEVBackbone 层数均3渐进通道(32,64,64) + PN[64] + ch2d trunk head
+# 骨架=msr_pp333mix_ch2d_trunk.yaml, 差异: VFE NUM_FILTERS 32->64 (PillarAttention ATTN 32 不变, pre_mlp 自动 64->32)
 
 # ============================================================================================================================
 CLASS_NAMES: ['1', '2', '4', '5']
@@ -43,7 +42,7 @@ MODEL:
     USE_REL_VELOCITY_DECOMPOSITION: false
     USE_VELOCITY_OFFSET: false
     USE_REL_VELOCITY_OFFSET: false
-    NUM_FILTERS: [32]
+    NUM_FILTERS: [64]      # 行32 变体点: VFE 升 64 (pre_mlp 自动 64->32)
   # ------------------------
   BACKBONE_3D:
     NAME: PillarAttention
@@ -58,36 +57,12 @@ MODEL:
     NUM_BEV_FEATURES: 32
   # ------------------------
   BACKBONE_2D:
-    NAME: RadarNeXtMDFENBackbone  # 变体点: RepDWC + MDFENNeck 折叠单块 (方案二 a 通道)
-    REP_DWC:                      # 对齐论文 backbone 拓扑, 通道按表格行锁定
-      LAYER_NUMS: [3, 5, 5]
-      LAYER_STRIDES: [2, 2, 2]
-      OUT_CHANNELS: [32, 64, 64]
-      NUM_OUTPUTS: 3
-      INFERENCE_MODE: false
-      USE_SE: false
-      NUM_CONV_BRANCHES: 1
-      USE_NORMCONV: false
-      USE_DWCONV: true
-    MDFEN_NECK:                   # 对齐论文 neck 拓扑 (PAN+DCN+MultiMAPFusion)
-      CHANNELS_LIST: [32, 64, 64, 64, 32, 64, 128]
-      NUM_REPEATS: [1, 1, 1, 1]
-      DCN_LAYER: false
-      DCN_INDEX: [1]
-      DCN_IDS: [2]
-      FORMER: true
-      LATTER: false
-      GROUP: 4
-      USE_FFN: false
-      USE_NORM: false
-      INFERENCE_MODE: false
-      USE_SE: false
-      NUM_CONV_BRANCHES: 1
-      USE_DWCONV: true
-      USE_NORMCONV: false
-      MULTI_FUSION: true
-      FUSED_CHANNELS: [32, 64, 64]
-      FUSION_STRIDES: [1, 2]      # 融合到 grid/4=50x20, head OUT_SIZE_FACTOR=4 对齐
+    NAME: BaseBEVBackbone
+    LAYER_NUMS: [3, 3, 3]
+    LAYER_STRIDES: [2, 2, 2]
+    NUM_FILTERS: [32, 64, 64]
+    UPSAMPLE_STRIDES: [1, 2, 4]
+    NUM_UPSAMPLE_FILTERS: [32, 64, 64]
   # ------------------------
   DENSE_HEAD:
     NAME: RadarNeXtCenterHead2DTrunk    # abl⑤ 2D 全共享
@@ -102,7 +77,7 @@ MODEL:
       anchor_rotations: [0, 1.57]
       anchor_bottom_heights: [-0.75]
       align_center: false
-      feature_map_stride: 4
+      feature_map_stride: 2
       matched_threshold: 0.6
       unmatched_threshold: 0.45
     - class_name: '2'            # 行人 l0.6 w0.6 h1.7
@@ -110,7 +85,7 @@ MODEL:
       anchor_rotations: [0, 1.57]
       anchor_bottom_heights: [-0.85]
       align_center: false
-      feature_map_stride: 4
+      feature_map_stride: 2
       matched_threshold: 0.5
       unmatched_threshold: 0.35
     - class_name: '4'            # 二轮车 l1.8 w0.7 h1.7
@@ -118,7 +93,7 @@ MODEL:
       anchor_rotations: [0, 1.57]
       anchor_bottom_heights: [-0.85]
       align_center: false
-      feature_map_stride: 4
+      feature_map_stride: 2
       matched_threshold: 0.5
       unmatched_threshold: 0.35
     - class_name: '5'            # 卡车 l15.0 w2.5 h3.0
@@ -126,7 +101,7 @@ MODEL:
       anchor_rotations: [0, 1.57]
       anchor_bottom_heights: [-1.5]
       align_center: false
-      feature_map_stride: 4
+      feature_map_stride: 2
       matched_threshold: 0.5
       unmatched_threshold: 0.35
     TARGET_ASSIGNER_CONFIG:
@@ -153,7 +128,7 @@ MODEL:
     WEIGHT: 1.0
     IOU_WEIGHT: 1.0
     IOU_REG_WEIGHT: 0.5
-    OUT_SIZE_FACTOR: 4         # MDFEN fused 在 grid/4, 必须 4 (否则坐标错位)
+    OUT_SIZE_FACTOR: 2
     ANCHOR_BOTTOM_HEIGHTS: [-0.75, -0.85, -0.85, -1.5]       # 2D 口径: z 按类填 anchor 底高
     NMS_CONFIG:
       NMS_TYPE: nms_gpu
@@ -177,7 +152,7 @@ MODEL:
 
 # ============================================================================================================================
 OPTIMIZATION:
-  FIX_RANDOM_SEED: false
+  FIX_RANDOM_SEED: true
   BATCH_SIZE_PER_GPU: 4       # MSR 点云密集 + 8G 显存,保守起步
   NUM_EPOCHS: 80
   eval_interval: 80

@@ -110,7 +110,7 @@ class Detector:
                 id=i,                                # 帧内临时 id, 真正航迹 id 由 manager 赋
                 x=box[0], y=box[1],                  # [x,y,z] → Obj.x/y (z 丢弃)
                 length=box[3], width=box[4],         # [dx,dy,dz] → length/width (height 丢弃)
-                heading=box[6],                      # heading
+                heading=float(np.degrees(box[6])),    # rad→deg: Obj.heading 契约为度(与 loader 同口径)
                 type=int(label),                     # label: 1-based class index
                 score=float(score),                  # 检测置信度
                 vx=0.0, vy=0.0,                      # 模型不回归速度, 留给 filter

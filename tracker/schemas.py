@@ -252,7 +252,7 @@ class CfgRun:
     """运行配置 - 对齐 RUN。"""
     mode: int                   # 0=display  1=normal  2=regress
     save: int                   # 0=不保存  1=保存(航迹结果落盘)
-    overlap: int                # 航迹JSON覆盖: 0=已存在跳过  1=覆盖(可视化图恒覆盖)
+    overlap: int                # 航迹bin落盘(写回数据源 radar.default/0200|0201): 0=另存 00001(已存在跳过)  1=覆盖原始 00000(可视化图恒覆盖)
     delay: int                  # 雷达滞后实际帧数
     vds: CfgVds
     accum_frames: int = 1       # 点云叠加帧数 (1=不叠加)

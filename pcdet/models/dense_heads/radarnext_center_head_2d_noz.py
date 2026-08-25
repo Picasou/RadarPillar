@@ -13,12 +13,13 @@ cfg 关键差异（相对于 RadarNeXtCenterHead）：
     - BBOX_CODE_SIZE = 5（x, y, dx, dy, heading；评估时 z=anchor_bottom_height 填）
     - ANCHOR_BOTTOM_HEIGHTS = [-1.78, -0.6, -0.72]（Car / Ped / Cyc，按 hm argmax 查）
 """
+import numpy as np
 import torch
 
 from .radarnext_center_head import (
     RadarNeXtCenterHead,
-    draw_heatmap_gaussian,
-    gaussian_radius,
+    draw_heatmap_gaussian_np,
+    gaussian_radius_np,
 )
 
 
@@ -60,118 +61,103 @@ class RadarNeXtCenterHead2DNoZ(RadarNeXtCenterHead):
     # Targets                                                            #
     # ------------------------------------------------------------------ #
     def get_targets_single(self, gt_labels_3d, gt_bboxes_3d):
-        """写 6-cat anno_box：offset_xy + log(dx,dy) + sin(heading) + cos(heading)。"""
+        """写 6-cat anno_box：offset_xy + log(dx,dy) + sin(heading) + cos(heading)。
+
+        numpy 向量化 (替代逐目标 torch 循环): 开头一次批量下卡(labels/boxes),
+        循环体纯 numpy (高斯斑局部窗口取 max), 结尾每 task 一次上卡 — 消除原实现
+        每目标 ~20 次 GPU launch/sync (曾致 GPU 利用率 ~25% / 主进程单核 100%,
+        CenterHead 系训练慢 2.4×)。数值语义与 torch 版逐位/1ulp 等价
+        (test_2dnoz_targets.py 对拍 golden)。
+        """
         device = gt_labels_3d.device
         max_objs = int(self.model_cfg.get('MAX_OBJS', 500)) * int(self.model_cfg.get('DENSE_REG', 1))
-        grid_size = torch.tensor(self.grid_size, device=device)
-        pc_range = torch.tensor(self.point_cloud_range, device=device)
-        voxel_size = torch.tensor(self.voxel_size, device=device)
         gt_annotation_num = 6  # 与 code_weights 长度一致：offset2+log_dim2+rot2
 
-        feature_map_size = (grid_size[:2] // self.out_size_factor).int()
+        labels_np = gt_labels_3d.detach().cpu().numpy()
+        boxes_np = gt_bboxes_3d.detach().cpu().numpy()
 
-        task_masks = []
-        flag = 0
-        for class_name in self.class_names:
-            task_masks.append([
-                torch.where(gt_labels_3d == class_name.index(i) + flag)
-                for i in class_name
-            ])
-            flag += len(class_name)
+        pcr = np.asarray(self.point_cloud_range, dtype=np.float32)
+        vs = np.asarray(self.voxel_size, dtype=np.float32)
+        osf = np.float32(self.out_size_factor)
+        fm_w = int(self.grid_size[0]) // self.out_size_factor
+        fm_h = int(self.grid_size[1]) // self.out_size_factor
+        min_overlap = float(self.model_cfg.get('GAUSSIAN_OVERLAP', 0.1))
+        min_radius = int(self.model_cfg.get('MIN_RADIUS', 2))
 
-        task_boxes = []
-        task_classes = []
+        # 按 task 归类 GT: 与 torch 版一致, 先按类别分桶、桶内保持 GT 原序
+        task_boxes, task_classes = [], []
         flag2 = 0
-        for idx, mask in enumerate(task_masks):
-            task_box = []
-            task_class = []
-            for m in mask:
-                task_box.append(gt_bboxes_3d[m])
-                task_class.append(gt_labels_3d[m] + 1 - flag2)
-            task_boxes.append(torch.cat(task_box, axis=0).to(device))
-            task_classes.append(torch.cat(task_class).long().to(device))
-            flag2 += len(mask)
+        for class_name in self.class_names:
+            parts_box, parts_cls = [], []
+            for local_idx, name in enumerate(class_name):
+                hit = labels_np == (local_idx + flag2)
+                parts_box.append(boxes_np[hit])
+                parts_cls.append(np.full(int(hit.sum()), local_idx + 1, dtype=np.int64))
+            task_boxes.append(np.concatenate(parts_box, axis=0))
+            task_classes.append(np.concatenate(parts_cls, axis=0))
+            flag2 += len(class_name)
 
-        draw_gaussian = draw_heatmap_gaussian
         heatmaps, anno_boxes, inds, masks, corner_heatmaps, cat_labels, gt_boxes = \
             [], [], [], [], [], [], []
 
         for idx in range(len(self.tasks)):
-            heatmap = gt_bboxes_3d.new_zeros(
-                (len(self.class_names[idx]), feature_map_size[1], feature_map_size[0]))
-            corner_heatmap = torch.zeros(
-                (1, feature_map_size[1], feature_map_size[0]),
-                dtype=torch.float32, device=device)
+            heatmap = np.zeros((len(self.class_names[idx]), fm_h, fm_w), dtype=np.float32)
+            # 2D 头无 corner 监督, 恒 0 (与 torch 版一致)
+            corner_heatmap = np.zeros((1, fm_h, fm_w), dtype=np.float32)
 
-            anno_box = gt_bboxes_3d.new_zeros((max_objs, gt_annotation_num), dtype=torch.float32)
-            gt_box = gt_bboxes_3d.new_zeros((max_objs, 7), dtype=torch.float32)
+            anno_box = np.zeros((max_objs, gt_annotation_num), dtype=np.float32)
+            gt_box = np.zeros((max_objs, 7), dtype=np.float32)
 
-            ind = gt_labels_3d.new_zeros((max_objs), dtype=torch.int64)
-            mask = gt_bboxes_3d.new_zeros((max_objs), dtype=torch.uint8)
-            cat_label = gt_labels_3d.new_zeros((max_objs), dtype=torch.int64)
+            ind = np.zeros((max_objs), dtype=np.int64)
+            mask = np.zeros((max_objs), dtype=np.uint8)
+            cat_label = np.zeros((max_objs), dtype=np.int64)
 
-            num_objs = min(task_boxes[idx].shape[0], max_objs)
+            boxes = task_boxes[idx]
+            classes = task_classes[idx]
+            num_objs = min(boxes.shape[0], max_objs)
 
             for k in range(num_objs):
-                cls_id = task_classes[idx][k] - 1
+                cls_id = int(classes[k]) - 1
 
-                length = task_boxes[idx][k][3]
-                width = task_boxes[idx][k][4]
-                length = length / voxel_size[0] / self.out_size_factor
-                width = width / voxel_size[1] / self.out_size_factor
+                # length,width 折成 feature cell (只用于 radius, 同 torch 版)
+                length = boxes[k, 3] / vs[0] / osf
+                width = boxes[k, 4] / vs[1] / osf
 
                 if width > 0 and length > 0:
-                    radius = gaussian_radius(
-                        (width, length),
-                        min_overlap=float(self.model_cfg.get('GAUSSIAN_OVERLAP', 0.1)))
-                    radius = max(int(self.model_cfg.get('MIN_RADIUS', 2)), int(radius))
+                    radius = gaussian_radius_np((float(width), float(length)), min_overlap)
+                    radius = max(min_radius, int(radius))
 
-                    x, y, z = task_boxes[idx][k][0], task_boxes[idx][k][1], task_boxes[idx][k][2]
+                    coor_x = (boxes[k, 0] - pcr[0]) / vs[0] / osf
+                    coor_y = (boxes[k, 1] - pcr[1]) / vs[1] / osf
+                    cx, cy = int(coor_x), int(coor_y)
 
-                    coor_x = (x - pc_range[0]) / voxel_size[0] / self.out_size_factor
-                    coor_y = (y - pc_range[1]) / voxel_size[1] / self.out_size_factor
-
-                    center = torch.tensor([coor_x, coor_y], dtype=torch.float32, device=device)
-                    center_int = center.to(torch.int32)
-
-                    if not (0 <= center_int[0] < feature_map_size[0]
-                            and 0 <= center_int[1] < feature_map_size[1]):
+                    if not (0 <= cx < fm_w and 0 <= cy < fm_h):
                         continue
 
-                    draw_gaussian(heatmap[cls_id], center_int, radius)
+                    draw_heatmap_gaussian_np(heatmap[cls_id], cx, cy, radius)
 
-                    # 6-cat 目标：offset_x, offset_y, log(dx), log(dy), sin(h), cos(h)
-                    # 不写 z 监督（字面 2D 头）；gt_box 仍写 7 维以兼容 IoU 计算时的 z
-                    radius = radius // 2
-                    rot = task_boxes[idx][k][6]
-                    box_dim_2d = task_boxes[idx][k][3:5]  # dx, dy (no dz)
-                    box_dim_2d = box_dim_2d.log()
+                    # 6-cat 目标: offset_xy + log(dx,dy) + sin(h) + cos(h)
+                    # dx,dy 用原始米制(不进 cell), 与 torch 版 box_dim_2d.log() 一致;
+                    # 不写 z 监督(字面 2D 头); gt_box 仍写 7 维以兼容 IoU 计算时的 z
+                    rot = boxes[k, 6]
+                    box_dim_2d = boxes[k, 3:5]
 
-                    new_idx = k
-                    x_int, y_int = center_int[0], center_int[1]
+                    ind[k] = cy * fm_w + cx
+                    mask[k] = 1
+                    cat_label[k] = cls_id
+                    anno_box[k] = np.concatenate([
+                        np.asarray([coor_x - cx, coor_y - cy], dtype=np.float32),
+                        np.log(box_dim_2d),
+                        np.asarray([np.sin(rot), np.cos(rot)], dtype=np.float32)])
+                    gt_box[k] = boxes[k, 0:7]
 
-                    assert (y_int * feature_map_size[0] + x_int <
-                            feature_map_size[0] * feature_map_size[1])
-
-                    ind[new_idx] = y_int * feature_map_size[0] + x_int
-                    mask[new_idx] = 1
-                    cat_label[new_idx] = cls_id
-
-                    anno_box[new_idx] = torch.cat([
-                        center - torch.tensor([x_int, y_int], device=device),
-                        box_dim_2d,
-                        torch.sin(rot).unsqueeze(0),
-                        torch.cos(rot).unsqueeze(0)
-                    ])
-                    gt_box[new_idx] = task_boxes[idx][k][0:7]
-
-            heatmaps.append(heatmap)
-            corner_heatmaps.append(corner_heatmap)
-            anno_boxes.append(anno_box)
-            inds.append(ind)
-            masks.append(mask)
-            cat_labels.append(cat_label)
-            gt_boxes.append(gt_box)
+            heatmaps.append(torch.from_numpy(heatmap).to(device))
+            corner_heatmaps.append(torch.from_numpy(corner_heatmap).to(device))
+            anno_boxes.append(torch.from_numpy(anno_box).to(device))
+            gt_boxes.append(torch.from_numpy(gt_box).to(device))
+            masks.append(torch.from_numpy(mask).to(device))
+            inds.append(torch.from_numpy(ind).to(device))
+            cat_labels.append(torch.from_numpy(cat_label).to(device))
 
         return heatmaps, anno_boxes, inds, masks, corner_heatmaps, cat_labels, gt_boxes
 

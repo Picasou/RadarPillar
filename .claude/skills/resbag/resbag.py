@@ -166,9 +166,8 @@ def _make_locked(output_root, dataset, tag, name, cfg_path, model,
         f"train_*{model}*.sh"))
     if not sh_candidates:
         model_alt = model[8:] if model.startswith("rpillar_") else model
+        # 只有二级 */*/SH (如 MC_DATASET/SH); experiments/SH 一级目录不会被此 glob 命中
         for _sd in sorted((ROOT / "experiments").glob("*/SH")):
-            if _sd.name == "SH":
-                continue
             sh_candidates += sorted(_sd.glob(f"train_*{model_alt}*.sh"))
     # 排除 eval 壳
     sh_candidates = [p for p in sh_candidates if "eval" not in p.name]

@@ -60,7 +60,8 @@ class RadarNeXtMDFENBackbone(nn.Module):
     Forward contract (matches OpenPCDet's ``BACKBONE_2D`` convention):
         Input:  ``data_dict`` carrying ``spatial_features`` ``(N, C_in, H, W)``.
         Output: the same ``data_dict`` with ``spatial_features_2d`` set to the
-                fused ``(N, sum(FUSED_CHANNELS), 160, 160)`` feature.
+                fused ``(N, sum(FUSED_CHANNELS), H_mid, W_mid)`` feature
+                (middle scale = grid/4; see module docstring).
     """
 
     def __init__(self, model_cfg, input_channels: int = 32):
