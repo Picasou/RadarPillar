@@ -40,9 +40,25 @@ class Updater:
 
     def predict(self, trks: list[Trk], vdd, cycle_s: float) -> None:
         """
-        航迹预测: 委托 Filter.predict (ego 补偿 + 状态外推)
+        航迹预测: 先按存活剪枝类型后验, 再委托 Filter.predict (ego 补偿 + 状态外推)
         """
+        self._prune_type_states(trks)
         self.filter.predict(trks, vdd, cycle_s)
+
+    def reset(self) -> None:
+        """
+        更新器重置: 清类型后验记忆 + 委托滤波清状态 (序列边界调用)
+        """
+        self.type_states.clear()
+        self.filter.reset()
+
+    def _prune_type_states(self, trks: list[Trk]) -> None:
+        """
+        类型后验剪枝: 删除不在存活列表的 id (防 ID 复用继承旧航迹类型)
+        """
+        alive = {trk.id for trk in trks}
+        for tid in [k for k in self.type_states if k not in alive]:
+            del self.type_states[tid]
 
     def _udt_miantain(self, matches: Matches, cycle_s: float) -> None:
         for trk, obj in matches.matched:

@@ -74,6 +74,7 @@ class GT:
     type: int
     isghost: int
     ispassable: int
+    id: int = 0                  # 标注持久编号 (gt bin 加载填, IDSW/Frag 依赖)
 
 @dataclass
 class GTs:
@@ -327,9 +328,10 @@ class CfgMetrics:
 @dataclass
 class CfgEvaluate:
     """性能评估配置 - 对齐 EVALUATE。"""
-    type: int                   # 0=off  1=online  2=offline
+    type: int                   # 0=off  1=online(逐帧记账)  2=offline(完整报告)
     report: int
     template: str
+    match_dist: float = 2.0     # 评估配对距离门限 (m)
 
 
 @dataclass
@@ -485,6 +487,7 @@ class Cfg:
 
         # EVALUATE
         self._check_int(self.EVALUATE.type, 0, 2, 'EVALUATE.type')
+        self._check_float_gt(self.EVALUATE.match_dist, 0, 'EVALUATE.match_dist')
         self._check_int(self.EVALUATE.report, 0, 1, 'EVALUATE.report')
         if not isinstance(self.EVALUATE.template, str) or not self.EVALUATE.template:
             raise ValueError(f"EVALUATE.template must be non-empty str, got {self.EVALUATE.template}")

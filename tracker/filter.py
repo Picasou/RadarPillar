@@ -155,6 +155,10 @@ class _TemplateFilter:
     def _prune(self, trks: list[Trk]) -> None:
         pass
 
+    def reset(self) -> None:
+        """序列边界重置: 无状态滤波器空实现, 有状态子类 (IMM) 覆写."""
+        pass
+
     def update(self, trk: Trk, obj: Obj, cycle_s: float) -> None:
         self._update(trk, obj, cycle_s)
 
@@ -296,6 +300,10 @@ class ImmFilter(_TemplateFilter):
         for tid in [k for k in self._states if k not in alive]:
             del self._states[tid]
 
+    def reset(self) -> None:
+        # 序列边界重置 - 清空全部 IMM bank (跨序列航迹不延续)
+        self._states.clear()
+
     def _update(self, trk: Trk, obj: Obj, cycle_s: float) -> None:
         entry = self._states.get(trk.id)
         if entry is None:
@@ -416,6 +424,12 @@ class Filter:
 
     def predict(self, trks: list[Trk], vdd, cycle_s: float) -> None:
         self.filter.predict(trks, vdd, cycle_s)
+
+    def reset(self) -> None:
+        """
+        滤波重置: 委托内部滤波器清跨序列状态 (序列边界调用)
+        """
+        self.filter.reset()
 
     def update(self, trk: Trk, obj: Obj, cycle_s: float) -> None:
         self.filter.update(trk, obj, cycle_s)

@@ -11,6 +11,15 @@ from .utils.rw_struct import (struct_read,
                               Raw_Vdd, Raw_Vds)
 from .utils.common import c_state_compensate
 
+# AUTOSIL GTT 导出的稠密 GT bin 布局 (28B/记录, 标度 ×0.01, 已与 gt_metadata json 对拍实证)
+_GT_HEAD_DTYPE = np.dtype([('version', '<u2'), ('frame_cnt', '<u2'),
+                           ('gtt_num', '<u2'), ('reserved', '<u2')])
+_GT_REC_DTYPE = np.dtype([('id', '<u2'), ('x', '<i2'), ('y', '<i2'), ('z', '<i2'),
+                          ('vx', '<i2'), ('vy', '<i2'), ('heading', '<i2'),
+                          ('width', '<u2'), ('length', '<u2'), ('height', '<u2'),
+                          ('type', 'u1'), ('is_keyframe', 'u1'),
+                          ('birth', '<i2'), ('dead', '<i2'), ('tail', '<u2')])
+
 
 
 class Loader:
@@ -161,7 +170,42 @@ class Loader:
         return objs_list
 
     def _load_GTs(self, path: str) -> list[GTs]:
-        return []
+        """
+        GT 加载: 兄弟目录 gt.default/gt_radar_1200(头)+1201(记录); 无标注 -> warning + 空
+        """
+        gt_dir = os.path.join(os.path.dirname(path), 'gt.default')
+        f_head = os.path.join(gt_dir, 'gt_radar_1200.00000.bin')
+        f_rec = os.path.join(gt_dir, 'gt_radar_1201.00000.bin')
+        if not (os.path.exists(f_head) and os.path.exists(f_rec)):
+            warnings.warn(f"[loader] 无 GT 标注 ({gt_dir}), 该序列评估跳过",
+                          RuntimeWarning, stacklevel=2)
+            return []
+
+        heads = np.frombuffer(open(f_head, 'rb').read(), dtype=_GT_HEAD_DTYPE)
+        recs = np.frombuffer(open(f_rec, 'rb').read(), dtype=_GT_REC_DTYPE)
+
+        gts_list = []
+        offset, limit = 0, len(recs)
+        for head in heads:
+            num = int(head['gtt_num'])
+            if offset + num > limit:
+                num = limit - offset
+            if num < 0:
+                break
+            gts = []
+            for j in range(num):
+                r = recs[offset + j]
+                gts.append(GT(
+                    id=int(r['id']),
+                    x=r['x'] * 0.01, y=r['y'] * 0.01, z=r['z'] * 0.01,
+                    vx=r['vx'] * 0.01, vy=r['vy'] * 0.01,
+                    length=r['length'] * 0.01, width=r['width'] * 0.01,
+                    height=r['height'] * 0.01, heading=r['heading'] * 0.01,
+                    type=int(r['type']), isghost=0, ispassable=0,
+                ))
+            gts_list.append(GTs(num=len(gts), Lst=gts))
+            offset += int(head['gtt_num'])
+        return gts_list
 
     def _load_VDD(self, path: str) -> list[VDD]:
         file_2021 = os.path.join(path, '2021.00000.bin')

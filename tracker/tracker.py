@@ -43,16 +43,22 @@ class Tracker:
         self.updater   = updater.Updater(self.cfg)
         self.matcher   = matcher.Matcher(self.cfg)
         self.manager   = manager.TrackerManager(self.cfg)
-        self.evaluator = evaluator.Evaluator(self.cfg)
+        self.evaluator = evaluator.Evaluator(
+            self.cfg, class_names=self.detector.class_names if self.detector else None)
         self.visualizer = visualizer.Visualizer(
             self.cfg, class_names=self.detector.class_names if self.detector else None)
 
     def run(self) -> None:
         history = []
         for path in self.cfg.DATA.paths:
+            self.trks = []          # 序列边界重置: 航迹不跨序列 (P0-1)
+            self.updater.reset()    #           重置: 类型后验 / IMM bank
             trk_rows = []           # 序列级结果收集: [(frame_id, [Trk|Obj...])], 序列末统一写 bin
             frames = self.loader.getframes(path)
             vds    = self.loader.getvds(path)
+            if not frames.Lst:      # 空序列守卫: 后续不再引用未绑定 frame
+                print('  [tracker] %s: 0 frames, skip' % Path(path).name)
+                continue
             if self.is_visualize:
                 aix_lim = (min(p.x_m for f in frames.Lst for p in f.pts.Lst),
                        max(p.x_m for f in frames.Lst for p in f.pts.Lst),
@@ -62,29 +68,33 @@ class Tracker:
                 self.visualizer.begin_seq(Path(path).name, path, data_extent=aix_lim,
                                           is_test=Path(path).name in (self.cfg.VISUAL.test_val or []))
 
-            tracks_list = []
+            seq_history = []        # 逐帧 (gts, 输出航迹快照), 评估配对用 (P0-2)
             for i, frame in enumerate(frames.Lst):
 
                 objs = self.tracker_step(frame, frames, self.trks, vds, i)
 
+                out_trks = []
                 if self.mode == 2:
-                    tracks_list.append([copy.deepcopy(t) for t in self.trks if t.obstacle_prob])
-                    if self.eval_mode == 2:
-                        self.evaluator.online(frame)
+                    out_trks = [copy.deepcopy(t) for t in self.trks if t.obstacle_prob]
+                    seq_history.append((frame.gts, out_trks))
+                    if self.eval_mode == 1:     # online: 逐帧记账
+                        self.evaluator.online(frame, out_trks)
                 if self.do_save and self.mode >= 1:
                     # mode=2 落航迹 / mode=1 落检测(非航迹, 落盘 id 恒 0)
-                    rows = [t for t in self.trks if t.obstacle_prob] if self.mode == 2 else objs
+                    rows = out_trks if self.mode == 2 else objs
                     trk_rows.append((frame.frame_id, [copy.deepcopy(t) for t in rows]))
 
             if self.mode == 2:
-                history.append((frame.gts, tracks_list.copy()))
+                history.append(seq_history)
             if self.do_save and trk_rows:
                 self.write(path, trk_rows)
 
             if self.is_visualize:
                 self.visualizer.on_seq_end()
+            if self.eval_mode == 1 and self.mode == 2:   # online 模式才逐序列打印 (offline 由 evaluate 汇总)
+                self.evaluator.on_seq_end(Path(path).name)
 
-        if self.eval_mode == 2:
+        if self.eval_mode == 2 and self.mode == 2:
             self.evaluator.evaluate(history)
 
     def tracker_step(self, frame: FRAME, frames: FRAMEs, trks: list[Trk], vds: VDS, i: int) -> list:
