@@ -24,6 +24,8 @@ class TrackerManager:
         self.birth_heat = cfg.MANAGER.birth_heat   # 上桌存活门槛 (帧)
         self.death_heat = cfg.MANAGER.death_heat   # 断粮删轨阈值 (帧)
         self.prob_output = cfg.MANAGER.prob_output # 上桌存在概率线
+        self.birth_pos_std = getattr(cfg.MANAGER, 'birth_pos_std', 0.5)   # 出生位置标准差 (m)
+        self.birth_vel_std = getattr(cfg.MANAGER, 'birth_vel_std', 5.0)   # 出生速度标准差 (m/s)
 
     def run(self, matches, trks: list, cycle_s: float) -> None:
         self._man_create_trks(matches.unmatched_objs, trks, cycle_s)
@@ -49,23 +51,27 @@ class TrackerManager:
         tid = next((i for i in range(1, 101) if i not in used), None)
         if tid is None:
             return None
-        return Trk(
+        trk = Trk(
             x_m=obj.x, y_m=obj.y, z_m=0,
             vx_mps=obj.vx, vy_mps=obj.vy,
             doppler_mps=obj.doppler,
             ax_mps2=0, ay_mps2=0,
             heading_deg=obj.heading, yaw_rate_degs=0,
             id=tid, width_m=obj.width, height_m=0, length_m=obj.length, lifetime_s=cycle_s,
-            x_std_m=0, y_std_m=0, z_std_m=0, vx_std_mps=0, vy_std_mps=0,
+            x_std_m=self.birth_pos_std, y_std_m=self.birth_pos_std, z_std_m=0,
+            vx_std_mps=self.birth_vel_std, vy_std_mps=self.birth_vel_std,
             ax_std_mps2=0, ay_std_mps2=0, xy_pos_cov=0, xy_vel_cov=0, xy_acc_cov=0,
             width_std_m=0, height_std_m=0, length_std_m=0,
             heading_std_deg=0, yaw_rate_std_degs=0,
             type=obj.type, type_confi=0, obstacle_prob=0, existence_prob=PROB_INIT,
             motion_status=0, measurement_status=0, passable_status=obj.ispassable,
             rel_vel=0, rel_acc=0,
-            cov=np.zeros((4, 4)),
+            cov=np.diag([self.birth_pos_std ** 2, self.birth_pos_std ** 2,
+                         self.birth_vel_std ** 2, self.birth_vel_std ** 2]),
             history=TrkHistory(),
         )
+        trk.history.push(obj.x, obj.y, 0.0, 0.0, obj.heading)   # 出生状态入史 (帧 0): 速度量测链差分起点
+        return trk
 
     def _man_delete_trks(self, trks: list) -> None:
         """

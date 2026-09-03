@@ -5,7 +5,7 @@
 # ==================================================
 RUN:
 # mode: 0=display；1=just_model；2=full
-  mode: 1
+  mode: 2
 # save: 0=不保存  1=保存
   save: 1
 # overlap:  0=另存 ； 1=覆盖原始
@@ -29,21 +29,21 @@ RUN:
 # ==================================================
 DATA:
   paths:
-    - /mnt/d/DataSet/.generalization/msr_ppmix_ch2d_trunk/自车跟车_轿车_急刹_002_20260414_142548_308
-    - /mnt/d/DataSet/.generalization/msr_ppmix_ch2d_trunk/自车静止_二轮车_运动_001_20260401_143808_603
-    - /mnt/d/DataSet/.generalization/msr_ppmix_ch2d_trunk/自车静止_二轮车_运动_002_20260401_143906_343
-    - /mnt/d/DataSet/.generalization/msr_ppmix_ch2d_trunk/自车静止_行人_横穿_003_20260413_143427_413
-    - /mnt/d/DataSet/.generalization/msr_ppmix_ch2d_trunk/自车静止_轿车_启停_001_20260413_173838_659
-    - /mnt/d/DataSet/.generalization/msr_ppmix_ch2d_trunk/自车静止_轿车_启停_002_20260413_174021_829
-    - /mnt/d/DataSet/.generalization/msr_ppmix_ch2d_trunk/自车驶向_行人_运动_006_20260414_152645_905
-    - /mnt/d/DataSet/.generalization/msr_ppmix_ch2d_trunk/自车驶向_行人_运动_008_20260511_164402_575
+    - /mnt/d/DataSet/.generalization/msr_input5_pp32_ch2d_trunk/自车跟车_轿车_急刹_002_20260414_142548_308
+    - /mnt/d/DataSet/.generalization/msr_input5_pp32_ch2d_trunk/自车静止_二轮车_运动_001_20260401_143808_603
+    - /mnt/d/DataSet/.generalization/msr_input5_pp32_ch2d_trunk/自车静止_二轮车_运动_002_20260401_143906_343
+    - /mnt/d/DataSet/.generalization/msr_input5_pp32_ch2d_trunk/自车静止_行人_横穿_003_20260413_143427_413
+    - /mnt/d/DataSet/.generalization/msr_input5_pp32_ch2d_trunk/自车静止_轿车_启停_001_20260413_173838_659
+    - /mnt/d/DataSet/.generalization/msr_input5_pp32_ch2d_trunk/自车静止_轿车_启停_002_20260413_174021_829
+    - /mnt/d/DataSet/.generalization/msr_input5_pp32_ch2d_trunk/自车驶向_行人_运动_006_20260414_152645_905
+    - /mnt/d/DataSet/.generalization/msr_input5_pp32_ch2d_trunk/自车驶向_行人_运动_008_20260511_164402_575
 
 # ==================================================
 # -------------------- 模型配置 --------------------
 # ==================================================
 MODEL:
-  cfg: /home/admin/projects/RadarPillar/output/train_log/msr/202608221247_rpillar_msr_ppmix_ch2d_trunk_msr_ppmix_ch2d_trunk/resbag/cfg.yaml
-  ckpt: /home/admin/projects/RadarPillar/output/train_log/msr/202608221247_rpillar_msr_ppmix_ch2d_trunk_msr_ppmix_ch2d_trunk/resbag/best.pth
+  cfg: /home/admin/projects/RadarPillar/output/train_log/msr/202608261645_rpillar_msr_input5_pp32_ch2d_trunk_msr_input5_pp32_ch2d_trunk/resbag/cfg.yaml
+  ckpt: /home/admin/projects/RadarPillar/output/train_log/msr/202608261645_rpillar_msr_input5_pp32_ch2d_trunk_msr_input5_pp32_ch2d_trunk/resbag/best.pth
   score_thresh: 0.1
 # device: auto | cuda | cpu (默认 auto: 有 GPU 走 cuda, 无 GPU 自动落 cpu)
   device: auto
@@ -66,7 +66,7 @@ FILTER:
           [0.0, 1.0, 0.0, 0.0],
           [0.0, 0.0, 1.0, 0.0],
           [0.0, 0.0, 0.0, 1.0]]
-      # R: 量测噪声协方差矩阵 (dim×dim; dim=2 时取左上 2×2)
+      # R: 量测噪声协方差矩阵 (dim×dim; dim=2 时取左上 2×2); 速度通道 r_vel 按差分+α-β 估计噪声定 (位置通道维持 0.5)
       r: [[0.5, 0.0, 0.0, 0.0],
           [0.0, 0.5, 0.0, 0.0],
           [0.0, 0.0, 0.5, 0.0],
@@ -178,7 +178,7 @@ METRICS:
 # ==================================================
 EVALUATE:
 # type: 0=off  1=online(逐帧记账+序列末打印)  2=offline(完整报告+落盘)
-  type: 0
+  type: 2
   report: 1
   template: default
 # match_dist: 评估配对距离门限 (m), 中心欧氏距离
@@ -193,6 +193,9 @@ MANAGER:
   prob_output: 80
   dt: 0.1
   history_horizon: 4.0
+  # 出生 P₀ 对角标准差: 位置≈检测噪声, 速度大方差 (首次更新由两点差分量测收敛)
+  birth_pos_std: 0.5
+  birth_vel_std: 5.0
   adapter:
     smooth: 1
     markov: 1
@@ -201,3 +204,13 @@ MANAGER:
       class_names: ["Car", "Pedestrian", "Cyclist"]
       p_stay: 0.95
       accuracy: 0.7
+
+# ==================================================
+#---------------- 速度量测链配置 -------------------
+# ==================================================
+VELOCITY:
+  # 检测无速度头 → 速度量测由 tracker 自产: trk.history (逐帧滤波后状态) 差分 → v_meas 覆写 obj.vx/vy 作速度量测; meas_dim=2 时 KF 更新后 α-β 二次滤波速度 (状态寄存航迹)
+  enable: 1
+  window_s: 1.0    # 头尾差分滑窗时长 (s): 长→噪声小, 短→机动响应快
+  alpha: 0.5       # α-β 速度平滑增益 α
+  beta: 0.5        # α-β 速度平滑增益 β (加速度通道, 钳位 ±10 m/s²)

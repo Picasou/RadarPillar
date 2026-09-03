@@ -21,16 +21,18 @@ class Tracker:
     全链路编排
     """
     def __init__(self, cfg_path: str) -> None:
+        # 参数初始化
         self.cfg = Cfg.get_cfg(cfg_path)
         self.cfg.isvalid()
         self.mode = self.cfg.RUN.mode   # 0=display 1=just_model 2=full
         self.do_save = (self.cfg.RUN.save == 1)
         self.eval_mode = self.cfg.EVALUATE.type   # 0=off 1=online 2=offline
+        if self.eval_mode and self.cfg.RUN.mode != 2:
+            print('[tracker] warning: EVALUATE.type=%d 仅在 RUN.mode=2 下生效, 本次评估关闭'% self.eval_mode)
         self.is_visualize = (self.cfg.VISUAL.enable == 1)
         self.trks: list[Trk] = []
         self.accum_frames = self.cfg.RUN.accum_frames
 
-        # 按照模型配置获得 point_cloud_range
         import yaml as _yaml
         with open(self.cfg.MODEL.cfg, 'r', encoding='utf-8') as f:
             _mcfg = _yaml.safe_load(f) or {}
@@ -38,8 +40,8 @@ class Tracker:
             (_mcfg.get('DATA_CONFIG') or {}).get('POINT_CLOUD_RANGE')
             or load_data_cfg().POINT_CLOUD_RANGE)  # type: ignore[attr-defined]
 
+        # 模块初始化
         self.loader    = loader.Loader(self.cfg)
-
         self.detector  = None if self.mode == 0 else detector.Detector(self.cfg)
         self.updater   = updater.Updater(self.cfg)
         self.matcher   = matcher.Matcher(self.cfg)
@@ -60,6 +62,9 @@ class Tracker:
             if not frames.Lst:      
                 continue
 
+            if self.eval_mode == 1 and self.mode == 2:
+                self.evaluator.on_seq_start(path)
+
             if self.is_visualize:
                 aix_lim = (min(p.x_m for f in frames.Lst for p in f.pts.Lst),
                        max(p.x_m for f in frames.Lst for p in f.pts.Lst),
@@ -74,26 +79,29 @@ class Tracker:
 
                 objs = self.tracker_step(frame, frames, self.trks, vds, i)
 
-                out_trks = []
                 if self.mode == 2:
-                    out_trks = [copy.deepcopy(t) for t in self.trks if t.obstacle_prob]
-                    seq_history.append((frame.gts, out_trks))
-                    if self.eval_mode == 1:    
-                        self.evaluator.online(frame, out_trks)
-                if self.do_save and self.mode >= 1:
-                    rows = out_trks if self.mode == 2 else objs
-                    trk_rows.append((frame.frame_id, [copy.deepcopy(t) for t in rows]))
+                    live = [t for t in self.trks if t.obstacle_prob]
+                    if self.eval_mode == 1:
+                        self.evaluator.online(frame, [evaluator.snap_trk(t) for t in live])
+                    elif self.eval_mode == 2:
+                        seq_history.append((frame.gts, [evaluator.snap_trk(t) for t in live]))
+                    if self.do_save:
+                        trk_rows.append((frame.frame_id, [copy.deepcopy(t) for t in live]))
+                elif self.do_save and self.mode == 1:
+                    trk_rows.append((frame.frame_id, [copy.deepcopy(t) for t in objs]))
 
             if self.mode == 2:
-                history.append(seq_history)
+                history.append((path, seq_history))
             if self.do_save and trk_rows:
                 self.write(path, trk_rows)
 
             if self.is_visualize:
                 self.visualizer.on_seq_end()
             if self.eval_mode == 1 and self.mode == 2: 
-                self.evaluator.on_seq_end(Path(path).name)
+                self.evaluator.on_seq_end(path)
 
+        if self.eval_mode == 1 and self.mode == 2:
+            self.evaluator.on_dataset_end()
         if self.eval_mode == 2 and self.mode == 2:
             self.evaluator.evaluate(history)
 
@@ -192,8 +200,7 @@ def main():
     模块入口: 解析 --cfg 并实例化/运行 Tracker (需 python -m tracker.tracker 方式启动)
     """
     parser = argparse.ArgumentParser(description='run tracker full chain on seq data')
-    parser.add_argument('--cfg', type=str,
-                        default=str(Path(__file__).parent / 'cfg' / 'cfg.yaml'))
+    parser.add_argument('--cfg', type=str,  default=str(Path(__file__).parent / 'cfg' / 'cfg.yaml'))
     args = parser.parse_args()
 
     trk = Tracker(args.cfg)

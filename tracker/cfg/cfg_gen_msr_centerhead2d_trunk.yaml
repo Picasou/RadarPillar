@@ -44,7 +44,7 @@ DATA:
 MODEL:
   cfg: /home/admin/projects/RadarPillar/output/train_log/msr/202608220357_rpillar_msr_centerhead2d_trunk_msr_centerhead2d_trunk/resbag/cfg.yaml
   ckpt: /home/admin/projects/RadarPillar/output/train_log/msr/202608220357_rpillar_msr_centerhead2d_trunk_msr_centerhead2d_trunk/resbag/best.pth
-  score_thresh: 0.3
+  score_thresh: 0.1
 # device: auto | cuda | cpu (默认 auto: 有 GPU 走 cuda, 无 GPU 自动落 cpu)
   device: auto
 
@@ -177,10 +177,12 @@ METRICS:
 # -------------------- 性能评估配置 --------------------
 # ==================================================
 EVALUATE:
-# type: 0=off  1=online  2=offline
+# type: 0=off  1=online(逐帧记账+序列末打印)  2=offline(完整报告+落盘)
   type: 0
   report: 1
   template: default
+# match_dist: 评估配对距离门限 (m), 中心欧氏距离
+  match_dist: 2.0
 
 # ==================================================
 #-------------------- 航迹管理配置 -------------------

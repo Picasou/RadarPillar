@@ -43,10 +43,11 @@ class Loader:
         vdd_list = self._load_VDD(data_path)
         objs_list = self._load_objs(data_path, vds)
 
-        n = min(len(pts_list), len(vdd_list), len(objs_list))
-        if n != len(pts_list) or n != len(vdd_list) or n != len(objs_list):
+        # 点云帧数为唯一基准: 0200/0201 输入流与回灌输出同文件, 历史残留会变短, 不得参与定帧数
+        n = len(pts_list)
+        if n != len(vdd_list) or n != len(objs_list):
             warnings.warn(
-                f"[loader] 帧级长度不一致, 已截断到 {n} "
+                f"[loader] 帧级长度不一致, 以点云 {n} 帧为准, 短流后段补空 "
                 f"(pts={len(pts_list)}, vdd={len(vdd_list)}, objs={len(objs_list)})",
                 RuntimeWarning, stacklevel=2
             )
@@ -56,8 +57,8 @@ class Loader:
             frame = FRAME(
                 gts=gts_list[i] if i < len(gts_list) else GTs(num=0, Lst=[]),
                 pts=pts_list[i],
-                vdd=vdd_list[i],
-                objs=objs_list[i]
+                vdd=vdd_list[i] if i < len(vdd_list) else VDD(speed_ms=0.0, yaw_rate=0.0, gear=0),
+                objs=objs_list[i] if i < len(objs_list) else Objs()
             )
             frames.append(frame)
         return FRAMEs(num=len(frames), Lst=frames)
@@ -183,7 +184,19 @@ class Loader:
             return []
 
         heads = np.frombuffer(open(f_head, 'rb').read(), dtype=_GT_HEAD_DTYPE)
-        recs = np.frombuffer(open(f_rec, 'rb').read(), dtype=_GT_REC_DTYPE)
+        data = open(f_rec, 'rb').read()
+        rec_n = sum(int(h['trk_num']) for h in heads)
+        if rec_n == 0:
+            recs = np.zeros(0, dtype=_GT_REC_DTYPE)
+        else:
+            # 布局自适应: 27B 紧凑 / 28B 旧格式(尾部 1B pad, DATASETv1), stride 由头内 trk_num 总和推定
+            stride = len(data) / rec_n
+            assert stride in (27.0, 28.0) and rec_n * int(stride) == len(data), \
+                f"[loader] GT 记录布局非 27/28B: {f_rec} ({stride:.2f} B/rec)"
+            if int(stride) == 28:
+                raw = np.frombuffer(data, dtype=np.uint8).reshape(rec_n, 28)[:, :27]
+                data = np.ascontiguousarray(raw).tobytes()
+            recs = np.frombuffer(data, dtype=_GT_REC_DTYPE)
 
         gts_list = []
         offset, limit = 0, len(recs)

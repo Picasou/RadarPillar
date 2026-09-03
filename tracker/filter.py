@@ -167,6 +167,8 @@ class _TemplateFilter:
 
 
 class AlphaBetaFilter(_TemplateFilter):
+    meas_dim = 2                                # 量测维: 仅位置 (速度由 β 通道修正)
+
     def __init__(self, alpha: float, beta: float):
         self.alpha = alpha
         self.beta = beta
@@ -193,6 +195,7 @@ class AlphaBetaFilter(_TemplateFilter):
 class KalmanFilter(_TemplateFilter):
     def __init__(self, dim: int, q, r):
         self.dim = dim                      # 量测维: 2=仅(x/y), 4=(x/y/vx/vy)
+        self.meas_dim = dim                 # 对外统一量测维口径 (updater 据此路由速度二次滤波)
         self.q = q
         self.r = r
         self.H = np.eye(4)[:2].copy() if dim == 2 else np.eye(4)
@@ -221,6 +224,7 @@ class KalmanFilter(_TemplateFilter):
 class EkfFilter(_TemplateFilter):
     def __init__(self, dim: int, q, r):
         self.dim = dim                      # 量测维: 2=仅(x/y), 4=(x/y/vx/vy); 状态恒 4 维走 CTRV
+        self.meas_dim = dim                 # 对外统一量测维口径 (updater 据此路由速度二次滤波)
         self.q = q
         self.r = r
         if dim not in (2, 4):
@@ -375,6 +379,11 @@ class Filter:
     def __init__(self, cfg: Cfg):
         self.cfg = cfg
         self.filter = self._build_filter(cfg)
+
+    @property
+    def meas_dim(self) -> int:
+        """量测维口径: 委托内部滤波器统一暴露 (α-β=2, KF/EKF=dim, IMM=meas_dim)"""
+        return int(getattr(self.filter, 'meas_dim', 4))
 
     def _build_filter(self, cfg: Cfg) -> _TemplateFilter:
         """

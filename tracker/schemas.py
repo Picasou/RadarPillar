@@ -134,22 +134,39 @@ class TrkState:
     heading: float = 0.0
 
 
-HISTORY_LEN = 20
+HISTORY_LEN = 64    # 逐帧入史 @10Hz = 6.4s, 覆盖 window_s 滑窗 + history_horizon 余量
 @dataclass
 class TrkHistory:
-    """轨迹历史容器 - 对齐 C Trajectory_t 结构"""
+    """轨迹历史容器 - 对齐 C Trajectory_t 结构; 逐帧写滤波后状态, 索引=帧 (Δt=帧差×cycle_s)"""
     wt: float = 0.0
     dx: float = 0.0
     dy: float = 0.0
     dist: float = 0.0
-    head_idx: int = 0
-    tail_idx: int = 0
-    # 5 个并行数组 - 对齐 C Trajectory_t.arr_*[HISTORY_LEN] 布局
+    head_idx: int = 0    # 差分窗头指针 (速度量测链按 window_s 维护, [head_idx, tail_idx) 为窗)
+    tail_idx: int = 0    # 写入游标 (线性滑窗语义 [0, tail_idx))
     x_history:      np.ndarray = field(default_factory=lambda: np.zeros(HISTORY_LEN))
     y_history:      np.ndarray = field(default_factory=lambda: np.zeros(HISTORY_LEN))
     vx_history:     np.ndarray = field(default_factory=lambda: np.zeros(HISTORY_LEN))
     vy_history:     np.ndarray = field(default_factory=lambda: np.zeros(HISTORY_LEN))
     heading_history: np.ndarray = field(default_factory=lambda: np.zeros(HISTORY_LEN))
+
+    def push(self, x: float, y: float, vx: float, vy: float, heading: float) -> None:
+        """
+        历史追加: 滤波后状态 (x,y,vx,vy,heading) 逐帧写入队尾, 满则整体左移一格 (head_idx 随移)
+        """
+        if self.tail_idx >= HISTORY_LEN:
+            for arr in (self.x_history, self.y_history, self.vx_history,
+                        self.vy_history, self.heading_history):
+                arr[:-1] = arr[1:]
+            self.tail_idx = HISTORY_LEN - 1
+            self.head_idx = max(0, self.head_idx - 1)
+        i = self.tail_idx
+        self.x_history[i] = x
+        self.y_history[i] = y
+        self.vx_history[i] = vx
+        self.vy_history[i] = vy
+        self.heading_history[i] = heading
+        self.tail_idx = i + 1
                                  
 
 
@@ -203,7 +220,8 @@ class Trk:
     rel_vel: int                # [0:绝对速度 | 1:相对速度] (标志)
     rel_acc: int                # [0:绝对加速度 | 1:相对加速度] (标志)
     cov: np.ndarray             # 4x4 协方差
-    history: TrkHistory         # 4s 隐藏历史 (含 wt/dx/dy/dist + states[Trajectory_t 5 数组])
+    history: TrkHistory         # 4s 隐藏历史 (含 wt/dx/dy/dist + states[Trajectory_t 6 数组])
+    vel_init: bool = False      # 速度量测链冷启动标志 (Python 侧工作字段, 不入 C 契约)
 
 
 @dataclass
@@ -347,11 +365,22 @@ class CfgManager:
     history_horizon: float
     adapter: dict               # smooth/markov
     prob_output: int = 80       # 上桌存在概率线
+    birth_pos_std: float = 0.5  # 出生位置标准差 (m), P₀ 对角用
+    birth_vel_std: float = 5.0  # 出生速度标准差 (m/s), P₀ 对角用
+
+
+@dataclass
+class CfgVelocity:
+    """速度量测链配置 - 对齐 VELOCITY (历史位置滑窗头尾差分 + α-β 平滑 → KF 速度量测)。"""
+    enable: int = 1             # 1=启用速度量测链 (0=沿用检测 vx/vy 占位 0)
+    window_s: float = 1.0       # 头尾差分滑窗时长 (s)
+    alpha: float = 0.5          # α-β 速度平滑增益 α
+    beta: float = 0.5           # α-β 速度平滑增益 β (加速度通道)
 
 
 @dataclass
 class Cfg:
-    """配置 - 镜像 cfg.yaml 的 9 大组。"""
+    """配置 - 镜像 cfg.yaml 的 10 大组。"""
     RUN: CfgRun
     DATA: CfgData
     MODEL: CfgModel
@@ -361,6 +390,7 @@ class Cfg:
     METRICS: CfgMetrics
     EVALUATE: CfgEvaluate
     MANAGER: CfgManager
+    VELOCITY: CfgVelocity = field(default_factory=CfgVelocity)
 
     @classmethod
     def get_cfg(cls, path: str) -> 'Cfg':
@@ -375,7 +405,7 @@ class Cfg:
             'FILTER': CfgFilter, 'MATCH': CfgMatch,
             'VISUAL': CfgVisual, 'METRICS': CfgMetrics,
             'EVALUATE': CfgEvaluate,
-            'MANAGER': CfgManager,
+            'MANAGER': CfgManager, 'VELOCITY': CfgVelocity,
             'vds': CfgVds, 'para': CfgFilterPara,
             'para_kf': CfgFilterParaKf, 'para_abf': dict,
             'para_ekf': dict, 'para_imm': dict,
@@ -510,6 +540,14 @@ class Cfg:
             raise ValueError(f"MANAGER.adapter.type_markov.class_names 须为非空字符串列表, got {cn}")
         self._check_float(tm.get('p_stay', 0.95), 0, 1, 'MANAGER.adapter.type_markov.p_stay')
         self._check_float(tm.get('accuracy', 0.7), 0, 1, 'MANAGER.adapter.type_markov.accuracy')
+        self._check_float_gt(self.MANAGER.birth_pos_std, 0, 'MANAGER.birth_pos_std')
+        self._check_float_gt(self.MANAGER.birth_vel_std, 0, 'MANAGER.birth_vel_std')
+
+        # VELOCITY
+        self._check_int(self.VELOCITY.enable, 0, 1, 'VELOCITY.enable')
+        self._check_float_gt(self.VELOCITY.window_s, 0, 'VELOCITY.window_s')
+        self._check_float_gt(self.VELOCITY.alpha, 0, 'VELOCITY.alpha')
+        self._check_float_gt(self.VELOCITY.beta, 0, 'VELOCITY.beta')
 
         return True
 

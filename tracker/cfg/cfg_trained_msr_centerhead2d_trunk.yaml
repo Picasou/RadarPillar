@@ -29,21 +29,16 @@ RUN:
 # ==================================================
 DATA:
   paths:
-    - /mnt/d/DataSet/.generalization/msr_ppmix_ch2d_trunk/自车跟车_轿车_急刹_002_20260414_142548_308
-    - /mnt/d/DataSet/.generalization/msr_ppmix_ch2d_trunk/自车静止_二轮车_运动_001_20260401_143808_603
-    - /mnt/d/DataSet/.generalization/msr_ppmix_ch2d_trunk/自车静止_二轮车_运动_002_20260401_143906_343
-    - /mnt/d/DataSet/.generalization/msr_ppmix_ch2d_trunk/自车静止_行人_横穿_003_20260413_143427_413
-    - /mnt/d/DataSet/.generalization/msr_ppmix_ch2d_trunk/自车静止_轿车_启停_001_20260413_173838_659
-    - /mnt/d/DataSet/.generalization/msr_ppmix_ch2d_trunk/自车静止_轿车_启停_002_20260413_174021_829
-    - /mnt/d/DataSet/.generalization/msr_ppmix_ch2d_trunk/自车驶向_行人_运动_006_20260414_152645_905
-    - /mnt/d/DataSet/.generalization/msr_ppmix_ch2d_trunk/自车驶向_行人_运动_008_20260511_164402_575
+    - /mnt/d/DataSet/.trained/msr_centerhead2d_trunk/自车静止_轿车_横穿_002_20260511_160920_840
+    - /mnt/d/DataSet/.trained/msr_centerhead2d_trunk/自车静止_轿车_运动_008_20260409_172452_476
+    - /mnt/d/DataSet/.trained/msr_centerhead2d_trunk/自车驶向_轿车_运动_004_20260409_172343_395
 
 # ==================================================
 # -------------------- 模型配置 --------------------
 # ==================================================
 MODEL:
-  cfg: /home/admin/projects/RadarPillar/output/train_log/msr/202608221247_rpillar_msr_ppmix_ch2d_trunk_msr_ppmix_ch2d_trunk/resbag/cfg.yaml
-  ckpt: /home/admin/projects/RadarPillar/output/train_log/msr/202608221247_rpillar_msr_ppmix_ch2d_trunk_msr_ppmix_ch2d_trunk/resbag/best.pth
+  cfg: /home/admin/projects/RadarPillar/output/train_log/msr/202608220357_rpillar_msr_centerhead2d_trunk_msr_centerhead2d_trunk/resbag/cfg.yaml
+  ckpt: /home/admin/projects/RadarPillar/output/train_log/msr/202608220357_rpillar_msr_centerhead2d_trunk_msr_centerhead2d_trunk/resbag/best.pth
   score_thresh: 0.1
 # device: auto | cuda | cpu (默认 auto: 有 GPU 走 cuda, 无 GPU 自动落 cpu)
   device: auto
@@ -147,7 +142,7 @@ VISUAL:
 # -------------------- 指标显示配置 --------------------
 # ==================================================
 METRICS:
-# enable: 指标面板总开关(预留, evaluator 实装后生效)
+# enable: 指标面板总开关(在线模式逐帧滚动指标行)
   enable: 1
 # show: 各项指标显示开关
   show:
@@ -163,9 +158,6 @@ METRICS:
     assa: 1
     hota: 1
     loca: 1
-    amota: 1
-    amotp: 1
-    samota: 1
     vae: 1
     vne: 1
     vaie: 1
@@ -177,7 +169,7 @@ METRICS:
 # -------------------- 性能评估配置 --------------------
 # ==================================================
 EVALUATE:
-# type: 0=off  1=online(逐帧记账+序列末打印)  2=offline(完整报告+落盘)
+# type: 0=off  1=online(逐帧记账+滚动指标, 序列/数据集两级输出)  2=offline(批量评估+报告落盘)
   type: 0
   report: 1
   template: default

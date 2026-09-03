@@ -166,6 +166,8 @@ $$
 \text{HOTA}=\sqrt{\text{DetA}\cdot\text{AssA}}
 $$
 
+> **本项目口径**：中心距匹配体系下 $\text{LocA}=\max(0,\,1-\text{MOTP}/\text{match\_dist})$（门限归一化中心距），MOTP 即匹配对平均 BEV 中心距。
+
 其中 $\text{TPA}(c)$ 为同一真值 ID $c$ 在各真阳匹配上的帧数，FPA/FNA 为关联假阳/假阴。
 
 ### 7.3 AMOTA（对置信度阈值积分平均）

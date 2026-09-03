@@ -8,7 +8,54 @@ from .schemas import Cfg, Matches, Trk
 from .filter import Filter
 
 SMOOTH_TAU = 5.0            # 尺寸平滑时间常数 (s), 越大变化越慢
-HEADING_SMOOTH_ALPHA = 0.2  # 航向平滑系数
+HEADING_ALPHA = 0.2         # 航向向量 α-β: α 向量修正增益
+HEADING_BETA = 0.05         # 航向向量 α-β: β 角速度通道增益 (heading 量测脏, 取小)
+HEADING_W_CLAMP_DPS = 90.0  # 航向角速度钳位 (deg/s), 防脏量测 windup
+ACC_CLAMP_MPS2 = 10.0       # α-β 加速度通道钳位 (m/s²), 防持续偏差下 windup
+
+
+class VelEstimator:
+    """
+    速度量测链: trk.history (逐帧滤波后状态, 索引=帧) 滑窗头尾差分 → v_meas 量测; meas_dim=2 时 KF 更新后 α-β 二次滤波速度
+    (状态全部寄存航迹自身: v=trk.vx/vy, a=trk.ax_mps2, init=trk.vel_init; 模块自持零状态)
+    """
+
+    def __init__(self, window_s: float, alpha: float, beta: float) -> None:
+        self.window_s = window_s
+        self.alpha = alpha
+        self.beta = beta
+
+    def measure(self, trk: Trk, cycle_s: float):
+        """
+        速度量测: history 取 window_s 窗 [head_idx, tail_idx) 头尾差分 → (vx, vy) (m/s), 不可差分返回 None
+        """
+        h = trk.history
+        last = h.tail_idx - 1
+        if last < 1:
+            return None                          # 仅出生点, 头尾无从差分
+        j0 = min(max(last - max(1, int(round(self.window_s / cycle_s))), 0), last - 1)   # 窗头: window_s 内最老点 (保底 2 点)
+        h.head_idx = j0
+        span = (last - j0) * cycle_s
+        return ((h.x_history[last] - h.x_history[j0]) / span,
+                (h.y_history[last] - h.y_history[j0]) / span)
+
+    def smooth(self, trk: Trk, v_meas, dt: float) -> None:
+        """
+        速度二次滤波: α-β 以 v_meas 为量测修正 trk.vx/vy, 加速度通道写 trk.ax_mps2 (钳位 ±10 m/s²)
+        """
+        v_meas = np.asarray(v_meas, dtype=float)
+        if not trk.vel_init:
+            trk.vx_mps, trk.vy_mps = float(v_meas[0]), float(v_meas[1])   # 头尾差分冷启动
+            trk.ax_mps2 = trk.ay_mps2 = 0.0
+            trk.vel_init = True
+            return
+        v = np.array([trk.vx_mps, trk.vy_mps]) + np.array([trk.ax_mps2, trk.ay_mps2]) * dt  # predict
+        r = v_meas - v
+        v = v + self.alpha * r                   # α 修正速度
+        a = np.clip(np.array([trk.ax_mps2, trk.ay_mps2]) + (self.beta / dt) * r,
+                    -ACC_CLAMP_MPS2, ACC_CLAMP_MPS2)   # β 修正加速度
+        trk.vx_mps, trk.vy_mps = float(v[0]), float(v[1])
+        trk.ax_mps2, trk.ay_mps2 = float(a[0]), float(a[1])
 
 
 class Updater:
@@ -33,6 +80,11 @@ class Updater:
         np.fill_diagonal(P, self.p_stay)               # 自环 p_stay, 其余均分, 行归一
         self.type_P = P / P.sum(axis=1, keepdims=True)
         self.type_states: dict[int, np.ndarray] = {}   # trk.id -> 类型后验
+        vel = getattr(cfg, 'VELOCITY', None)           # 旧 cfg/测试桩无此段走默认
+        self.vel_enable = (getattr(vel, 'enable', 1) == 1)
+        self.vel_est = VelEstimator(window_s=getattr(vel, 'window_s', 1.0),
+                                    alpha=getattr(vel, 'alpha', 0.5),
+                                    beta=getattr(vel, 'beta', 0.5))
 
     def run(self, matches: Matches, cycle_s: float) -> None:
         self._udt_miantain(matches, cycle_s)
@@ -40,14 +92,14 @@ class Updater:
 
     def predict(self, trks: list[Trk], vdd, cycle_s: float) -> None:
         """
-        航迹预测: 先按存活剪枝类型后验, 再委托 Filter.predict (ego 补偿 + 状态外推)
+        航迹预测: 先按存活剪枝类型后验, 再委托 Filter.predict (ego 补偿 + 状态外推; 速度链状态随航迹/history 由 c_trk_compensate 统一补偿)
         """
         self._prune_type_states(trks)
         self.filter.predict(trks, vdd, cycle_s)
 
     def reset(self) -> None:
         """
-        更新器重置: 清类型后验记忆 + 委托滤波清状态 (序列边界调用)
+        更新器重置: 清类型后验记忆 + 委托滤波清状态 (序列边界调用; 速度链状态在航迹上随 trks 清空)
         """
         self.type_states.clear()
         self.filter.reset()
@@ -62,17 +114,32 @@ class Updater:
 
     def _udt_miantain(self, matches: Matches, cycle_s: float) -> None:
         for trk, obj in matches.matched:
+            gap = trk.measurement_status       # coast 帧数 (重置前读, 速度差分 Δt 用)
             trk.doppler_mps = getattr(obj, 'doppler', 0.0)   # dpl update
             trk.measurement_status = 0
             trk.lifetime_s += cycle_s          # life_cnt++
+            v_meas = self._udt_velocity(trk, obj, cycle_s)   # vel update (量测生成, 在滤波前)
             self.filter.update(trk, obj, cycle_s)    # state update
+            if self.vel_enable and v_meas is not None and self.filter.meas_dim == 2:
+                self.vel_est.smooth(trk, v_meas, (gap + 1) * cycle_s)   # 速度二次滤波: 位置归 KF, 速度归 α-β 量测链
             self._udt_type(trk, obj)           # type update
             self._udt_size(trk, obj)           # size update
-            self._udt_heading(trk, obj)        # heading update
+            self._udt_heading(trk, obj, (gap + 1) * cycle_s)   # heading update (coast 缺口计入 dt)
+            trk.history.push(trk.x_m, trk.y_m, trk.vx_mps, trk.vy_mps, trk.heading_deg)   # 滤波后状态入史 (逐帧)
+
+    def _udt_velocity(self, trk: Trk, obj, cycle_s: float):
+        """
+        速度量测链: history (至上一帧滤波后状态) 滑窗头尾差分 → v_meas 覆写 obj.vx/vy 作速度量测
+        """
+        v = self.vel_est.measure(trk, cycle_s) if self.vel_enable else None
+        if v is not None:
+            obj.vx, obj.vy = v
+        return v
 
     def _udt_coasting(self, trks: list) -> None:
         for trk in trks:
             trk.measurement_status += 1
+            trk.history.push(trk.x_m, trk.y_m, trk.vx_mps, trk.vy_mps, trk.heading_deg)   # 预测状态入史 (逐帧, 索引=帧)
 
     def _udt_type(self, trk: Trk, obj) -> None:
         """类型更新: belief 贝叶斯更新 (转移×量测似然), argmax 输出"""
@@ -107,10 +174,21 @@ class Updater:
         trk.length_m += alpha * (obj.length - trk.length_m)
         trk.width_m += alpha * (obj.width - trk.width_m)
 
-    def _udt_heading(self, trk: Trk, obj) -> None:
-        """航向更新: 最短弧平滑去周期 (deg), 抑制盒朝向抖动"""
+    def _udt_heading(self, trk: Trk, obj, dt: float) -> None:
+        """
+        航向更新: sin/cos 向量 α-β (predict 角域外推重投影, α 向量混合, β 叉积角残差估角速度), atan2 回写 deg
+        """
         if not self.smooth:
             trk.heading_deg = obj.heading
+            trk.yaw_rate_degs = 0.0
             return
-        diff = (obj.heading - trk.heading_deg + 180.0) % 360.0 - 180.0
-        trk.heading_deg = (trk.heading_deg + HEADING_SMOOTH_ALPHA * diff) % 360.0
+        th = np.deg2rad(trk.heading_deg) + np.deg2rad(trk.yaw_rate_degs) * dt   # predict: ω 外推
+        ps, pc = np.sin(th), np.cos(th)               # 重投影单位圆, 防外推模长漂
+        ms, mc = np.sin(np.deg2rad(obj.heading)), np.cos(np.deg2rad(obj.heading))
+        r = np.arctan2(ms * pc - mc * ps,             # 叉/点对融合 = θm-θ̂ 全域角残差 (rad);
+                       mc * pc + ms * ps)             # 纯叉积 sin(δ) 在 180° 对置时归零 → α 对消 + β 失感, 卡死不动点
+        vs = ps + HEADING_ALPHA * (ms - ps)           # α 向量修正 (模长缩短由 atan2 天然归一)
+        vc = pc + HEADING_ALPHA * (mc - pc)
+        w = trk.yaw_rate_degs + np.rad2deg(HEADING_BETA / dt) * r   # β: 角残差 rad → 角速度 deg/s
+        trk.yaw_rate_degs = float(np.clip(w, -HEADING_W_CLAMP_DPS, HEADING_W_CLAMP_DPS))
+        trk.heading_deg = float(np.rad2deg(np.arctan2(vs, vc))) % 360.0

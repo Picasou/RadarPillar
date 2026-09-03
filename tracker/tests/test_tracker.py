@@ -14,7 +14,7 @@ def make_vdd(speed_ms=10.0, yaw_rate=0.0, gear=0):
     return VDD(speed_ms=speed_ms, yaw_rate=yaw_rate, gear=gear)
 
 
-def make_trk(x, y, vx, vy, h=0, history_states=None):
+def make_trk(x, y, vx, vy, h=0, history_states=None, ax=0.0, ay=0.0):
     h_obj = TrkHistory()
     if history_states is not None:
         # history_states: (N,5) ndarray, 列=[x,y,vx,vy,heading] → 5 个并行数组
@@ -29,7 +29,7 @@ def make_trk(x, y, vx, vy, h=0, history_states=None):
         x_m=x, y_m=y, z_m=0,
         vx_mps=vx, vy_mps=vy,
         doppler_mps=0,
-        ax_mps2=0, ay_mps2=0,
+        ax_mps2=ax, ay_mps2=ay,
         heading_deg=h, yaw_rate_degs=0,
         id=1, width_m=2, height_m=1, length_m=4, lifetime_s=0,
         x_std_m=0, y_std_m=0, z_std_m=0, vx_std_mps=0, vy_std_mps=0,
@@ -91,6 +91,17 @@ def test_turning_compensation():
     assert abs(trk.vy_mps - evy) <= 1
     assert trk.heading_deg == eh
     print(f"  [PASS] turning: x 100->{trk.x_m}, y 50->{trk.y_m}, h 90->{trk.heading_deg}")
+
+
+def test_acc_compensation():
+    # α-β 速度链 a 状态 (trk.ax) 随 state 段同口径旋转
+    trk = make_trk(x=100, y=50, vx=10, vy=5, ax=2.0, ay=1.0, h=90)
+    c_trk_compensate(trk, make_vdd(speed_ms=10.0, yaw_rate=0.1), 0.1)
+    wt = 0.1 * 0.1
+    eax = 2.0 * np.cos(wt) + 1.0 * np.sin(wt)
+    eay = -2.0 * np.sin(wt) + 1.0 * np.cos(wt)
+    assert abs(trk.ax_mps2 - eax) < 1e-6, f"ax: {trk.ax_mps2} vs {eax}"
+    assert abs(trk.ay_mps2 - eay) < 1e-6, f"ay: {trk.ay_mps2} vs {eay}"
 
 
 def test_zero_cycle():

@@ -133,9 +133,11 @@ def c_trk_compensate(trk: Trk, vdd, cycle_s: float):
     wt = vdd.yaw_rate * cycle_s
     heading_delta = int(round(np.degrees(wt))) if abs(vdd.yaw_rate) >= IS_TURNING_THRESHOLD else 0
 
-    # ---- state 段: 当前状态 4 维补偿 + heading ----
+    # ---- state 段: 当前状态 4 维补偿 + 加速度旋转 + heading ----
     xn, yn, vxn, vyn = c_state_compensate(trk.x_m, trk.y_m, trk.vx_mps, trk.vy_mps, vdd, cycle_s)
     trk.x_m, trk.y_m, trk.vx_mps, trk.vy_mps = float(xn), float(yn), float(vxn), float(vyn)
+    _, _, axn, ayn = c_state_compensate(0.0, 0.0, trk.ax_mps2, trk.ay_mps2, vdd, cycle_s)
+    trk.ax_mps2, trk.ay_mps2 = float(axn), float(ayn)
     if heading_delta:
         trk.heading_deg = (trk.heading_deg + heading_delta) % 360
 
