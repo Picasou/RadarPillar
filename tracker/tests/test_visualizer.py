@@ -40,7 +40,7 @@ def make_trk(x, y, heading_deg=30.0, type_idx=1, tid=7, obstacle_prob=1):
     )
 
 
-def make_frame(frame_id='000001', n_pts=20):
+def make_frame(n_pts=20):
     rng = np.random.default_rng(0)
     pts = np.stack([rng.uniform(5, 40, n_pts), rng.uniform(-15, 15, n_pts),
                     rng.uniform(-1, 1, n_pts), rng.uniform(-10, 10, n_pts),
@@ -53,7 +53,6 @@ def make_frame(frame_id='000001', n_pts=20):
         vdd=VDD(speed_ms=10.0, yaw_rate=0.0, gear=0),
         objs=Objs(num=1, Lst=[Obj(id=0, x=25, y=-5, vx=0, vy=0, doppler=0,
                                    length=4, width=2, heading=-0.3, type=2, score=0.9)]),
-        frame_id=frame_id,
         proc=FrameProc(points=pts),
     )
     return frame
@@ -97,8 +96,8 @@ def test_run_png(tmp_path, monkeypatch):
     monkeypatch.setattr(visualizer, 'OUT_ROOT', tmp_path)
     viz = Visualizer(make_cfg(enable=1, save=[2]))
     viz.begin_seq('seqA')
-    viz.run(make_frame(), make_frame().objs.Lst, [make_trk(20, 5)])
-    png = tmp_path / 'seqA' / '000001.png'
+    viz.run(make_frame(), make_frame().objs.Lst, [make_trk(20, 5)], 0)
+    png = tmp_path / 'seqA' / '000000.png'
     assert png.exists()
 
 
@@ -106,7 +105,7 @@ def test_run_enable_off(tmp_path, monkeypatch):
     monkeypatch.setattr(visualizer, 'OUT_ROOT', tmp_path)
     viz = Visualizer(make_cfg(enable=0, save=[1, 3]))
     viz.begin_seq('seqA')
-    viz.run(make_frame(), make_frame().objs.Lst, [make_trk(20, 5)])
+    viz.run(make_frame(), make_frame().objs.Lst, [make_trk(20, 5)], 0)
     viz.on_seq_end()
     assert not (tmp_path / 'seqA').exists()
     assert not list(tmp_path.glob('*.gif'))
@@ -116,8 +115,8 @@ def test_gif(tmp_path, monkeypatch):
     monkeypatch.setattr(visualizer, 'OUT_ROOT', tmp_path)
     viz = Visualizer(make_cfg(enable=1, save=[1]))
     viz.begin_seq('seqB')
-    viz.run(make_frame('000001'), make_frame().objs.Lst, [make_trk(20, 5)])
-    viz.run(make_frame('000002'), make_frame().objs.Lst, [make_trk(21, 6)])
+    viz.run(make_frame(), make_frame().objs.Lst, [make_trk(20, 5)], 0)
+    viz.run(make_frame(), make_frame().objs.Lst, [make_trk(21, 6)], 1)
     viz.on_seq_end()
     gif = tmp_path / 'seqB' / 'seqB.gif'
     assert gif.exists()
@@ -129,8 +128,8 @@ def test_mp4(tmp_path, monkeypatch):
     monkeypatch.setattr(visualizer, 'OUT_ROOT', tmp_path)
     viz = Visualizer(make_cfg(enable=1, save=[3]))
     viz.begin_seq('seqD')
-    viz.run(make_frame('000001'), make_frame().objs.Lst, [make_trk(20, 5)])
-    viz.run(make_frame('000002'), make_frame().objs.Lst, [make_trk(21, 6)])
+    viz.run(make_frame(), make_frame().objs.Lst, [make_trk(20, 5)], 0)
+    viz.run(make_frame(), make_frame().objs.Lst, [make_trk(21, 6)], 1)
     viz.on_seq_end()
     mp4 = tmp_path / 'seqD' / 'seqD.mp4'
     assert mp4.exists() and mp4.stat().st_size > 0
@@ -141,7 +140,7 @@ def test_save0_no_disk(tmp_path, monkeypatch):
     monkeypatch.setattr(visualizer, 'OUT_ROOT', tmp_path)
     viz = Visualizer(make_cfg(enable=1, save=[]))
     viz.begin_seq('seqC')
-    viz.run(make_frame(), make_frame().objs.Lst, [make_trk(20, 5)])
+    viz.run(make_frame(), make_frame().objs.Lst, [make_trk(20, 5)], 0)
     viz.on_seq_end()
     assert list(tmp_path.iterdir()) == []
 
@@ -151,12 +150,12 @@ def test_test_val_black_border(tmp_path, monkeypatch):
     # 命中 test/val: 边框像素为黑
     viz = Visualizer(make_cfg(enable=1, save=[2]))
     viz.begin_seq('seqD', is_test=True)
-    viz.run(make_frame(), make_frame().objs.Lst, [make_trk(20, 5)])
-    im = np.asarray(Image.open(tmp_path / 'seqD' / '000001.png').convert('L'))
+    viz.run(make_frame(), make_frame().objs.Lst, [make_trk(20, 5)], 0)
+    im = np.asarray(Image.open(tmp_path / 'seqD' / '000000.png').convert('L'))
     assert im[2, 2] < 50 and im[2, -3] < 50            # 左上/右上角黑
     # 非命中: 无黑边
     viz2 = Visualizer(make_cfg(enable=1, save=[2]))
     viz2.begin_seq('seqE')
-    viz2.run(make_frame(), make_frame().objs.Lst, [make_trk(20, 5)])
-    im2 = np.asarray(Image.open(tmp_path / 'seqE' / '000001.png').convert('L'))
+    viz2.run(make_frame(), make_frame().objs.Lst, [make_trk(20, 5)], 0)
+    im2 = np.asarray(Image.open(tmp_path / 'seqE' / '000000.png').convert('L'))
     assert im2[2, 2] > 200                             # 左上角白

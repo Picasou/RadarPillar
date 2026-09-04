@@ -78,3 +78,12 @@ if __name__ == '__main__':
     results = [test_gt_roundtrip(), test_gt_missing_dir()]
     print('RESULT:', 'PASS' if all(results) else 'FAIL')
     sys.exit(0 if all(results) else 1)
+
+
+def test_has_gt(tmp_path):
+    seq = str(tmp_path / 'seq')
+    os.makedirs(os.path.join(seq, 'radar.default'))
+    ld = _make_loader()
+    assert ld.has_gt(seq) is False                      # 无 gt.default
+    _write_gt_bins(seq, [[(1, 1.0, 1.0, 1, 2.0, 4.0, 0.0, 0, 0)]])
+    assert ld.has_gt(seq) is True

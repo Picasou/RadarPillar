@@ -53,11 +53,13 @@ class Loader:
             )
 
         frames = []
+        delay = self.cfg.RUN.delay   # 雷达滞后帧数: 点云 i 配 vdd[i-delay] (对齐 ego 环形缓冲 use_idx)
         for i in range(n):
+            j = i - delay
             frame = FRAME(
                 gts=gts_list[i] if i < len(gts_list) else GTs(num=0, Lst=[]),
                 pts=pts_list[i],
-                vdd=vdd_list[i] if i < len(vdd_list) else VDD(speed_ms=0.0, yaw_rate=0.0, gear=0),
+                vdd=vdd_list[j] if 0 <= j < len(vdd_list) else VDD(speed_ms=0.0, yaw_rate=0.0, gear=0),
                 objs=objs_list[i] if i < len(objs_list) else Objs()
             )
             frames.append(frame)
@@ -69,6 +71,14 @@ class Loader:
         if vds_file is not None:
             return self._load_vds(vds_file)
         return self._vds_from_cfg()
+
+    def has_gt(self, path: str) -> bool:
+        """
+        GT 存在性: gt.default 下 1200/1201 齐备 → True (评估只对有 GT 序列生效)
+        """
+        gt_dir = os.path.join(path, 'gt.default')
+        return (os.path.exists(os.path.join(gt_dir, 'gt_radar_1200.00000.bin'))
+                and os.path.exists(os.path.join(gt_dir, 'gt_radar_1201.00000.bin')))
 
     # ---- 内部方法 ----
 
@@ -160,8 +170,10 @@ class Loader:
                 objs.append(Obj(
                     id=t.id,
                     x=x, y=y, vx=vx, vy=vy,
+                    z=t.z_m / 100.0,
                     length=t.length_m / 100.0,
                     width=t.width_m / 100.0,
+                    height=t.height_m / 100.0,
                     heading=t.heading_deg / 100.0,
                     type=t.type,
                     isghost=0,
@@ -173,13 +185,13 @@ class Loader:
 
     def _load_GTs(self, path: str) -> list[GTs]:
         """
-        GT 加载: 兄弟目录 gt.default/gt_radar_1200(头)+1201(记录); 无标注 -> warning + 空
+        GT 加载: 兄弟目录 gt.default/gt_radar_1200(头)+1201(记录); 无标注 -> warning + 空 (评估由 has_gt 拦截)
         """
         gt_dir = os.path.join(os.path.dirname(path), 'gt.default')
         f_head = os.path.join(gt_dir, 'gt_radar_1200.00000.bin')
         f_rec = os.path.join(gt_dir, 'gt_radar_1201.00000.bin')
         if not (os.path.exists(f_head) and os.path.exists(f_rec)):
-            warnings.warn(f"[loader] 无 GT 标注 ({gt_dir}), 该序列评估跳过",
+            warnings.warn(f"[loader] 无 GT 标注 ({gt_dir}), 该序列不参与评估",
                           RuntimeWarning, stacklevel=2)
             return []
 

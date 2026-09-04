@@ -14,7 +14,7 @@ from tracker.schemas import (
 )
 from tracker.filter import _get_state, _write_state, _get_z
 from tracker.filter import AlphaBetaFilter, abf_predict, abf_update
-from tracker.filter import KalmanFilter, kf_predict, kf_update
+from tracker.filter import KalmanFilter, kf_predict, kf_update, cv_q
 from tracker.filter import EkfFilter, ctrv_predict, _ctrv_f
 from tracker.filter import Filter, ImmFilter
 
@@ -49,18 +49,18 @@ def _diag(n, v):
 
 def make_cfg(filter_type=2):
     return Cfg(
-        RUN=CfgRun(mode=1, save=1, overlap=0, delay=1, accum_frames=1,
+        RUN=CfgRun(mode=1, save=1, overlap=0, accum_frames=1,
                    vds=CfgVds(wheelbase_m=4.5, x_pos_m=0.0, y_pos_m=0.0, z_pos_m=0.0, cycle_s=0.1)),
         DATA=CfgData(paths=['/path/to/seq1', '/path/to/seq2']),
         MODEL=CfgModel(cfg='./tools/cfgs/vod_models/vod_radarpillar.yaml',
                        ckpt='./checkpoints/vod_radarpillar.pth', score_thresh=0.3),
         FILTER=CfgFilter(type=filter_type, para=CfgFilterPara(
             para_abf={'alpha': 0.85, 'beta': 0.20},
-            para_kf=CfgFilterParaKf(dim=4, q=_diag(4, 1.0), r=_diag(4, 0.5)),
-            para_ekf={'dim': 4, 'q': _diag(4, 1.0), 'r': _diag(4, 0.5)},
+            para_kf=CfgFilterParaKf(dim=4, q_acc=1.0, r=_diag(4, 0.5)),
+            para_ekf={'dim': 4, 'q_acc': 1.0, 'r': _diag(4, 0.5)},
             para_imm={'models': [
                           {'type': 1, 'alpha': 0.85, 'beta': 0.20, 'r': 0.25},
-                          {'type': 2, 'q': _diag(4, 1.0), 'r': _diag(4, 0.5)},
+                          {'type': 2, 'q_acc': 1.0, 'r': _diag(4, 0.5)},
                       ],
                       'markov': [[0.95, 0.05], [0.05, 0.95]]},
         )),
@@ -287,7 +287,7 @@ def test_kf_update_shrinks_cov():
 
 
 def test_kf_convergence_fixed_z():
-    kf = KalmanFilter(dim=4, q=_diag(4, 1.0), r=_diag(4, 0.5))
+    kf = KalmanFilter(dim=4, q_acc=1.0, r=_diag(4, 0.5))
     trk = make_trk(x=0.0, y=0.0, vx=0.0, vy=0.0)
     trk.cov = np.eye(4) * 10.0
     obj = make_obj(x=10.0, y=5.0, vx=0.0, vy=0.0)
@@ -328,23 +328,36 @@ def test_kf_cov_symmetry():
 
 
 def test_kf_init_normalization():
-    # 新语义: dim 是量测维。状态恒 4 维 → Q 恒 4×4; H/R 按量测维
-    kf2 = KalmanFilter(dim=2, q=_diag(4, 1.0), r=_diag(4, 0.5))
-    Q2, R2 = kf2.get_Q(), kf2.get_R()
-    assert Q2.shape == (4, 4) and R2.shape == (2, 2)   # Q 恒 4×4, R 按量测维 2×2
-    assert np.allclose(np.diag(Q2), 1.0) and np.allclose(np.diag(R2), 0.5)
+    # 新语义: dim 是量测维; Q 由 q_acc 按 dt 展开 (cv_q 物理结构), H/R 按量测维
+    kf2 = KalmanFilter(dim=2, q_acc=1.0, r=_diag(4, 0.5))
+    R2 = kf2.get_R()
+    assert R2.shape == (2, 2)                           # R 按量测维 2×2
+    assert np.allclose(np.diag(R2), 0.5)
     assert kf2.H.shape == (2, 4)                        # H∈ℝ²ˣ⁴ 投影到位置
     assert np.allclose(kf2.H, np.eye(4)[:2])
-    kf2b = KalmanFilter(dim=2, q=_diag(4, 2.0), r=_diag(2, 3.0))
-    assert kf2b.get_Q().shape == (4, 4) and np.allclose(np.diag(kf2b.get_Q()), 2.0)
-    kf4 = KalmanFilter(dim=4, q=_diag(4, 1.0), r=_diag(4, 0.5))
-    assert kf4.get_Q().shape == (4, 4) and kf4.get_R().shape == (4, 4)
+    kf2b = KalmanFilter(dim=2, q_acc=2.0, r=_diag(2, 3.0))
+    assert kf2b.get_R().shape == (2, 2)
+    kf4 = KalmanFilter(dim=4, q_acc=1.0, r=_diag(4, 0.5))
+    assert kf4.get_R().shape == (4, 4)
     assert np.allclose(kf4.H, np.eye(4))
-    print("  [PASS] dim=量测维: Q 恒 4×4, H/R 按量测维 (2→H∈ℝ²ˣ⁴, 4→I₄)")
+    print("  [PASS] dim=量测维: R 按量测维 (2→2×2, 4→4×4), H 投影一致")
+
+
+def test_cv_q_physical_structure():
+    # CV 离散白噪声加速度模型: Q = σa²·G·Gᵀ, 随 dt 缩放; 位置块 dt⁴/4, 速度块 dt²
+    q_acc, dt = 2.0, 0.1
+    Q = cv_q(q_acc, dt)
+    assert Q.shape == (4, 4)
+    assert Q[0, 0] == pytest.approx(q_acc ** 2 * dt ** 4 / 4)
+    assert Q[2, 2] == pytest.approx(q_acc ** 2 * dt ** 2)
+    assert Q[0, 2] == pytest.approx(q_acc ** 2 * dt ** 3 / 2)
+    Q2 = cv_q(q_acc, 2 * dt)
+    assert Q2[2, 2] == pytest.approx(4 * Q[2, 2])       # dt 线性缩放 → 速度方差二次方
+    print("  [PASS] cv_q: 物理结构 + dt 缩放 (σa²·GGᵀ)")
 
 
 def test_kf_adapter_predict_update():
-    kf = KalmanFilter(dim=4, q=_diag(4, 1.0), r=_diag(4, 0.5))
+    kf = KalmanFilter(dim=4, q_acc=1.0, r=_diag(4, 0.5))
     trk = make_trk(x=0.0, y=0.0, vx=1.0, vy=0.0)
     trk.cov = np.eye(4)
     kf._predict(trk, DT)
@@ -357,7 +370,7 @@ def test_kf_adapter_predict_update():
 
 def test_kf_adapter_dim2_extrapolates_state():
     # 新语义: dim=2 仅影响量测维, 状态恒 4 维 → predict 仍按速度外推位置
-    kf = KalmanFilter(dim=2, q=_diag(4, 1.0), r=_diag(4, 0.5))
+    kf = KalmanFilter(dim=2, q_acc=1.0, r=_diag(4, 0.5))
     trk = make_trk(x=3.0, y=4.0, vx=9.0, vy=9.0)
     trk.cov = np.eye(4)
     kf._predict(trk, DT)
@@ -453,9 +466,9 @@ def test_ctrv_cov_symmetry():
 def test_ekf_dim2_ctrv_position_measurement():
     # 新语义: dim=2 时 EKF 状态恒走 CTRV (4 维), 量测维 2 仅位置。
     # 直行 (yaw_rate=0) CTRV 退化为常速度, 与 KF predict 等价; update 用同一 H∈ℝ²ˣ⁴
-    q, r = _diag(4, 1.0), _diag(4, 0.5)
-    ekf2 = EkfFilter(dim=2, q=q, r=r)
-    kf2 = KalmanFilter(dim=2, q=q, r=r)
+    q, r = 1.0, _diag(4, 0.5)
+    ekf2 = EkfFilter(dim=2, q_acc=q, r=r)
+    kf2 = KalmanFilter(dim=2, q_acc=q, r=r)
     assert ekf2.H.shape == (2, 4) and kf2.H.shape == (2, 4)   # 两者量测维同 2
     trk_e = make_trk(x=1.0, y=2.0, vx=3.0, vy=4.0, yaw_rate_degs=0.0)  # 直行
     trk_k = make_trk(x=1.0, y=2.0, vx=3.0, vy=4.0)
@@ -481,7 +494,7 @@ def test_ekf_dim2_ctrv_position_measurement():
 def test_ekf_dim4_deg_to_rad_conversion():
     w_rad = 0.1
     trk = make_trk(x=0.0, y=0.0, vx=10.0, vy=0.0, yaw_rate_degs=np.degrees(w_rad))
-    ekf = EkfFilter(dim=4, q=_diag(4, 1.0), r=_diag(4, 0.5))
+    ekf = EkfFilter(dim=4, q_acc=1.0, r=_diag(4, 0.5))
     ekf._predict(trk, cycle_s=1.0)
     assert trk.x_m == pytest.approx(100.0 * np.sin(w_rad), abs=1e-6)
     assert trk.y_m == pytest.approx(100.0 * (1.0 - np.cos(w_rad)), abs=1e-6)
@@ -491,7 +504,7 @@ def test_ekf_dim4_deg_to_rad_conversion():
 
 
 def test_ekf_dim4_adapter_update():
-    ekf = EkfFilter(dim=4, q=_diag(4, 1.0), r=_diag(4, 0.5))
+    ekf = EkfFilter(dim=4, q_acc=1.0, r=_diag(4, 0.5))
     trk = make_trk(x=0.0, y=0.0, vx=1.0, vy=0.0)
     trk.cov = np.eye(4)
     ekf._update(trk, make_obj(x=5.0, y=5.0), DT)
@@ -505,10 +518,10 @@ def test_ekf_dim4_adapter_update():
 
 def _imm_models():
     # 对称/一致 4 维尺度: α-β r=1.0 与 KF R=I (各向同性 1.0) 同量级;
-    # KF q=0.1 (适度紧致) 体现真实速度模型, 无噪声 CV 应由 KF 主张
+    # KF q_acc=1.0 (适度紧致) 体现真实速度模型, 无噪声 CV 应由 KF 主张
     return [
         {'type': 1, 'alpha': 0.85, 'beta': 0.20, 'r': 1.0},
-        {'type': 2, 'q': np.eye(4) * 0.1, 'r': np.eye(4) * 1.0},
+        {'type': 2, 'q_acc': 1.0, 'r': np.eye(4) * 1.0},
     ]
 
 
@@ -606,7 +619,7 @@ def test_filter_facade_builds_imm():
     assert isinstance(f.filter, ImmFilter)
     assert len(f.filter.models) == 2
     assert f.filter.models[0]['type'] == 1
-    assert f.filter.models[1]['q'].shape == (4, 4)
+    assert f.filter.models[1]['q_acc'] > 0
     print("  [PASS] facade: FILTER.type=4 构建 ImmFilter (描述符载荷)")
 
 
@@ -751,7 +764,7 @@ def test_imm_probability_migrates_on_maneuver():
     sigma, sv = 0.3, 0.1
     R4 = np.diag([sigma * sigma, sigma * sigma, sv * sv, sv * sv])
     models = [{'type': 1, 'alpha': 0.85, 'beta': 0.20, 'r': sigma * sigma},
-              {'type': 2, 'q': np.eye(4) * 0.1, 'r': R4}]
+              {'type': 2, 'q_acc': 3.0, 'r': R4}]
     imm = ImmFilter(models=models, markov=_imm_markov())
     trk = make_trk(x=50.0, y=0.0, vx=10.0, vy=0.0)
     trk.cov = np.diag([100.0, 100.0, 10000.0, 10000.0])
@@ -838,3 +851,13 @@ if __name__ == '__main__':
     test_imm_predict_writes_back_state_on_coast()
     test_imm_probability_migrates_on_maneuver()
     print("\n=== ALL PASS ===")
+
+
+def test_isvalid_death_heat_zero_rejected():
+    # death_heat=0 会连当帧刚量测航迹一并删除 (0>=0 恒真), 校验拒绝
+    cfg = make_cfg()
+    cfg.MANAGER.death_heat = 0
+    with pytest.raises(ValueError):
+        cfg.isvalid()
+    cfg.MANAGER.death_heat = 1
+    assert cfg.isvalid() is True

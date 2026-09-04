@@ -58,8 +58,9 @@ class Visualizer:
         self.save_enabled = (cfg.RUN.mode != 2) or (cfg.RUN.save == 1)
         self.class_names = list(class_names) if class_names else list(DEFAULT_CLASS_NAMES)
         self.cam_rotate = v.cam_rotate
-        # 固定坐标范围(xlo,xhi,ylo,yhi): cfg.VISUAL.range 显式指定;
-        self.range_xy = tuple(v.range) if v.range else None
+        # 固定坐标范围(xlo,xhi,ylo,yhi): cfg.VISUAL.range 未配置默认 [0,200,-20,20]
+        self._cfg_range_xy = tuple(v.range) if v.range else (0.0, 200.0, -20.0, 20.0)
+        self.range_xy = self._cfg_range_xy
         self._cur_seq = 'seq'
         self._is_test = False
         self._vid_frames: list[tuple] = []    # [(png_bytes, w, h)] 压缩缓存防 OOM(长序列整段 RGB 会爆内存)
@@ -72,22 +73,17 @@ class Visualizer:
 
     # ---- 对外入口 ----
     def begin_seq(self, seq_name: str, seq_path: str | None = None,
-                  data_extent: tuple[float, float, float, float] | None = None,
                   is_test: bool = False) -> None:
         """
-        序列切换: 记录序列名/相机流; data_extent=(xmin,xmax,ymin,ymax) 全程点云外沿,
-        照 visualize_msr 口径 外沿+3m 边距(含 0) 定死固定范围; is_test 命中 test/val 时图加黑边框
+        序列切换:
+        记录序列名/相机流; is_test 命中 test/val 时图加黑边框
         """
         self._cur_seq = seq_name
         self._is_test = is_test
         self._vid_frames = []
         self._teardown_fig()                          # 跨序列布局可能变(相机有无), figure 重建
         self._close_cam()
-        if data_extent is not None and self.range_xy is None:   # cfg 显式 range 优先
-            xmin, xmax, ymin, ymax = data_extent
-            m = 3.0
-            self.range_xy = (min(xmin, 0) - m, xmax + m,
-                             min(ymin, 0) - m, ymax + m)
+        self.range_xy = self._cfg_range_xy
         if seq_path:
             cam_dir = Path(seq_path) / 'camera.frontmiddle'
             mp4s = sorted(cam_dir.glob('*.mp4')) if cam_dir.exists() else []
@@ -96,7 +92,7 @@ class Visualizer:
                 self._cam = cv2.VideoCapture(str(mp4s[0]))
                 self._cam_fps = self._cam.get(cv2.CAP_PROP_FPS) or 30.0
 
-    def run(self, frame: FRAME, objs: list, trks: list[Trk]) -> None:
+    def run(self, frame: FRAME, objs: list, trks: list[Trk], frame_i: int) -> None:
         """
         单帧出图: Camera + BEV+GT + BEV+pred(检测+航迹), 固定坐标范围;
         figure 复用(布局/legend 只建一次), 单次渲染字节 PNG/视频共用
@@ -106,7 +102,7 @@ class Visualizer:
         if not self.save or not self.save_enabled:
             return                                      # 无落盘格式: 不渲染不出图
         pts = frame.proc.points if frame.proc.points is not None else np.zeros((0, 7))
-        cam_img = self._read_cam(frame)
+        cam_img = self._read_cam(frame_i)
         if self._fig is None or bool(self._ax.get('img')) != (cam_img is not None):
             self._build_fig(has_cam=cam_img is not None)    # 首帧/相机流起止 → (重)建布局
 
@@ -158,11 +154,13 @@ class Visualizer:
 
         # ---- 面板计数 + 两行总标题(只改文字) ----
         ax_gt.set_title('GT (%d)' % n_gt, fontsize=12, color=INK2, pad=8)
-        ax_pred.set_title('Pred (%d)' % (n_obj + n_trk), fontsize=12, color=INK2, pad=8)
+        pred_title = ('Pred (%d)' % n_obj if n_trk == 0
+                      else 'Pred (det %d + trk %d)' % (n_obj, n_trk))   # 分开计数: 同物理目标双画不翻倍
+        ax_pred.set_title(pred_title, fontsize=12, color=INK2, pad=8)
         vdd = frame.vdd
-        fig.suptitle('%s\nframe %s  |  pts - %d, gts - %d, objs - %d, trks - %d  |  '  # type: ignore[union-attr]
+        fig.suptitle('%s\nframe %d  |  pts - %d, gts - %d, objs - %d, trks - %d  |  '  # type: ignore[union-attr]
                      'ego - %.1f m/s, yaw - %.3f'
-                     % (self._cur_seq, frame.frame_id, pts.shape[0], n_gt, n_obj, n_trk,
+                     % (self._cur_seq, frame_i, pts.shape[0], n_gt, n_obj, n_trk,
                         vdd.speed_ms if vdd else 0.0, vdd.yaw_rate if vdd else 0.0),
                      fontsize=13, color=INK, y=0.97, va='top')
 
@@ -181,7 +179,7 @@ class Visualizer:
         out_dir = OUT_ROOT / self._cur_seq
         if 2 in self.save:
             out_dir.mkdir(parents=True, exist_ok=True)
-            (out_dir / ('%s.png' % frame.frame_id)).write_bytes(data)
+            (out_dir / ('%06d.png' % frame_i)).write_bytes(data)
         if 1 in self.save or 3 in self.save:
             with Image.open(io.BytesIO(data)) as im:    # 仅取宽高, 合成期才解码缩放
                 self._vid_frames.append((data, im.width, im.height))
@@ -297,14 +295,14 @@ class Visualizer:
                 w.append_data(np.asarray(im))  # type: ignore[attr-defined]
 
     # ---- 相机 ----
-    def _read_cam(self, frame: FRAME):
+    def _read_cam(self, frame_i: int):
         """
         读当前帧对应相机图: 雷达时间 i*cycle_s 映射视频帧号
         """
         if self._cam is None:
             return None
         import cv2
-        t = int(frame.frame_id) * self.cycle_s if frame.frame_id.isdigit() else 0.0
+        t = frame_i * self.cycle_s
         idx = int(t * self._cam_fps)
         self._cam.set(cv2.CAP_PROP_POS_FRAMES, idx)
         ok, bgr = self._cam.read()

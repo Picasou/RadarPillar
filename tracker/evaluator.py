@@ -13,8 +13,8 @@ import numpy as np
 GT_TYPE_NAMES = {1: 'Car', 2: 'Pedestrian', 4: 'Cyclist', 5: 'Truck', 7: 'StaticObject'}
 
 # 指标集合: 报告输出项, 按 METRICS.show 开关过滤
-METRIC_KEYS = ('tp', 'fp', 'fn', 'ids', 'frag', 'mota', 'motp',
-               'idf1', 'deta', 'assa', 'hota', 'loca',
+METRIC_KEYS = ('tp', 'fp', 'fn', 'ids', 'frag', 'mota', 'motp', 'mt', 'ml',
+               'idf1', 'deta', 'assa', 'hota', 'loca', 'amota', 'amotp',
                'vae', 'vne', 'vaie', 'vir', 'vse', 'vde')
 
 _VEL_GATE = 0.5        # 速度方向指标门限: |v_gt| 低于此值不计 (静止目标角度无意义)
@@ -30,7 +30,8 @@ def _new_acc() -> dict:
     return {'tp': 0, 'fp': 0, 'fn': 0, 'ids': 0, 'frag': 0, 'gt_total': 0,
             'dist_sum': 0.0, 'vel_cnt': 0, 'vae_sum': 0.0, 'vne_cnt': 0, 'vne_sum': 0.0,
             'vaie_sum': 0.0, 'vir_cnt': 0, 'vse_sum': 0.0, 'vse_cnt': 0,
-            'vde_sum': 0.0, 'vde_cnt': 0, 'idtp': 0, 'assa_w': 0.0}
+            'vde_sum': 0.0, 'vde_cnt': 0, 'idtp': 0, 'assa_w': 0.0,
+            'gt_n': 0, 'mt': 0, 'ml': 0}
 
 
 def _merge_acc(dst: dict, src: dict) -> None:
@@ -58,10 +59,11 @@ def _runs(series: list) -> list:
 
 def snap_trk(t):
     """
-    航迹评估快照: 仅评估所需 6 字段 (替代 deepcopy, 内存约 1/10)
+    航迹评估快照: 仅评估所需 7 字段 (替代 deepcopy, 内存约 1/10)
     """
     return SimpleNamespace(id=t.id, type=t.type, x_m=t.x_m, y_m=t.y_m,
-                           vx_mps=t.vx_mps, vy_mps=t.vy_mps)
+                           vx_mps=t.vx_mps, vy_mps=t.vy_mps,
+                           score=float(getattr(t, 'det_score', 0.0)))
 
 
 class Evaluator:
@@ -74,8 +76,10 @@ class Evaluator:
     # 指标段落: 块打印时按段聚合, 段内各项受 METRICS.show 过滤
     _SECTIONS = (('tp', 'fp', 'fn', 'ids', 'frag'),
                  ('mota', 'motp'),
+                 ('mt', 'ml'),
                  ('idf1',),
                  ('deta', 'assa', 'hota', 'loca'),
+                 ('amota', 'amotp'),
                  ('vae', 'vne', 'vaie', 'vir', 'vse', 'vde'))
 
     def __init__(self, cfg, class_names: list[str] | None = None) -> None:
@@ -122,6 +126,7 @@ class Evaluator:
         self._out_dir: Path | None = None
         self._mode = ''
         self._roll_active = False
+        self._frames_store: list = []   # [(seq_key, gl, trk_snapshots)] AMOTA 扫描原料 (dataset 级)
 
     def _reset_seq(self) -> None:
         """
@@ -132,6 +137,7 @@ class Evaluator:
         self._gt_map: dict[int, int] = {}      # gt.id -> 上次配对 trk.id
         self._gt_seen: dict[int, bool] = {}    # gt.id -> 上次出现帧是否配对
         self._pair_cnt: dict = {}              # (seq,label,gt_id,trk_id) -> 共现帧数
+        self._gt_frames: dict = {}             # (seq,label,gt_id) -> 出现帧数 (MT/ML 分母)
         self._motion: dict = {}                # (seq,label,gt_id) -> [(fi,vgx,vgy,vdx,vdy)]
         self._curve: list = []                 # 逐帧累计快照 (tp,fp,fn,ids,frag,dist_sum)
         self._fi = 0
@@ -219,14 +225,66 @@ class Evaluator:
 
     def _dataset_end(self) -> dict:
         """
-        数据集收尾: dataset 账 finalize + 块打印 + 报告落盘
+        数据集收尾: dataset 账 finalize + AMOTA 扫描 + 块打印 + 报告落盘
         """
         met = self._finalize(self._ds_acc, self._ds_cls)
+        met.update(self._calc_amota())            # AMOTA/AMOTP 仅 dataset 级 (阈值扫描需全量帧)
         lines = self._fmt_block('DATASET (%d seqs)' % self._n_seq, met)
         print('\n'.join(lines))
         if self.do_report:
             self._write_report(met)
         return {'per_seq': dict(self._per_seq), 'dataset': met}
+
+    @staticmethod
+    def _trk_score(t) -> float:
+        """
+        航迹置信度: snap_trk 快照读 score, 裸 Trk 读 det_score, 皆无 → 0
+        """
+        return float(getattr(t, 'score', getattr(t, 'det_score', 0.0)) or 0.0)
+
+    def _calc_amota(self) -> dict:
+        """
+        AMOTA/AMOTP: det_score 阈值扫描, 每档全量重配对 (贪心+类别约束+门限同 _step), dataset 级 pooled
+        """
+        store = self._frames_store
+        scores = sorted({self._trk_score(t) for _, _, trks in store for t in trks},
+                        reverse=True)
+        gtotal = sum(len(gl) for _, gl, _ in store)
+        if len(scores) < 2 or gtotal == 0:        # 无分数分辨力 (回灌 score=0) 或无 GT → 不定义
+            return {'amota': float('nan'), 'amotp': float('nan')}
+        if len(scores) > 41:                      # 候选阈值上限: 等距抽稀保扫描耗时
+            idx = np.linspace(0, len(scores) - 1, 41).round().astype(int)
+            scores = [scores[i] for i in sorted(set(idx.tolist()))]
+        pts = []
+        for s in scores:
+            tp = fp = fn = ids = 0
+            dsum = 0.0
+            gt_map: dict = {}
+            for sq, gl, trks in store:
+                sub = [t for t in trks if self._trk_score(t) >= s - 1e-12]
+                matched, um_t, um_g = self.match_frame(gl, sub)
+                for gt, t, d in matched:
+                    tp += 1
+                    dsum += d
+                    prev = gt_map.get((sq, gt.id))
+                    if prev is not None and prev != t.id:
+                        ids += 1
+                    gt_map[(sq, gt.id)] = t.id
+                fp += len(um_t)
+                fn += len(um_g)
+            recall = tp / gtotal
+            pts.append((recall, 1 - (fp + fn + ids) / gtotal,
+                        dsum / tp if tp else float('nan'), s))
+        picked = []
+        for r_t in (i / 10.0 for i in range(10)):  # 每档 recall 目标取最高阈值档 (FP 最少)
+            cand = [p for p in pts if p[0] >= r_t - 1e-9]
+            if cand:
+                picked.append(max(cand, key=lambda x: x[3]))
+        if not picked:
+            return {'amota': float('nan'), 'amotp': float('nan')}
+        motp_v = [p[2] for p in picked if not math.isnan(p[2])]
+        return {'amota': float(np.mean([p[1] for p in picked])),
+                'amotp': float(np.mean(motp_v)) if motp_v else float('nan')}
 
     # ---- 指标集合 ----
 
@@ -266,6 +324,7 @@ class Evaluator:
         """
         gl = [g for g in (gts.Lst if hasattr(gts, 'Lst') else gts)
               if not g.isghost and g.type in self.gt2label]   # ghost/未知类不入账
+        self._frames_store.append((self._seq_key, gl, list(trks)))   # AMOTA 扫描原料
         matched, um_t, um_g = self.match_frame(gl, trks)
         a = self._acc
         m_ids = set()
@@ -311,7 +370,10 @@ class Evaluator:
             a['fn'] += 1
             self._cls_acc.setdefault(self.gt2label[gt.type], _new_acc())['fn'] += 1
         for gt in gl:                               # 本帧各 gt 出现即计 gt_total + 刷新 seen
-            self._cls_acc.setdefault(self.gt2label[gt.type], _new_acc())['gt_total'] += 1
+            lb = self.gt2label[gt.type]
+            self._cls_acc.setdefault(lb, _new_acc())['gt_total'] += 1
+            gk = (self._seq_key, lb, gt.id)
+            self._gt_frames[gk] = self._gt_frames.get(gk, 0) + 1    # MT/ML 分母
             self._gt_seen[gt.id] = gt.id in m_ids
         a['gt_total'] += len(gl)
         if self.do_report:
@@ -320,18 +382,20 @@ class Evaluator:
 
     def _accum_global(self) -> None:
         """
-        全局指标折算 (序列末一次): 配对表 -> idtp/assa_w, 速度序列 -> vse/vde, 累入总量与 per-class 账
+        全局指标折算 (序列末一次): 配对表 -> idtp/assa_w/MT/ML, 速度序列 -> vse/vde, 累入总量与 per-class 账
         """
-        self._accum_one(self._acc, self._pair_cnt, self._motion)
-        labels = {k[1] for k in self._pair_cnt} | {k[1] for k in self._motion}
+        self._accum_one(self._acc, self._pair_cnt, self._motion, self._gt_frames)
+        labels = ({k[1] for k in self._pair_cnt} | {k[1] for k in self._motion}
+                  | {k[1] for k in self._gt_frames})
         for lb in labels:
             self._accum_one(self._cls_acc.setdefault(lb, _new_acc()),
                             {k: v for k, v in self._pair_cnt.items() if k[1] == lb},
-                            {k: v for k, v in self._motion.items() if k[1] == lb})
+                            {k: v for k, v in self._motion.items() if k[1] == lb},
+                            {k: v for k, v in self._gt_frames.items() if k[1] == lb})
 
-    def _accum_one(self, a: dict, pairs: dict, motions: dict) -> None:
+    def _accum_one(self, a: dict, pairs: dict, motions: dict, gt_frames: dict) -> None:
         """
-        单账折算: 按 seq 分解全局最优分配 (跨序列 id 无连边, 分量不相连, 与联合分配等价) + 速度连续段
+        单账折算: 按 seq 分解全局最优分配 (跨序列 id 无连边, 分量不相连, 与联合分配等价) + MT/ML + 速度连续段
         """
         from scipy.optimize import linear_sum_assignment
         from scipy.signal import savgol_filter
@@ -358,6 +422,17 @@ class Evaluator:
                 den = cnt_g[gs[r]] + cnt_t[ts[c]] - tpa    # TPA+FNA+FPA
                 if den > 0:
                     a['assa_w'] += tpa * tpa / den         # Σ A(c)·TPA, 帧加权
+        matched_n: dict = {}                     # (seq,label,gt_id) -> 被配帧数 (任意 trk)
+        for (sq, lb, g, t), c in pairs.items():
+            k = (sq, lb, g)
+            matched_n[k] = matched_n.get(k, 0) + c
+        for k, n in gt_frames.items():            # MT/ML: 单 gt 轨迹被配率 ≥0.8 / ≤0.2
+            a['gt_n'] += 1
+            r = matched_n.get(k, 0) / n if n > 0 else 0.0
+            if r >= 0.8:
+                a['mt'] += 1
+            elif r <= 0.2:
+                a['ml'] += 1
         for series in motions.values():
             for run in _runs(series):
                 m = len(run)
@@ -401,6 +476,8 @@ class Evaluator:
             met.update(tp=tp, fp=fp, fn=fn, ids=a['ids'], frag=a['frag'])
             met['mota'] = 1 - (fp + fn + a['ids']) / gt_tot if gt_tot else float('nan')
             met['motp'] = a['dist_sum'] / tp if tp else float('nan')
+            met['mt'] = a['mt'] / a['gt_n'] if a['gt_n'] else float('nan')
+            met['ml'] = a['ml'] / a['gt_n'] if a['gt_n'] else float('nan')
             met['idf1'] = 2 * a['idtp'] / (gt_tot + trk_tot) if (gt_tot + trk_tot) else float('nan')
             met['deta'] = tp / (tp + fp + fn) if (tp + fp + fn) else float('nan')
             met['assa'] = a['assa_w'] / tp if tp else float('nan')
@@ -430,11 +507,11 @@ class Evaluator:
             return '-'
         if k in ('tp', 'fp', 'fn', 'ids', 'frag'):
             return '%d' % v
-        if k == 'motp':
+        if k in ('motp', 'amotp'):
             return '%.3fm' % v
         if k == 'vde':
             return '%+.2fs' % v
-        if k in ('mota', 'idf1', 'deta', 'assa', 'hota', 'loca', 'vir'):
+        if k in ('mota', 'idf1', 'deta', 'assa', 'hota', 'loca', 'vir', 'mt', 'ml', 'amota'):
             return '%.1f%%' % (v * 100)
         if k in ('vae', 'vaie'):
             return '%.1f°' % v

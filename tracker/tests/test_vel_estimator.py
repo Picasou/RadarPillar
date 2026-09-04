@@ -208,13 +208,13 @@ def test_ego_motion_world_moving_target():
 
 def test_filter_meas_dim():
     assert AlphaBetaFilter(alpha=0.85, beta=0.2).meas_dim == 2
-    assert KalmanFilter(dim=2, q=np.eye(4), r=np.eye(2)).meas_dim == 2
-    assert KalmanFilter(dim=4, q=np.eye(4), r=np.eye(4)).meas_dim == 4
+    assert KalmanFilter(dim=2, q_acc=1.0, r=np.eye(2)).meas_dim == 2
+    assert KalmanFilter(dim=4, q_acc=1.0, r=np.eye(4)).meas_dim == 4
 
 
 def test_dim2_velocity_secondary_filter():
     # KF dim=2 只吃位置量测; KF 更新后 smooth 以 v_meas 为量测二次滤波速度 (trk.vx 收敛对地真值)
-    kf = KalmanFilter(dim=2, q=np.eye(4) * 0.5, r=np.eye(2) * 0.5)
+    kf = KalmanFilter(dim=2, q_acc=1.0, r=np.eye(2) * 0.5)
     est = make_est()
     trk = make_trk()
     trk.cov = np.diag([0.25, 0.25, 25.0, 25.0])                 # 出生协方差非零 (cov=0 时 KF 增益恒 0)

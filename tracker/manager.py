@@ -14,9 +14,9 @@ class TrackerManager:
     """
     in : Matches, trks, cycle_s
     out: 原地维护 trks
-            create: 未关联观测 → 新航迹 (ID 1-100 最小空闲, 满则跳过)
-            delete: 断粮满 death_heat 帧剔除 (唯一死法)
-            merge : [待实现]
+            create: 未关联观测 → 新航迹 (近距抑制 + ID 1-100 最小空闲, 满则告警丢弃)
+            delete: 断粮满 death_heat 帧 / 中心出界 剔除
+            merge : 中心距 < merge_dist 的重复航迹合并 (优者留)
             output: 存在概率记分 + 三条件满足锁存输出标志 (obstacle_prob)
     """
 
@@ -26,6 +26,17 @@ class TrackerManager:
         self.prob_output = cfg.MANAGER.prob_output # 上桌存在概率线
         self.birth_pos_std = getattr(cfg.MANAGER, 'birth_pos_std', 0.5)   # 出生位置标准差 (m)
         self.birth_vel_std = getattr(cfg.MANAGER, 'birth_vel_std', 5.0)   # 出生速度标准差 (m/s)
+        self.merge_dist = getattr(cfg.MANAGER, 'merge_dist', 1.0)         # 重复航迹合并距离门限 (m)
+        self.birth_min_range = getattr(cfg.MANAGER, 'birth_min_range', 2.0)  # 近距建轨抑制 (m)
+        self.bound = None                          # (x_lo, x_hi, y_lo, y_hi) 出界删轨边界, None=关
+
+    def set_bound(self, point_cloud_range) -> None:
+        """
+        出界边界设置: 模型 point_cloud_range [x_lo,y_lo,z_lo,x_hi,y_hi,z_hi] → xy 边界 (航迹中心出界即删)
+        """
+        if point_cloud_range is not None and len(point_cloud_range) == 6:
+            self.bound = (point_cloud_range[0], point_cloud_range[3],
+                          point_cloud_range[1], point_cloud_range[4])
 
     def run(self, matches, trks: list, cycle_s: float) -> None:
         self._man_create_trks(matches.unmatched_objs, trks, cycle_s)
@@ -35,14 +46,21 @@ class TrackerManager:
 
     def _man_create_trks(self, objs: list, trks: list, cycle_s: float) -> None:
         """
-        航迹创建: 未关联观测 → 新航迹 (出生计 1 帧), 原地追加 trks
+        航迹创建: 未关联观测 → 新航迹 (近距抑制 + 出生计 1 帧), 原地追加 trks; ID 池满告警
         """
         used = {trk.id for trk in trks}
+        pool_full = 0
         for obj in objs:
+            if self.birth_min_range > 0 and float(np.hypot(obj.x, obj.y)) < self.birth_min_range:
+                continue                          # 近距抑制: 近场杂波/自车回波不建轨
             trk = self._man_create_utils(obj, used, cycle_s)
             if trk is not None:
                 used.add(trk.id)
                 trks.append(trk)
+            else:
+                pool_full += 1
+        if pool_full:
+            print('[manager] warning: ID 池(1-100)已满, %d 条新观测被丢弃' % pool_full)
 
     def _man_create_utils(self, obj, used: set, cycle_s: float) -> Trk | None:
         """
@@ -52,12 +70,12 @@ class TrackerManager:
         if tid is None:
             return None
         trk = Trk(
-            x_m=obj.x, y_m=obj.y, z_m=0,
+            x_m=obj.x, y_m=obj.y, z_m=obj.z,
             vx_mps=obj.vx, vy_mps=obj.vy,
             doppler_mps=obj.doppler,
             ax_mps2=0, ay_mps2=0,
             heading_deg=obj.heading, yaw_rate_degs=0,
-            id=tid, width_m=obj.width, height_m=0, length_m=obj.length, lifetime_s=cycle_s,
+            id=tid, width_m=obj.width, height_m=obj.height, length_m=obj.length, lifetime_s=cycle_s,
             x_std_m=self.birth_pos_std, y_std_m=self.birth_pos_std, z_std_m=0,
             vx_std_mps=self.birth_vel_std, vy_std_mps=self.birth_vel_std,
             ax_std_mps2=0, ay_std_mps2=0, xy_pos_cov=0, xy_vel_cov=0, xy_acc_cov=0,
@@ -70,30 +88,47 @@ class TrackerManager:
                          self.birth_vel_std ** 2, self.birth_vel_std ** 2]),
             history=TrkHistory(),
         )
+        trk.det_score = float(getattr(obj, 'score', 0.0))   # 最近检测置信度 (AMOTA 扫描用)
         trk.history.push(obj.x, obj.y, 0.0, 0.0, obj.heading)   # 出生状态入史 (帧 0): 速度量测链差分起点
         return trk
 
     def _man_delete_trks(self, trks: list) -> None:
         """
-        航迹删除: 断粮满 death_heat 帧剔除 (唯一死法)
+        航迹删除: 断粮满 death_heat 帧 / 中心出界 剔除
         """
         trks[:] = [t for t in trks if not self._man_delete_utils(t)]
 
     def _man_delete_utils(self, trk: Trk) -> bool:
         """
-        航迹删除工具: 断粮计数达 death_heat 判死
+        航迹删除工具: 断粮计数达 death_heat 判死; 中心出 bound 即删
         """
+        if self.bound is not None:
+            x_lo, x_hi, y_lo, y_hi = self.bound
+            if not (x_lo <= trk.x_m <= x_hi and y_lo <= trk.y_m <= y_hi):
+                return True
         return trk.measurement_status >= self.death_heat
 
     def _man_merge_trks(self, trks: list) -> None:
         """
-        航迹合并: [待实现]
+        航迹合并: 中心距 < merge_dist 的航迹对只留优者 (存在概率高 → 寿命长 → id 小)
         """
-
-    def _man_merge_utils(self, trks: list) -> None:
-        """
-        航迹合并工具: [待实现]
-        """
+        if self.merge_dist <= 0 or len(trks) < 2:
+            return
+        keep = []
+        for i, a in enumerate(trks):
+            dup = False
+            for j, b in enumerate(trks):
+                if i == j:
+                    continue
+                if np.hypot(a.x_m - b.x_m, a.y_m - b.y_m) >= self.merge_dist:
+                    continue
+                if ((b.existence_prob, b.lifetime_s, -b.id) >
+                        (a.existence_prob, a.lifetime_s, -a.id)):
+                    dup = True
+                    break
+            if not dup:
+                keep.append(a)
+        trks[:] = keep
 
     def _man_output_trks(self, trks: list, cycle_s: float) -> None:
         """

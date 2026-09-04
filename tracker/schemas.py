@@ -101,6 +101,8 @@ class Obj:
     isghost: int = 0
     ispassable: int = 0
     score: float = 0.0            # 检测置信度 (detector 填, loader 路径默认 0)
+    z: float = 0.0                # 高度中心 (m) (detector 填 box[2], loader 回灌填)
+    height: float = 0.0           # 高度 (m) (detector 填 box[5], loader 回灌填)
 
 
 @dataclass
@@ -222,6 +224,7 @@ class Trk:
     cov: np.ndarray             # 4x4 协方差
     history: TrkHistory         # 4s 隐藏历史 (含 wt/dx/dy/dist + states[Trajectory_t 6 数组])
     vel_init: bool = False      # 速度量测链冷启动标志 (Python 侧工作字段, 不入 C 契约)
+    det_score: float = 0.0      # 最近检测置信度 (Python 侧工作字段, 不入 C 契约; AMOTA 扫描用)
 
 
 @dataclass
@@ -247,7 +250,6 @@ class FRAME:
     pts: PTs
     vdd: VDD
     objs: Objs
-    frame_id: str = ''
     proc: FrameProc = field(default_factory=FrameProc)
 
 
@@ -275,8 +277,8 @@ class CfgRun:
     """运行配置 - 对齐 RUN。"""
     mode: int                   # 0=display  1=normal  2=regress
     save: int                   # 0=不保存  1=保存(航迹结果落盘)
-    overlap: int                # 航迹bin落盘(写回数据源 radar.default/0200|0201): 0=另存 00001(已存在跳过)  1=覆盖原始 00000(可视化图恒覆盖)
-    delay: int                  # 雷达滞后实际帧数
+    overlap: int                # 航迹bin落盘(写回数据源 radar.default/0200|0201): 0=另存(mode=1→00001, mode=2→00002, 同名覆盖)  1=覆盖原始 00000(可视化图恒覆盖)
+    delay: int                  # 雷达滞后实际帧数 (点云 i 配 vdd[i-delay], 对齐 ego 环形缓冲 use_idx)
     vds: CfgVds
     accum_frames: int = 1       # 点云叠加帧数 (1=不叠加)
 
@@ -300,8 +302,8 @@ class CfgModel:
 class CfgFilterParaKf:
     """KF 参数 - 对齐 FILTER.para.para_kf。dim 是量测维(状态恒 4 维)。"""
     dim: int                    # 量测维: 2=仅(x/y)  4=(x/y/vx/vy); 状态恒 [x,y,vx,vy]
-    q: float
-    r: float
+    q_acc: float = 5.0          # 过程噪声加速度标准差 (m/s²), CV 离散白噪声模型按 dt 展开为 Q
+    r: float = 0.5              # 量测噪声协方差 (标量→对角阵, dim×dim)
 
 
 @dataclass
@@ -367,6 +369,8 @@ class CfgManager:
     prob_output: int = 80       # 上桌存在概率线
     birth_pos_std: float = 0.5  # 出生位置标准差 (m), P₀ 对角用
     birth_vel_std: float = 5.0  # 出生速度标准差 (m/s), P₀ 对角用
+    merge_dist: float = 1.0     # 重复航迹合并距离门限 (m), 中心距小于此值合并 (≤0 关闭)
+    birth_min_range: float = 2.0  # 近距建轨抑制 (m), 距 ego 小于此值的观测不建轨 (≤0 关闭)
 
 
 @dataclass
@@ -474,12 +478,12 @@ class Cfg:
         self._check_float_gt(self.FILTER.para.para_abf['alpha'], 0, 'FILTER.para.para_abf.alpha')
         self._check_float_gt(self.FILTER.para.para_abf['beta'], 0, 'FILTER.para.para_abf.beta')
         self._check_int(self.FILTER.para.para_kf.dim, 2, 4, 'FILTER.para.para_kf.dim')
-        # 状态恒 4 维 → Q 恒 4×4; R 按量测维 dim
-        self._check_matrix(self.FILTER.para.para_kf.q, 4, 'FILTER.para.para_kf.q')
+        # 状态恒 4 维 → Q 由 q_acc 按 dt 展开; R 按量测维 dim
+        self._check_float_gt(self.FILTER.para.para_kf.q_acc, 0, 'FILTER.para.para_kf.q_acc')
         self._check_matrix(self.FILTER.para.para_kf.r, self.FILTER.para.para_kf.dim, 'FILTER.para.para_kf.r')
         if self.FILTER.type >= 3:
             self._check_int(self.FILTER.para.para_ekf.get('dim', 4), 2, 4, 'FILTER.para.para_ekf.dim')
-            self._check_matrix(self.FILTER.para.para_ekf.get('q'), 4, 'FILTER.para.para_ekf.q')
+            self._check_float_gt(self.FILTER.para.para_ekf.get('q_acc', 5.0), 0, 'FILTER.para.para_ekf.q_acc')
             self._check_matrix(self.FILTER.para.para_ekf.get('r'), self.FILTER.para.para_ekf.get('dim', 4), 'FILTER.para.para_ekf.r')
 
         # MATCH
@@ -528,7 +532,9 @@ class Cfg:
 
         # MANAGER
         self._check_int(self.MANAGER.birth_heat, 0, None, 'MANAGER.birth_heat')
-        self._check_int(self.MANAGER.death_heat, 0, None, 'MANAGER.death_heat')
+        self._check_int(self.MANAGER.death_heat, 1, None, 'MANAGER.death_heat')   # ≥1: 0 会连当帧刚量测航迹一并删除
+        self._check_float(self.MANAGER.merge_dist, 0, None, 'MANAGER.merge_dist')
+        self._check_float(self.MANAGER.birth_min_range, 0, None, 'MANAGER.birth_min_range')
         self._check_int(self.MANAGER.prob_output, 0, 100, 'MANAGER.prob_output')
         self._check_float_gt(self.MANAGER.dt, 0, 'MANAGER.dt')
         self._check_float_gt(self.MANAGER.history_horizon, 0, 'MANAGER.history_horizon')

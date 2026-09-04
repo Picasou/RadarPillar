@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import argparse
 import copy
+from collections import deque
 from pathlib import Path
 
-from .schemas import Cfg, VDS, FRAME, FRAMEs, Trk
-from .utils.common import (load_data_cfg, c_points_prepare)
+import numpy as np
+
+from .schemas import Cfg, VDS, FRAME, Trk
+from .utils.common import (load_data_cfg, c_points_overlay, wrap180)
 from .utils.rw_struct import struct_write, Raw_TrkHead, Raw_Trk
 from . import loader
 from . import detector
@@ -32,6 +35,8 @@ class Tracker:
         self.is_visualize = (self.cfg.VISUAL.enable == 1)
         self.trks: list[Trk] = []
         self.accum_frames = self.cfg.RUN.accum_frames
+        # 在线滚动窗口: 最近 accum_frames 帧点云(末位为当前帧), 供多帧叠加
+        self.pt_window: deque[FRAME] = deque(maxlen=self.accum_frames)
 
         import yaml as _yaml
         with open(self.cfg.MODEL.cfg, 'r', encoding='utf-8') as f:
@@ -43,72 +48,98 @@ class Tracker:
         # 模块初始化
         self.loader    = loader.Loader(self.cfg)
         self.detector  = None if self.mode == 0 else detector.Detector(self.cfg)
+        self.class_names = (self.detector.class_names if self.detector else None)
         self.updater   = updater.Updater(self.cfg)
         self.matcher   = matcher.Matcher(self.cfg)
         self.manager   = manager.TrackerManager(self.cfg)
-        self.evaluator = evaluator.Evaluator(
-            self.cfg, class_names=self.detector.class_names if self.detector else None)
-        self.visualizer = visualizer.Visualizer(
-            self.cfg, class_names=self.detector.class_names if self.detector else None)
+        self.evaluator = evaluator.Evaluator(self.cfg, class_names=self.class_names)
+        self.visualizer = visualizer.Visualizer(self.cfg, class_names=self.class_names)
+        # 落盘 type 域映射: pcdet 1-based label → 源 0201 枚举 (数字类名即源枚举值; 名字类名无映射原样落)
+        self.label2src = ({i + 1: int(n.strip()) for i, n in enumerate(self.class_names)
+                           if n.strip().isdigit()}) if self.class_names else {}
+        # 出界删轨边界 = 检测 point_cloud_range (航迹出了检测域再无量测, 只能 coast 成幽灵)
+        self.manager.set_bound(self.point_cloud_range)
 
     def run(self) -> None:
         history = []
         for path in self.cfg.DATA.paths:
-            self.trks = []          # 序列边界重置: 航迹不跨序列 (P0-1)
-            self.updater.reset()    # 重置: 类型后验 / IMM bank
-            trk_rows = []           # 序列级结果收集: [(frame_id, [Trk|Obj...])], 序列末统一写 bin
-            frames = self.loader.getframes(path)
-            vds    = self.loader.getvds(path)
-            if not frames.Lst:      
-                continue
-
-            if self.eval_mode == 1 and self.mode == 2:
-                self.evaluator.on_seq_start(path)
-
-            if self.is_visualize:
-                aix_lim = (min(p.x_m for f in frames.Lst for p in f.pts.Lst),
-                       max(p.x_m for f in frames.Lst for p in f.pts.Lst),
-                       min(p.y_m for f in frames.Lst for p in f.pts.Lst),
-                       max(p.y_m for f in frames.Lst for p in f.pts.Lst)) \
-                    if any(f.pts.Lst for f in frames.Lst) else None
-                self.visualizer.begin_seq(Path(path).name, path, data_extent=aix_lim,
-                                          is_test=Path(path).name in (self.cfg.VISUAL.test_val or []))
-
-            seq_history = []        # 逐帧 (gts, 输出航迹快照), 评估配对用 (P0-2)
-            for i, frame in enumerate(frames.Lst):
-
-                objs = self.tracker_step(frame, frames, self.trks, vds, i)
-
-                if self.mode == 2:
-                    live = [t for t in self.trks if t.obstacle_prob]
-                    if self.eval_mode == 1:
-                        self.evaluator.online(frame, [evaluator.snap_trk(t) for t in live])
-                    elif self.eval_mode == 2:
-                        seq_history.append((frame.gts, [evaluator.snap_trk(t) for t in live]))
-                    if self.do_save:
-                        trk_rows.append((frame.frame_id, [copy.deepcopy(t) for t in live]))
-                elif self.do_save and self.mode == 1:
-                    trk_rows.append((frame.frame_id, [copy.deepcopy(t) for t in objs]))
-
-            if self.mode == 2:
-                history.append((path, seq_history))
-            if self.do_save and trk_rows:
-                self.write(path, trk_rows)
-
-            if self.is_visualize:
-                self.visualizer.on_seq_end()
-            if self.eval_mode == 1 and self.mode == 2: 
-                self.evaluator.on_seq_end(path)
+            seq = self._run_seq(path)
+            if seq is not None:
+                history.append(seq)
 
         if self.eval_mode == 1 and self.mode == 2:
             self.evaluator.on_dataset_end()
         if self.eval_mode == 2 and self.mode == 2:
             self.evaluator.evaluate(history)
 
-    def tracker_step(self, frame: FRAME, frames: FRAMEs, trks: list[Trk], vds: VDS, i: int) -> list:
+    def _run_seq(self, path: str) -> tuple | None:
+        """
+        单序列全流程:
+        初始化 → 帧循环 → 收尾; 无有效帧或无 GT(mode=2) 返回 None, 否则返回 (path, seq_history)
+        """
+        frames = self.loader.getframes(path)
+        vds    = self.loader.getvds(path)
+        if not frames.Lst:
+            return None
+
+        trk_rows = []
+        self.trks = []
+        seq_history = []
+        self.pt_window.clear()  # 重置: 在线点云窗口, 防跨序列泄漏
+        self.updater.reset()    # 重置: 类型后验 / IMM bank
+        eval_seq = self.loader.has_gt(path)
+
+        if self.eval_mode == 1 and self.mode == 2 and eval_seq:
+            self.evaluator.on_seq_start(path)
+
+        if self.is_visualize:
+            self.visualizer.begin_seq(Path(path).name, path,
+                                      is_test=Path(path).name in (self.cfg.VISUAL.test_val or []))
+
+        for i, frame in enumerate(frames.Lst):
+
+            objs = self.tracker_step(frame, self.trks, vds, i)
+
+            if self.mode == 2:
+                live = [t for t in self.trks if t.obstacle_prob]
+                if self.eval_mode == 1 and eval_seq:
+                    self.evaluator.online(frame, [evaluator.snap_trk(t) for t in live])
+                elif self.eval_mode == 2 and eval_seq:
+                    seq_history.append((frame.gts, [evaluator.snap_trk(t) for t in live]))
+                if self.do_save:
+                    trk_rows.append((i, [copy.deepcopy(t) for t in live]))
+            elif self.do_save and self.mode == 1:
+                trk_rows.append((i, [copy.deepcopy(t) for t in objs]))
+
+        if self.do_save and trk_rows:
+            self.write(path, trk_rows)
+
+        if self.is_visualize:
+            self.visualizer.on_seq_end()
+        if self.eval_mode == 1 and self.mode == 2 and eval_seq:
+            self.evaluator.on_seq_end(path)
+
+        return (path, seq_history) if (self.mode == 2 and eval_seq) else None
+
+    def get_points(self, frame: FRAME, vds: VDS) -> np.ndarray:
+        """
+        在线点云获取: 当前帧入滚动窗口 + 多帧叠加补偿 + range 过滤 → 检测输入点云
+        """
+        self.pt_window.append(frame)
+        points = c_points_overlay(list(self.pt_window), vds, self.accum_frames)
+        if points.shape[0] > 0:
+            pcr = self.point_cloud_range
+            keep = (
+                (points[:, 0] >= pcr[0]) & (points[:, 0] <= pcr[3]) &
+                (points[:, 1] >= pcr[1]) & (points[:, 1] <= pcr[4]) &
+                (points[:, 2] >= pcr[2]) & (points[:, 2] <= pcr[5])
+            )
+            points = points[keep]
+        return points.astype(np.float32, copy=False)
+
+    def tracker_step(self, frame: FRAME, trks: list[Trk], vds: VDS, i: int) -> list:
         # 1. 加载数据
-        frame.proc.points = c_points_prepare(frames, i, vds, self.accum_frames, self.point_cloud_range)
-        frame.frame_id = '%06d' % i      # bin 点级 frame 号未填(恒 0), 用帧序号
+        frame.proc.points = self.get_points(frame, vds)
 
         # 2. 检测
         objs = []
@@ -127,21 +158,30 @@ class Tracker:
 
         # 7. 可视化
         if self.is_visualize:
-            self.visualizer.run(frame, objs, trks if self.mode == 2 else [])
+            self.visualizer.run(frame, objs, trks if self.mode == 2 else [], i)
 
         return objs
 
     def write(self, seq_path: str, trk_rows: list) -> None:
         out_dir = Path(seq_path) / self.loader.relpath
-        suffix = '00000' if self.cfg.RUN.overlap == 1 else '00001'
+        if self.cfg.RUN.overlap == 1:
+            suffix = '00000'
+        else:
+            # 另存按 mode 分名: 检测/跟踪输出互不覆盖互不误跳 (mode=2 先跑不再拦掉 mode=1 出盘)
+            suffix = '00001' if self.mode == 1 else '00002'
         rec_file = out_dir / ('0201.%s.bin' % suffix)
         head_file = out_dir / ('0200.%s.bin' % suffix)
-        if rec_file.exists() and self.cfg.RUN.overlap == 0:
-            return
+        # save=1 恒写: 另存文件同名直接覆盖, 旧结果保留靠 suffix/dirs, 不靠跳过
         heads, records = [], []
-        for frame_id, items in trk_rows:
+        fc_warned = False
+        for frame_i, items in trk_rows:
+            if frame_i > 0xFFFF:    # Raw_TrkHead.frame_cnt 契约 uint16, 超限钳位防静默回绕
+                if not fc_warned:
+                    print('[tracker] warning: frame_cnt 超 uint16 上限 65535, 钳位落盘')
+                    fc_warned = True
+                frame_i = 0xFFFF
             h = Raw_TrkHead()
-            h.version, h.frame_cnt, h.trk_num, h.reserved = 1, int(frame_id), len(items), 0
+            h.version, h.frame_cnt, h.trk_num, h.reserved = 1, frame_i, len(items), 0
             heads.append(h)
             for t in items:
                 r = Raw_Trk()
@@ -151,10 +191,10 @@ class Tracker:
                     r.x_m, r.y_m, r.z_m = (int(round(v * 100)) for v in (t.x_m, t.y_m, t.z_m))
                     r.vx_mps, r.vy_mps = (int(round(v * 100)) for v in (t.vx_mps, t.vy_mps))
                     r.ax_mps2, r.ay_mps2 = (int(round(v * 100)) for v in (t.ax_mps2, t.ay_mps2))
-                    r.heading_deg = int(round(t.heading_deg * 100))
+                    r.heading_deg = int(round(wrap180(t.heading_deg) * 100))
                     r.width_m, r.length_m, r.height_m = (int(round(v * 100)) for v in
                                                          (t.width_m, t.length_m, t.height_m))
-                    r.type = int(t.type)
+                    r.type = self.label2src.get(int(t.type), int(t.type))
                     r.type_confi = int(t.type_confi)
                     r.lifetime_s = int(round(t.lifetime_s * 100))
                     r.motion_status = int(t.motion_status)
@@ -182,13 +222,13 @@ class Tracker:
                 else:   # Obj(检测, mode=1): 非航迹 id 恒 0, 航迹级字段无来源置 0
                     r.id = 0
                     r.x_m, r.y_m = int(round(t.x * 100)), int(round(t.y * 100))
-                    r.z_m = 0
+                    r.z_m = int(round(t.z * 100))
                     r.vx_mps, r.vy_mps = int(round(t.vx * 100)), int(round(t.vy * 100))
                     r.ax_mps2, r.ay_mps2 = 0, 0
-                    r.heading_deg = int(round(t.heading * 100))
+                    r.heading_deg = int(round(wrap180(t.heading) * 100))
                     r.width_m, r.length_m = int(round(t.width * 100)), int(round(t.length * 100))
-                    r.height_m = 0
-                    r.type = int(t.type)
+                    r.height_m = int(round(t.height * 100))
+                    r.type = self.label2src.get(int(t.type), int(t.type))
                     r.type_confi = int(round(t.score * 100))
                 records.append(r)
         struct_write(str(rec_file), records, heads=heads, head_filepath=str(head_file))

@@ -1,5 +1,5 @@
-"""RadarPillar 检测: (N,7) 点云 → list[Obj]. 耦合 pcdet, 仿 tools/demo.py."""
 from __future__ import annotations
+from dataclasses import fields
 from typing import List
 from pathlib import Path
 
@@ -8,12 +8,13 @@ import torch
 
 from pcdet.config import cfg as pcdet_global_cfg, cfg_from_yaml_file
 from pcdet.datasets import DatasetTemplate
+from pcdet.datasets.msr.msr_utils import build_msr_features
 from pcdet.models import build_network, load_data_to_gpu
 from pcdet.models.detectors.detector3d_template import Detector3DTemplate
 from pcdet.utils import common_utils
 
 from .utils import cpu_patch
-from .schemas import Cfg, FRAME, Obj
+from .schemas import Cfg, FRAME, Obj, PT, PTs
 
 
 class _PcdetDataset(DatasetTemplate):
@@ -26,9 +27,21 @@ class _PcdetDataset(DatasetTemplate):
         )
 
 
+def _pts_to_raw(pts: PTs) -> np.ndarray:
+    """
+    PT 列表转原始字段数组: dataclass 全字段直填, 供 build_msr_features 消费
+    """
+    assert pts.num == len(pts.Lst), f"pts.num({pts.num}) != len(Lst)({len(pts.Lst)})"
+    names = [f.name for f in fields(PT)]
+    raw = np.zeros(pts.num, dtype=[(n, '<f8') for n in names])
+    for n in names:
+        raw[n] = [getattr(p, n) for p in pts.Lst]
+    return raw
+
+
 class Detector:
     """
-    in: frame.proc.points (N,7) [x,y,z,rcs,v_r,v_r_comp,time]; 
+    in: frame.pts (PTs 原始字段, 经 build_msr_features 转训练口径);
     out: list[Obj] (vx/vy=0).
     """
 
@@ -43,6 +56,7 @@ class Detector:
 
         pcdet_cfg = cfg_from_yaml_file(cfg.MODEL.cfg, pcdet_global_cfg)
         self.class_names = pcdet_cfg.CLASS_NAMES  # type: ignore[attr-defined]
+        self.point_cloud_range = pcdet_cfg.DATA_CONFIG.POINT_CLOUD_RANGE  # type: ignore[index]
 
         self.dataset = _PcdetDataset(pcdet_cfg, self.class_names, self.logger)
         self.model: Detector3DTemplate = build_network(model_cfg=pcdet_cfg.MODEL, num_class=len(self.class_names), dataset=self.dataset)  # type: ignore[attr-defined]
@@ -52,34 +66,23 @@ class Detector:
         self.model.eval()
 
     def run(self, frame: FRAME) -> List[Obj]:
-        points = frame.proc.points
-        if points is None or points.shape[0] == 0:
+        if frame.pts.num == 0 or not frame.pts.Lst:
             return []
-        data_dict = self._prepare(self._to_src_points(points, frame.vdd))
+        raw = _pts_to_raw(frame.pts)
+        ego = frame.vdd.speed_ms if frame.vdd is not None else 0.0
+        yr = frame.vdd.yaw_rate if frame.vdd is not None else 0.0
+        feats = build_msr_features(raw, list(raw.dtype.names), ego_speed=ego, yaw_rate=yr)
+        # ROI 判空: 全点在 point_cloud_range 外时提前返回, 防空 voxel 前向崩溃
+        # (feats 前三列恒 x/y/z, 与 mask_points_by_boxes 同口径)
+        pcr = self.point_cloud_range
+        in_roi = ((feats[:, 0] >= pcr[0]) & (feats[:, 0] <= pcr[3]) &
+                  (feats[:, 1] >= pcr[1]) & (feats[:, 1] <= pcr[4]) &
+                  (feats[:, 2] >= pcr[2]) & (feats[:, 2] <= pcr[5]))
+        if not in_roi.any():
+            return []
+        data_dict = self._prepare(feats)
         pred_dicts = self._infer(data_dict)
         return self._to_objs(pred_dicts[0])
-
-    def _to_src_points(self, points: np.ndarray, vdd) -> np.ndarray:
-        """
-        点云转训练口径: tracker (N,7)[x,y,z,rcs,v_r,v_r_comp,time] → src_feature_list 18 列
-        (used 列 dop_x_gnd/dop_y_gnd 按 build_msr_features 公式重构, azi=atan2(y,x) 精确还原)
-        """
-        enc = self.dataset.point_feature_encoder
-        idx = {n: i for i, n in enumerate(enc.src_feature_list)}
-        ego = float(vdd.speed_ms) if vdd is not None else 0.0
-        yr = float(vdd.yaw_rate) if vdd is not None else 0.0
-        x, y, dop = points[:, 0], points[:, 1], points[:, 4]
-        azi = np.arctan2(y, x)
-        dop_x, dop_y = dop * np.cos(azi), dop * np.sin(azi)
-        cols = {
-            'x': x, 'y': y, 'z': points[:, 2], 'rcs': points[:, 3],
-            'dop_x': dop_x, 'dop_y': dop_y,
-            'dop_x_gnd': dop_x - ego, 'dop_y_gnd': dop_y + ego * np.tan(yr),
-        }
-        out = np.zeros((points.shape[0], len(enc.src_feature_list)), dtype=np.float32)
-        for name, arr in cols.items():
-            out[:, idx[name]] = arr
-        return out
 
     def _prepare(self, points: np.ndarray) -> dict:
         # prepare_data 跑完整 DATA_PROCESSOR 管线 (mask/shuffle/feature_encoding/voxelize),
@@ -108,8 +111,8 @@ class Detector:
         for i, (box, score, label) in enumerate(zip(boxes, scores, labels)):
             objs.append(Obj(
                 id=i,                                # 帧内临时 id, 真正航迹 id 由 manager 赋
-                x=box[0], y=box[1],                  # [x,y,z] → Obj.x/y (z 丢弃)
-                length=box[3], width=box[4],         # [dx,dy,dz] → length/width (height 丢弃)
+                x=box[0], y=box[1], z=box[2],        # [x,y,z] → Obj.x/y/z
+                length=box[3], width=box[4], height=box[5],   # [dx,dy,dz] → length/width/height
                 heading=float(np.degrees(box[6])),    # rad→deg: Obj.heading 契约为度(与 loader 同口径)
                 type=int(label),                     # label: 1-based class index
                 score=float(score),                  # 检测置信度

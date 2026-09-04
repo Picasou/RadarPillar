@@ -274,3 +274,44 @@ def test_report_and_curve_files(tmp_path):
     assert (out_dir / 'seqA_curve.png').exists()
     txt = (out_dir / 'metrics_default.txt').read_text(encoding='utf-8')
     assert 'DATASET (1 seqs)' in txt and 'seqA (6 frames)' in txt
+
+
+# ---- MT/ML + AMOTA (BUG.md 修复新增) ----
+
+def test_mt_ml_ratio():
+    # gt1 全程被配 (MT), gt2 仅 2/10 帧被配 (ML)
+    ev = make_ev()
+    ev._seq_key = 's'
+    for f in range(10):
+        gts = [make_gt(id=1, x=0, y=0), make_gt(id=2, x=20, y=0)]
+        trks = [make_trk(id=10, x=0, y=0)]
+        if f < 2:
+            trks.append(make_trk(id=11, x=20, y=0))
+        ev._step(GTs(num=len(gts), Lst=gts), trks)
+    ev._accum_global()
+    met = ev._finalize(ev._acc, ev._cls_acc)
+    assert met['mt'] == pytest.approx(0.5)
+    assert met['ml'] == pytest.approx(0.5)
+
+
+def test_amota_score_sweep():
+    # 前 5 帧高分轨 (0.9) 后 5 帧低分轨 (0.5): 阈值 0.9 档 recall=0.5/mota=0.5;
+    # 阈值 0.5 档 recall=1.0/ids=1 → mota=0.9; r=0.0~0.5 共 6 档取 0.5, r=0.6~0.9 共 4 档取 0.9
+    # AMOTA=(0.5×6+0.9×4)/10=0.66
+    ev = make_ev()
+    ev._seq_key = 's'
+    for f in range(10):
+        t = make_trk(id=10 if f < 5 else 11, x=0, y=0)
+        t.det_score = 0.9 if f < 5 else 0.5
+        ev._step(GTs(num=1, Lst=[make_gt(id=1, x=0, y=0)]), [t])
+    res = ev._calc_amota()
+    assert res['amota'] == pytest.approx(0.66)
+    assert res['amotp'] == pytest.approx(0.0)
+
+
+def test_amota_degenerate_scores_nan():
+    # det_score 全同 (回灌 score=0) → 阈值无分辨力 → nan
+    ev = make_ev()
+    ev._seq_key = 's'
+    ev._step(GTs(num=1, Lst=[make_gt(id=1, x=0, y=0)]), [make_trk(id=10, x=0, y=0)])
+    assert np.isnan(ev._calc_amota()['amota'])

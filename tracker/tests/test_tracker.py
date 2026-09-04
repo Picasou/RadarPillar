@@ -208,3 +208,15 @@ if __name__ == '__main__':
     test_history_cumulative_turning()
     test_history_states_compensation()
     print("\n=== ALL PASS ===")
+
+
+def test_wrap180_quantize_safe():
+    from tracker.utils.common import wrap180
+    from ctypes import c_int16
+    assert wrap180(0.0) == 0.0 and wrap180(180.0) == 180.0 and wrap180(-180.0) == 180.0
+    assert wrap180(270.0) == pytest.approx(-90.0)
+    assert wrap180(359.99) == pytest.approx(-0.01)
+    assert wrap180(327.68) == pytest.approx(-32.32)
+    # ×100 量化入 c_int16 安全域 (原 [0,360) 口径在 (327.67,360) 回绕)
+    assert c_int16(int(round(wrap180(359.99) * 100))).value == -1
+    assert c_int16(int(round(wrap180(327.68) * 100))).value == -3232

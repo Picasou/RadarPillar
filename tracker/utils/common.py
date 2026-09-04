@@ -4,7 +4,7 @@ import numpy as np
 import yaml
 from easydict import EasyDict
 
-from ..schemas import VDS, VDD, FRAME, FRAMEs, Trk
+from ..schemas import VDS, VDD, FRAME, Trk
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_DATA_CFG = os.path.normpath(os.path.join(
@@ -17,6 +17,13 @@ IS_TURNING_THRESHOLD = 1e-4
 def load_data_cfg(path: str = DEFAULT_DATA_CFG) -> EasyDict:
     with open(path, 'r', encoding='utf-8') as f:
         return EasyDict(yaml.safe_load(f))
+
+
+def wrap180(h: float) -> float:
+    """
+    角度归一: 任意角度 → (-180,180] (heading 落盘 c_int16×100 的量化安全域)
+    """
+    return -((180.0 - h) % 360.0 - 180.0)
 
 
 def c_a1_points_convert(frame: FRAME):
@@ -70,12 +77,11 @@ def c_points_compensate(xy: np.ndarray, intermediates: list, cycle_s: float):
     return xy
 
 
-def c_points_overlay(frames: FRAMEs, vds: VDS, accum_frames: int) -> np.ndarray:
+def c_points_overlay(window: list[FRAME], vds: VDS, accum_frames: int) -> np.ndarray:
     """
-    多帧叠加
-    (N, 7) [x,y,z,rcs,v_r,v_r_comp,time]
+    多帧叠加: 在线滚动窗口(最近 accum_frames 帧, 末位为当前帧) → (N, 7) [x,y,z,rcs,v_r,v_r_comp,time]
     """
-    idx = len(frames.Lst) - 1
+    idx = len(window) - 1
     cycle_s = vds.cycle_s
 
     def _feats(f, t):
@@ -86,42 +92,23 @@ def c_points_overlay(frames: FRAMEs, vds: VDS, accum_frames: int) -> np.ndarray:
         time = np.full(n, t, dtype=np.float32)
         return np.stack([xy[:, 0], xy[:, 1], z, rcs, v_r, v_r_comp, time], axis=1)
 
-    cur = _feats(frames.Lst[-1], 0.0)
+    cur = _feats(window[-1], 0.0)
     chunks = [cur] if cur.shape[0] > 0 else []
     if accum_frames > 1:
         for k in range(max(0, idx - accum_frames + 1), idx):
-            f_k = frames.Lst[k]
+            f_k = window[k]
             if not f_k.pts.Lst:
                 continue
             hist = _feats(f_k, -(idx - k) * cycle_s)
             if hist.shape[0] == 0:
                 continue
             # 历史帧 xy 反向 ego 补偿到当前帧坐标系
-            hist[:, 0:2] = c_points_compensate(hist[:, 0:2], frames.Lst[k + 1 : idx + 1], cycle_s)
+            hist[:, 0:2] = c_points_compensate(hist[:, 0:2], window[k + 1 : idx + 1], cycle_s)
             chunks.append(hist)
 
     if not chunks:
         return np.zeros((0, NUM_FEATURES), dtype=np.float32)
     return np.concatenate(chunks, axis=0)
-
-
-def c_points_prepare(frames: FRAMEs, i: int, vds: VDS, accum_frames: int, point_cloud_range) -> np.ndarray:
-    """ 
-    点云预处理 
-    PCs(N, NUM_FEATURES) 
-    """
-    start = max(0, i - accum_frames + 1)
-    window = FRAMEs(num=i - start + 1, Lst=frames.Lst[start:i + 1])
-    points = c_points_overlay(window, vds, accum_frames)
-    if points.shape[0] > 0:
-        pcr = point_cloud_range
-        keep = (
-            (points[:, 0] >= pcr[0]) & (points[:, 0] <= pcr[3]) &
-            (points[:, 1] >= pcr[1]) & (points[:, 1] <= pcr[4]) &
-            (points[:, 2] >= pcr[2]) & (points[:, 2] <= pcr[5])
-        )
-        points = points[keep]
-    return points.astype(np.float32, copy=False)
 
 
 def c_trk_compensate(trk: Trk, vdd, cycle_s: float):

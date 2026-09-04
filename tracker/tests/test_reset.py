@@ -16,10 +16,10 @@ from tracker.updater import Updater
 
 def build_cfg():
     imm = {'models': [{'type': 1, 'alpha': 0.85, 'beta': 0.2, 'r': 1.0},
-                      {'type': 2, 'q': np.eye(4) * 0.1, 'r': np.eye(4)}],
+                      {'type': 2, 'q_acc': 1.0, 'r': np.eye(4)}],
            'markov': [[0.95, 0.05], [0.05, 0.95]], 'dim': 2}
     para = SimpleNamespace(para_abf={'alpha': 0.85, 'beta': 0.2},
-                           para_kf=SimpleNamespace(dim=2, q=np.eye(4), r=np.eye(4)),
+                           para_kf=SimpleNamespace(dim=2, q_acc=1.0, r=np.eye(4)),
                            para_ekf={}, para_imm=imm)
     flt = SimpleNamespace(type=4, para=para)
     man = SimpleNamespace(adapter={'smooth': 1, 'markov': 1, 'type_markov': {}})

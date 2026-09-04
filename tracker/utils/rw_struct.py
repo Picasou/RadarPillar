@@ -12,8 +12,9 @@ class c_struct(Structure):
         return string_at(addressof(self), sizeof(self))
 
     def decode(self, data):
-        size = min(data.__sizeof__(), sizeof(self))
-        memmove(addressof(self), data, size)
+        if len(data) < sizeof(self):
+            raise ValueError(f'decode buffer {len(data)}B < struct {sizeof(self)}B (截断输入)')
+        memmove(addressof(self), data, sizeof(self))
         return sizeof(self)
 
 

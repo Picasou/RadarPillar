@@ -63,6 +63,12 @@ def abf_update(x: np.ndarray, z: np.ndarray, alpha: float, beta: float, dt: floa
     return x_new, float(ll)
 
 
+def cv_q(q_acc: float, dt: float) -> np.ndarray:
+    """CV 过程噪声: 离散白噪声加速度模型 σa²·G·Gᵀ (G=[dt²/2,dt²/2,dt,dt]ᵀ), 随 dt 缩放."""
+    G = np.array([dt * dt / 2.0, dt * dt / 2.0, dt, dt])
+    return np.outer(G, G) * (q_acc * q_acc)
+
+
 def kf_predict(x: np.ndarray, P: np.ndarray, dt: float, Q: np.ndarray
                ) -> tuple[np.ndarray, np.ndarray]:
     """常速度 4 维状态外推 - F 恒 4×4 含 x+=vx·dt。状态维固定, dim(量测维)不影响预测。"""
@@ -71,17 +77,19 @@ def kf_predict(x: np.ndarray, P: np.ndarray, dt: float, Q: np.ndarray
     F[1, 3] = dt
     x_new = F @ x
     P_new = F @ P @ F.T + Q
+    P_new = (P_new + P_new.T) / 2.0
     return x_new, P_new
 
 
 def kf_update(x: np.ndarray, P: np.ndarray, z: np.ndarray, H: np.ndarray, R: np.ndarray
               ) -> tuple[np.ndarray, np.ndarray, float]:
-    """KF 量测更新 - 返回 (后验状态, 对称后验协方差, 量测似然 N(z; Hx, S))."""
+    """KF 量测更新 (Joseph form 保数值对称半正定) - 返回 (后验状态, 对称后验协方差, 量测似然 N(z; Hx, S))."""
     r = z - H @ x
     S = H @ P @ H.T + R
     K = P @ H.T @ np.linalg.inv(S)
     x_new = x + K @ r
-    P_new = (np.eye(len(x)) - K @ H) @ P
+    IKH = np.eye(len(x)) - K @ H
+    P_new = IKH @ P @ IKH.T + K @ R @ K.T
     P_new = (P_new + P_new.T) / 2.0
     _, logdet = np.linalg.slogdet(S)
     maha = float(r @ np.linalg.solve(S, r))
@@ -193,10 +201,10 @@ class AlphaBetaFilter(_TemplateFilter):
         
 
 class KalmanFilter(_TemplateFilter):
-    def __init__(self, dim: int, q, r):
+    def __init__(self, dim: int, q_acc: float, r):
         self.dim = dim                      # 量测维: 2=仅(x/y), 4=(x/y/vx/vy)
         self.meas_dim = dim                 # 对外统一量测维口径 (updater 据此路由速度二次滤波)
-        self.q = q
+        self.q_acc = float(q_acc)           # 过程噪声加速度标准差 (m/s²), Q=cv_q(q_acc, dt)
         self.r = r
         self.H = np.eye(4)[:2].copy() if dim == 2 else np.eye(4)
 
@@ -206,12 +214,9 @@ class KalmanFilter(_TemplateFilter):
             R = R[:2, :2].copy()
         return R
 
-    def get_Q(self):
-        return np.asarray(self.q, dtype=float)
-
     def _predict(self, trk: Trk, cycle_s: float) -> None:
         x, P = _get_state(trk)
-        x, P = kf_predict(x, P, cycle_s, self.get_Q())
+        x, P = kf_predict(x, P, cycle_s, cv_q(self.q_acc, cycle_s))
         _write_state(trk, x, P)
 
     def _update(self, trk: Trk, obj: Obj, cycle_s: float) -> None:
@@ -222,10 +227,10 @@ class KalmanFilter(_TemplateFilter):
         
 
 class EkfFilter(_TemplateFilter):
-    def __init__(self, dim: int, q, r):
+    def __init__(self, dim: int, q_acc: float, r):
         self.dim = dim                      # 量测维: 2=仅(x/y), 4=(x/y/vx/vy); 状态恒 4 维走 CTRV
         self.meas_dim = dim                 # 对外统一量测维口径 (updater 据此路由速度二次滤波)
-        self.q = q
+        self.q_acc = float(q_acc)           # 过程噪声加速度标准差 (m/s²), Q=cv_q(q_acc, dt)
         self.r = r
         if dim not in (2, 4):
             raise ValueError(f"EkfFilter supports dim in (2, 4), got {dim}")
@@ -237,13 +242,10 @@ class EkfFilter(_TemplateFilter):
             R = R[:2, :2].copy()
         return R
 
-    def get_Q(self):
-        return np.asarray(self.q, dtype=float)
-
     def _predict(self, trk: Trk, cycle_s: float) -> None:
         w_rad = trk.yaw_rate_degs * np.pi / 180.0
         x, P = _get_state(trk)
-        x, P = ctrv_predict(x, P, cycle_s, w_rad, self.get_Q())
+        x, P = ctrv_predict(x, P, cycle_s, w_rad, cv_q(self.q_acc, cycle_s))
         _write_state(trk, x, P)
 
     def _update(self, trk: Trk, obj: Obj, cycle_s: float) -> None:
@@ -285,7 +287,7 @@ class ImmFilter(_TemplateFilter):
             if m['type'] == 1:
                 new_banks.append((abf_predict(x_bar, cycle_s), P_bar))
             else:
-                new_banks.append(kf_predict(x_bar, P_bar, cycle_s, m['q']))
+                new_banks.append(kf_predict(x_bar, P_bar, cycle_s, cv_q(m['q_acc'], cycle_s)))
         entry['banks'] = new_banks
         # 预测(先验)混合态写回 trk: 履行 predict 契约, coast/中间帧航迹不再冻结
         c = probs @ self.markov
@@ -402,11 +404,11 @@ class Filter:
         if ftype == 2:
             # 线性 KF
             kf = para.para_kf
-            return KalmanFilter(dim=kf.dim, q=kf.q, r=kf.r)
+            return KalmanFilter(dim=kf.dim, q_acc=kf.q_acc, r=kf.r)
         if ftype == 3:
             # 扩展卡尔曼 EKF
             ekf = para.para_ekf
-            return EkfFilter(dim=ekf.get('dim', 4), q=ekf['q'], r=ekf['r'])
+            return EkfFilter(dim=ekf.get('dim', 4), q_acc=ekf.get('q_acc', 5.0), r=ekf['r'])
         if ftype == 4:
             # 交互多模型 IMM - 子模型参数描述符 (1=α-β {alpha,beta,r}, 2=KF {q,r})
             imm = para.para_imm
@@ -420,7 +422,10 @@ class Filter:
                     models.append({'type': 1, 'alpha': float(sub_para['alpha']),
                                    'beta': float(sub_para['beta']), 'r': r})
                 elif stype == 2:
-                    models.append({'type': 2, 'q': np.asarray(sub_para['q'], dtype=float),
+                    q_acc = float(sub_para.get('q_acc', 5.0))
+                    if q_acc <= 0.0:
+                        raise ValueError(f"IMM KF sub-model q_acc must be > 0, got {q_acc}")
+                    models.append({'type': 2, 'q_acc': q_acc,
                                    'r': np.asarray(sub_para['r'], dtype=float)})
                 else:
                     raise ValueError(f"Unsupported IMM sub-model type: {stype}")

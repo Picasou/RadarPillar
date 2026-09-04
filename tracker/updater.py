@@ -1,4 +1,4 @@
-"""航迹更新 - 滤波修正 + 属性维护 (measurement_status / 观测属性回填)."""
+"""航迹更新 - 滤波修正 + 属性维护."""
 from __future__ import annotations
 
 import numpy as np
@@ -16,8 +16,7 @@ ACC_CLAMP_MPS2 = 10.0       # α-β 加速度通道钳位 (m/s²), 防持续偏�
 
 class VelEstimator:
     """
-    速度量测链: trk.history (逐帧滤波后状态, 索引=帧) 滑窗头尾差分 → v_meas 量测; meas_dim=2 时 KF 更新后 α-β 二次滤波速度
-    (状态全部寄存航迹自身: v=trk.vx/vy, a=trk.ax_mps2, init=trk.vel_init; 模块自持零状态)
+    速度量测链: history 滑窗头尾差分 → v_meas; meas_dim=2 时 α-β 二次滤波速度 (状态寄存航迹, 模块无自持状态)
     """
 
     def __init__(self, window_s: float, alpha: float, beta: float) -> None:
@@ -27,7 +26,7 @@ class VelEstimator:
 
     def measure(self, trk: Trk, cycle_s: float):
         """
-        速度量测: history 取 window_s 窗 [head_idx, tail_idx) 头尾差分 → (vx, vy) (m/s), 不可差分返回 None
+        速度量测: history 滑窗头尾差分 → (vx, vy), 不足 2 点返回 None
         """
         h = trk.history
         last = h.tail_idx - 1
@@ -41,7 +40,7 @@ class VelEstimator:
 
     def smooth(self, trk: Trk, v_meas, dt: float) -> None:
         """
-        速度二次滤波: α-β 以 v_meas 为量测修正 trk.vx/vy, 加速度通道写 trk.ax_mps2 (钳位 ±10 m/s²)
+        速度二次滤波: α-β 以 v_meas 修正 trk.vx/vy 与加速度通道
         """
         v_meas = np.asarray(v_meas, dtype=float)
         if not trk.vel_init:
@@ -60,10 +59,7 @@ class VelEstimator:
 
 class Updater:
     """
-    in : Matches, cycle_s
-    out: Update trks (原地)
-            matched 滤波修正+观测回填;
-            unmatched_trks 标 coast
+    航迹更新: matched 滤波修正+属性回填, unmatched 标 coast (原地)
     """
 
     def __init__(self, cfg: Cfg) -> None:
@@ -87,54 +83,70 @@ class Updater:
                                     beta=getattr(vel, 'beta', 0.5))
 
     def run(self, matches: Matches, cycle_s: float) -> None:
-        self._udt_miantain(matches, cycle_s)
+        self._udt_maintain(matches, cycle_s)
         self._udt_coasting(matches.unmatched_trks)
 
     def predict(self, trks: list[Trk], vdd, cycle_s: float) -> None:
         """
-        航迹预测: 先按存活剪枝类型后验, 再委托 Filter.predict (ego 补偿 + 状态外推; 速度链状态随航迹/history 由 c_trk_compensate 统一补偿)
+        航迹预测: 剪枝类型后验 + 委托 Filter.predict
         """
         self._prune_type_states(trks)
         self.filter.predict(trks, vdd, cycle_s)
 
     def reset(self) -> None:
         """
-        更新器重置: 清类型后验记忆 + 委托滤波清状态 (序列边界调用; 速度链状态在航迹上随 trks 清空)
+        重置: 清类型后验 + 滤波状态
         """
         self.type_states.clear()
         self.filter.reset()
 
     def _prune_type_states(self, trks: list[Trk]) -> None:
         """
-        类型后验剪枝: 删除不在存活列表的 id (防 ID 复用继承旧航迹类型)
+        类型后验剪枝: 删已消亡 id, 防 ID 复用继承
         """
         alive = {trk.id for trk in trks}
         for tid in [k for k in self.type_states if k not in alive]:
             del self.type_states[tid]
 
-    def _udt_miantain(self, matches: Matches, cycle_s: float) -> None:
+    def _udt_maintain(self, matches: Matches, cycle_s: float) -> None:
         for trk, obj in matches.matched:
-            gap = trk.measurement_status       # coast 帧数 (重置前读, 速度差分 Δt 用)
-            trk.doppler_mps = getattr(obj, 'doppler', 0.0)   # dpl update
-            trk.measurement_status = 0
-            trk.lifetime_s += cycle_s          # life_cnt++
-            v_meas = self._udt_velocity(trk, obj, cycle_s)   # vel update (量测生成, 在滤波前)
-            self.filter.update(trk, obj, cycle_s)    # state update
-            if self.vel_enable and v_meas is not None and self.filter.meas_dim == 2:
-                self.vel_est.smooth(trk, v_meas, (gap + 1) * cycle_s)   # 速度二次滤波: 位置归 KF, 速度归 α-β 量测链
-            self._udt_type(trk, obj)           # type update
-            self._udt_size(trk, obj)           # size update
-            self._udt_heading(trk, obj, (gap + 1) * cycle_s)   # heading update (coast 缺口计入 dt)
-            trk.history.push(trk.x_m, trk.y_m, trk.vx_mps, trk.vy_mps, trk.heading_deg)   # 滤波后状态入史 (逐帧)
+            dt_gap = (self._udt_basic(trk, obj, cycle_s) + 1) * cycle_s   # 基础信息回填 → 有效量测间隔
+            v_meas = self._udt_velocity(trk, obj, cycle_s)    # 速度量测生成 (须在滤波前: 覆写值供 dim=4 滤波取用)
+            self.filter.update(trk, obj, cycle_s)             # 运动状态滤波
+            self._udt_vsmooth(trk, v_meas, dt_gap)            # 速度二次滤波
+            self._udt_type(trk, obj)                          # 类型更新
+            self._udt_size(trk, obj)                          # 尺寸更新
+            self._udt_heading(trk, obj, dt_gap)               # 航向更新
+            trk.history.push(trk.x_m, trk.y_m, trk.vx_mps, trk.vy_mps, trk.heading_deg)   # 滤波后状态入史
+
+    def _udt_basic(self, trk: Trk, obj, cycle_s: float) -> int:
+        """
+        基础信息回填: doppler/score/lifetime 刷新 + 清 coast 计数, 返回重置前 coast 帧数
+        """
+        gap = trk.measurement_status
+        trk.doppler_mps = getattr(obj, 'doppler', 0.0)
+        trk.det_score = float(obj.score)
+        trk.measurement_status = 0
+        trk.lifetime_s += cycle_s
+        return gap
 
     def _udt_velocity(self, trk: Trk, obj, cycle_s: float):
         """
-        速度量测链: history (至上一帧滤波后状态) 滑窗头尾差分 → v_meas 覆写 obj.vx/vy 作速度量测
+        速度量测:
+        history 滑窗差分 v_meas 覆写 obj.vx/vy
         """
         v = self.vel_est.measure(trk, cycle_s) if self.vel_enable else None
         if v is not None:
             obj.vx, obj.vy = v
         return v
+
+    def _udt_vsmooth(self, trk: Trk, v_meas, dt: float) -> None:
+        """
+        速度二次滤波:
+        meas_dim=2 时启用, 位置归 KF 速度归 α-β
+        """
+        if self.vel_enable and v_meas is not None and self.filter.meas_dim == 2:
+            self.vel_est.smooth(trk, v_meas, dt)
 
     def _udt_coasting(self, trks: list) -> None:
         for trk in trks:
@@ -142,7 +154,9 @@ class Updater:
             trk.history.push(trk.x_m, trk.y_m, trk.vx_mps, trk.vy_mps, trk.heading_deg)   # 预测状态入史 (逐帧, 索引=帧)
 
     def _udt_type(self, trk: Trk, obj) -> None:
-        """类型更新: belief 贝叶斯更新 (转移×量测似然), argmax 输出"""
+        """
+        类型更新: belief 贝叶斯更新, argmax 输出
+        """
         if not self.markov:
             trk.type = obj.type
             trk.type_confi = 100
@@ -165,7 +179,9 @@ class Updater:
         trk.type_confi = int(round(100.0 * float(pi.max())))
 
     def _udt_size(self, trk: Trk, obj) -> None:
-        """尺寸更新: 平滑系数随存在时间衰减, 越久变化越慢"""
+        """
+        尺寸更新: 平滑系数随 lifetime 衰减
+        """
         if not self.smooth:
             trk.length_m = obj.length
             trk.width_m = obj.width
@@ -176,7 +192,7 @@ class Updater:
 
     def _udt_heading(self, trk: Trk, obj, dt: float) -> None:
         """
-        航向更新: sin/cos 向量 α-β (predict 角域外推重投影, α 向量混合, β 叉积角残差估角速度), atan2 回写 deg
+        航向更新: sin/cos 向量 α-β, atan2 回写 deg
         """
         if not self.smooth:
             trk.heading_deg = obj.heading
