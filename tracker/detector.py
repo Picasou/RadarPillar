@@ -65,15 +65,19 @@ class Detector:
             self.model.cuda()
         self.model.eval()
 
-    def run(self, frame: FRAME) -> List[Obj]:
-        if frame.pts.num == 0 or not frame.pts.Lst:
+    def run(self, frame: FRAME, pts: PTs) -> List[Obj]:
+        """
+        单帧检测: 叠加 PTs 原始字段 → build_msr_features 特征编码 → dataset 管线前处理 → 前向
+        """
+        if pts.num == 0 or not pts.Lst:
             return []
-        raw = _pts_to_raw(frame.pts)
+        raw = _pts_to_raw(pts)
         ego = frame.vdd.speed_ms if frame.vdd is not None else 0.0
         yr = frame.vdd.yaw_rate if frame.vdd is not None else 0.0
+        yr = yr if ego > 0.5 else 0.0
+    
         feats = build_msr_features(raw, list(raw.dtype.names), ego_speed=ego, yaw_rate=yr)
-        # ROI 判空: 全点在 point_cloud_range 外时提前返回, 防空 voxel 前向崩溃
-        # (feats 前三列恒 x/y/z, 与 mask_points_by_boxes 同口径)
+        
         pcr = self.point_cloud_range
         in_roi = ((feats[:, 0] >= pcr[0]) & (feats[:, 0] <= pcr[3]) &
                   (feats[:, 1] >= pcr[1]) & (feats[:, 1] <= pcr[4]) &

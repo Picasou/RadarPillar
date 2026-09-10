@@ -32,6 +32,10 @@ class Loader:
     def __init__(self, cfg: Cfg) -> None:
         self.cfg = cfg
         self.relpath = 'radar.default'
+        # GT 布局可配: 目录/头/记录名 (默认沿用源格式)
+        self.gt_dir = cfg.DATA.gt_dir
+        self.gt_head = cfg.DATA.gt_head
+        self.gt_rec = cfg.DATA.gt_rec
 
     # ---- 公共接口 ----
 
@@ -74,11 +78,11 @@ class Loader:
 
     def has_gt(self, path: str) -> bool:
         """
-        GT 存在性: gt.default 下 1200/1201 齐备 → True (评估只对有 GT 序列生效)
+        GT 存在性: 配置 GT 目录下头/记录齐备 → True (评估只对有 GT 序列生效)
         """
-        gt_dir = os.path.join(path, 'gt.default')
-        return (os.path.exists(os.path.join(gt_dir, 'gt_radar_1200.00000.bin'))
-                and os.path.exists(os.path.join(gt_dir, 'gt_radar_1201.00000.bin')))
+        gt_dir = os.path.join(path, self.gt_dir)
+        return (os.path.exists(os.path.join(gt_dir, self.gt_head))
+                and os.path.exists(os.path.join(gt_dir, self.gt_rec)))
 
     # ---- 内部方法 ----
 
@@ -185,11 +189,11 @@ class Loader:
 
     def _load_GTs(self, path: str) -> list[GTs]:
         """
-        GT 加载: 兄弟目录 gt.default/gt_radar_1200(头)+1201(记录); 无标注 -> warning + 空 (评估由 has_gt 拦截)
+        GT 加载: 配置 GT 目录下头+记录 (DATA.gt_dir/gt_head/gt_rec); 无标注 -> warning + 空 (评估由 has_gt 拦截)
         """
-        gt_dir = os.path.join(os.path.dirname(path), 'gt.default')
-        f_head = os.path.join(gt_dir, 'gt_radar_1200.00000.bin')
-        f_rec = os.path.join(gt_dir, 'gt_radar_1201.00000.bin')
+        gt_dir = os.path.join(os.path.dirname(path), self.gt_dir)
+        f_head = os.path.join(gt_dir, self.gt_head)
+        f_rec = os.path.join(gt_dir, self.gt_rec)
         if not (os.path.exists(f_head) and os.path.exists(f_rec)):
             warnings.warn(f"[loader] 无 GT 标注 ({gt_dir}), 该序列不参与评估",
                           RuntimeWarning, stacklevel=2)

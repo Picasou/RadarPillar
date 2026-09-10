@@ -13,7 +13,7 @@ import pickle
 from pathlib import Path
 
 import numpy as np
-from skimage import io
+from PIL import Image
 
 from ...ops.roiaware_pool3d import roiaware_pool3d_utils
 from ...utils import box_utils
@@ -142,9 +142,11 @@ class MsrDataset(DatasetTemplate):
     def get_dynamic_param(self, idx):
         """读 PARAMS/{idx}.bin + radar_dynamic.struct.json → {'ego_speed': float, 'yaw_rate': float}。
 
-        PARAMS 是单条结构体(84B/帧)。json 的 scale 字段:
-            hostVelocity_mps: scale=1.0(m/s 直接读)
-            vehicleYawRate_radps: scale=57.2957...(即 raw 是度/s,json scale=弧度→度,所以 raw/scale=弧度/s)
+        PARAMS 是单条结构体(84B/帧)。raw 直取物理量,不做 scale 换算:
+            ego_speed: m/s (json scale=1.0, 直读即物理量)
+            ego_yawrate: rad/s (字段名 _radps 即声明单位; json scale=57.2958 是 rad/s→deg/s
+            的展示换算系数, 按 "raw×scale=unit" 约定反推 raw 本身就是 rad/s, 曾误除 57.3 致
+            dop_y_gnd yaw 补偿项缩小 57 倍, 物理验证 a_y≈v·ω 已证 raw 为 rad/s)
         读失败或 USE_GND_VELOCITY=False 时由调用处决定是否传 0。
         """
         param_file = self.root_split_path / self.params_dir / ('%s.bin' % idx)
@@ -154,8 +156,9 @@ class MsrDataset(DatasetTemplate):
         if raw.shape[0] == 0:
             return {'ego_speed': 0.0, 'yaw_rate': 0.0}
         rec = raw[0]
-        ego_speed = float(rec['ego_speed']) / self._params_scale.get('ego_speed', 1.0)
-        yaw_rate = float(rec['ego_yawrate']) / self._params_scale.get('ego_yawrate', 1.0)
+        ego_speed = float(rec['ego_speed'])
+        # 低速(<0.5 m/s)横摆量测噪声主导, 置 0 (与推理侧 detector.run 同规则)
+        yaw_rate = float(rec['ego_yawrate']) if ego_speed >= 0.5 else 0.0
         return {'ego_speed': ego_speed, 'yaw_rate': yaw_rate}
 
     def get_radar(self, idx):
@@ -215,10 +218,21 @@ class MsrDataset(DatasetTemplate):
     # ---------- image / info pkl 生成 ----------
 
     def get_image_shape(self, idx):
-        """读 IMAGES/{idx}.png shape[:2];无图返回 [0,0]。MSR 无相机,仅占位/可视化用。"""
+        """
+        取 IMAGES/{idx}.png 尺寸 (h,w): 首帧 PIL 读 PNG header 后缓存,后续帧直接复用
+        """
+        cached = getattr(self, '_image_shape_cache', None)
+        if cached is not None:
+            return cached
         img_file = self.root_split_path / 'IMAGES' / ('%s.png' % idx)
         if img_file.exists():
-            return np.array(io.imread(str(img_file)).shape[:2], dtype=np.int32)
+            # PIL 懒加载只读 header 不解码像素;相机输出固定,全数据集尺寸恒定,读一次即可
+            # (曾逐帧 skimage 全量解码,占 infos 生成 77% 耗时)
+            with Image.open(str(img_file)) as im:
+                w, h = im.size
+            self._image_shape_cache = np.array([h, w], dtype=np.int32)
+            return self._image_shape_cache
+        # 缺图帧兜底 [0,0],不污染缓存(后续有图帧仍可正常首读)
         return np.array([0, 0], dtype=np.int32)
 
     def get_infos(self, num_workers=4, has_label=True, count_inside_pts=True, sample_id_list=None):

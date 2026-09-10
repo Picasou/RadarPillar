@@ -7,7 +7,7 @@ import pytest
 from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from tracker.schemas import Cfg, FRAME, FrameProc, GT, GTs, Objs, Obj, PTs, Trk, TrkHistory, VDD
+from tracker.schemas import Cfg, FRAME, FrameProc, GT, GTs, Objs, Obj, PT, PTs, Trk, TrkHistory, VDD
 from tracker import visualizer
 from tracker.visualizer import Visualizer
 from viz_common import draw_box_bev
@@ -42,10 +42,16 @@ def make_trk(x, y, heading_deg=30.0, type_idx=1, tid=7, obstacle_prob=1):
 
 def make_frame(n_pts=20):
     rng = np.random.default_rng(0)
-    pts = np.stack([rng.uniform(5, 40, n_pts), rng.uniform(-15, 15, n_pts),
-                    rng.uniform(-1, 1, n_pts), rng.uniform(-10, 10, n_pts),
-                    rng.uniform(-5, 5, n_pts), rng.uniform(-8, 8, n_pts),
-                    np.zeros(n_pts)], axis=1).astype(np.float32)
+    x = rng.uniform(5, 40, n_pts)
+    y = rng.uniform(-15, 15, n_pts)
+    dop = rng.uniform(-8, 8, n_pts)
+    pts = PTs(num=n_pts, Lst=[
+        PT(beam=0, extra_cnt=0, exist_confidence=0, doppler_anti_amb_confi=0,
+           id=0, flags=0, rcs=int(v), snr=0, frame=0,
+           range_m=float(np.hypot(x[i], y[i])), ang_rad=float(np.arctan2(y[i], x[i])),
+           elv_rad=0.0, doppler_mps=float(dop[i]),
+           x_m=float(x[i]), y_m=float(y[i]), z_m=float(rng.uniform(-1, 1)))
+        for i, v in enumerate(rng.uniform(-10, 10, n_pts))])
     frame = FRAME(
         gts=GTs(num=1, Lst=[GT(x=20, y=5, z=0, vx=0, vy=0, length=4, width=2,
                                 height=1.5, heading=0.5, type=1, isghost=0, ispassable=1)]),

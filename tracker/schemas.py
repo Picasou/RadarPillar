@@ -236,7 +236,7 @@ class Trks:
 @dataclass
 class FrameProc:
     """处理层产物 - 各模块按需写入的中间结果, 与原始数据物理隔离。"""
-    points: Optional[np.ndarray] = None   # (N, 7) [x,y,z,rcs,v_r,v_r_comp,time] 累积+裁剪后 (preprocessor 填)
+    points: Optional[PTs] = None   # 多帧叠加 PTs (ego 补偿+极坐标自洽回写, tracker 填)
     voxels: Optional[np.ndarray] = None   # (V, P, C) detector 体素化后填
     voxel_coords: Optional[np.ndarray] = None
     voxel_num_points: Optional[np.ndarray] = None
@@ -287,6 +287,9 @@ class CfgRun:
 class CfgData:
     """数据配置 - 对齐 DATA。"""
     paths: list[str]
+    gt_dir: str = 'gt.default'                  # GT 目录名 (序列根下, 与 radar.default 同级)
+    gt_head: str = 'gt_radar_1200.00000.bin'    # GT 头文件名
+    gt_rec: str = 'gt_radar_1201.00000.bin'     # GT 记录文件名
 
 
 @dataclass
@@ -459,6 +462,10 @@ class Cfg:
         for i, p in enumerate(self.DATA.paths):
             if not isinstance(p, str) or not p:
                 raise ValueError(f"DATA.paths[{i}] must be non-empty str, got {type(p).__name__}: {p}")
+        for f in ('gt_dir', 'gt_head', 'gt_rec'):
+            v = getattr(self.DATA, f)
+            if not isinstance(v, str) or not v:
+                raise ValueError(f"DATA.{f} must be non-empty str, got {type(v).__name__}: {v}")
 
         # MODEL
         if not isinstance(self.MODEL.cfg, str) or not self.MODEL.cfg:

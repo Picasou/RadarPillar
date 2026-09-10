@@ -5,9 +5,7 @@ import copy
 from collections import deque
 from pathlib import Path
 
-import numpy as np
-
-from .schemas import Cfg, VDS, FRAME, Trk
+from .schemas import Cfg, VDS, FRAME, Trk, PTs
 from .utils.common import (load_data_cfg, c_points_overlay, wrap180)
 from .utils.rw_struct import struct_write, Raw_TrkHead, Raw_Trk
 from . import loader
@@ -87,9 +85,9 @@ class Tracker:
         seq_history = []
         self.pt_window.clear()  # 重置: 在线点云窗口, 防跨序列泄漏
         self.updater.reset()    # 重置: 类型后验 / IMM bank
-        eval_seq = self.loader.has_gt(path)
+        has_gt_seq = self.loader.has_gt(path)
 
-        if self.eval_mode == 1 and self.mode == 2 and eval_seq:
+        if self.eval_mode == 1 and self.mode == 2 and has_gt_seq:
             self.evaluator.on_seq_start(path)
 
         if self.is_visualize:
@@ -102,9 +100,9 @@ class Tracker:
 
             if self.mode == 2:
                 live = [t for t in self.trks if t.obstacle_prob]
-                if self.eval_mode == 1 and eval_seq:
+                if self.eval_mode == 1 and has_gt_seq:
                     self.evaluator.online(frame, [evaluator.snap_trk(t) for t in live])
-                elif self.eval_mode == 2 and eval_seq:
+                elif self.eval_mode == 2 and has_gt_seq:
                     seq_history.append((frame.gts, [evaluator.snap_trk(t) for t in live]))
                 if self.do_save:
                     trk_rows.append((i, [copy.deepcopy(t) for t in live]))
@@ -116,26 +114,16 @@ class Tracker:
 
         if self.is_visualize:
             self.visualizer.on_seq_end()
-        if self.eval_mode == 1 and self.mode == 2 and eval_seq:
+        if self.eval_mode == 1 and self.mode == 2 and has_gt_seq:
             self.evaluator.on_seq_end(path)
 
-        return (path, seq_history) if (self.mode == 2 and eval_seq) else None
+        return (path, seq_history) if (self.mode == 2 and has_gt_seq) else None
 
-    def get_points(self, frame: FRAME, vds: VDS) -> np.ndarray:
-        """
-        在线点云获取: 当前帧入滚动窗口 + 多帧叠加补偿 + range 过滤 → 检测输入点云
-        """
+    def get_points(self, frame: FRAME, vds: VDS) -> PTs:
+        # 点云叠加
         self.pt_window.append(frame)
-        points = c_points_overlay(list(self.pt_window), vds, self.accum_frames)
-        if points.shape[0] > 0:
-            pcr = self.point_cloud_range
-            keep = (
-                (points[:, 0] >= pcr[0]) & (points[:, 0] <= pcr[3]) &
-                (points[:, 1] >= pcr[1]) & (points[:, 1] <= pcr[4]) &
-                (points[:, 2] >= pcr[2]) & (points[:, 2] <= pcr[5])
-            )
-            points = points[keep]
-        return points.astype(np.float32, copy=False)
+        lst = c_points_overlay(list(self.pt_window), vds, self.accum_frames)
+        return PTs(num=len(lst), Lst=lst)
 
     def tracker_step(self, frame: FRAME, trks: list[Trk], vds: VDS, i: int) -> list:
         # 1. 加载数据
@@ -144,7 +132,7 @@ class Tracker:
         # 2. 检测
         objs = []
         if self.mode >= 1 and self.detector is not None:
-            objs = self.detector.run(frame)
+            objs = self.detector.run(frame, frame.proc.points)
 
         if self.mode == 2:
             # 3. 预测

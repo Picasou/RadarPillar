@@ -1,16 +1,17 @@
 from __future__ import annotations
 import os
+from dataclasses import replace
+
 import numpy as np
 import yaml
 from easydict import EasyDict
 
-from ..schemas import VDS, VDD, FRAME, Trk
+from ..schemas import VDS, VDD, FRAME, PT, Trk
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_DATA_CFG = os.path.normpath(os.path.join(
     THIS_DIR, '..', '..', 'tools', 'cfgs', 'dataset', 'astyx_dataset_radar.yaml'
 ))
-NUM_FEATURES = 7  # x, y, z, rcs, v_r, v_r_comp, time
 IS_TURNING_THRESHOLD = 1e-4
 
 
@@ -24,33 +25,6 @@ def wrap180(h: float) -> float:
     角度归一: 任意角度 → (-180,180] (heading 落盘 c_int16×100 的量化安全域)
     """
     return -((180.0 - h) % 360.0 - 180.0)
-
-
-def c_a1_points_convert(frame: FRAME):
-    """
-    点云格式转换
-    (xy, z, rcs, v_r, v_r_comp)
-    """
-    pts = frame.pts.Lst
-    if not pts:
-        empty2 = np.zeros((0, 2), dtype=np.float32)
-        empty1 = np.zeros((0,), dtype=np.float32)
-        return empty2, empty1, empty1, empty1, empty1
-    x   = np.array([p.x_m         for p in pts], dtype=np.float32)
-    y   = np.array([p.y_m         for p in pts], dtype=np.float32)
-    z   = np.array([p.z_m         for p in pts], dtype=np.float32)
-    rcs = np.array([p.rcs         for p in pts], dtype=np.float32)
-    v_r = np.array([p.doppler_mps for p in pts], dtype=np.float32)
-
-    vdd = frame.vdd
-    if vdd is not None:
-        ang = np.array([p.ang_rad for p in pts], dtype=np.float32)
-        ego_radial = vdd.speed_ms * np.cos(ang)
-        v_r_comp = v_r - ego_radial
-    else:
-        v_r_comp = v_r.copy()
-
-    return np.stack([x, y], axis=1), z, rcs, v_r, v_r_comp
 
 
 def c_points_compensate(xy: np.ndarray, intermediates: list, cycle_s: float):
@@ -77,38 +51,35 @@ def c_points_compensate(xy: np.ndarray, intermediates: list, cycle_s: float):
     return xy
 
 
-def c_points_overlay(window: list[FRAME], vds: VDS, accum_frames: int) -> np.ndarray:
+def c_points_overlay(window: list[FRAME], vds: VDS, accum_frames: int) -> list[PT]:
     """
-    多帧叠加: 在线滚动窗口(最近 accum_frames 帧, 末位为当前帧) → (N, 7) [x,y,z,rcs,v_r,v_r_comp,time]
+    多帧叠加: 在线滚动窗口(最近 accum_frames 帧, 末位为当前帧) → 叠加 PT 列表, 原始字段层输出供检测管线编码
     """
     idx = len(window) - 1
     cycle_s = vds.cycle_s
 
-    def _feats(f, t):
-        xy, z, rcs, v_r, v_r_comp = c_a1_points_convert(f)
-        if xy.shape[0] == 0:
-            return np.zeros((0, NUM_FEATURES), dtype=np.float32)
-        n = xy.shape[0]
-        time = np.full(n, t, dtype=np.float32)
-        return np.stack([xy[:, 0], xy[:, 1], z, rcs, v_r, v_r_comp, time], axis=1)
-
-    cur = _feats(window[-1], 0.0)
-    chunks = [cur] if cur.shape[0] > 0 else []
+    pts = list(window[-1].pts.Lst)   # 当前帧原样在前
     if accum_frames > 1:
         for k in range(max(0, idx - accum_frames + 1), idx):
             f_k = window[k]
             if not f_k.pts.Lst:
                 continue
-            hist = _feats(f_k, -(idx - k) * cycle_s)
-            if hist.shape[0] == 0:
-                continue
-            # 历史帧 xy 反向 ego 补偿到当前帧坐标系
-            hist[:, 0:2] = c_points_compensate(hist[:, 0:2], window[k + 1 : idx + 1], cycle_s)
-            chunks.append(hist)
+            hist = [replace(p) for p in f_k.pts.Lst]
+            # 历史 xy 补偿
+            xy = c_points_compensate(
+                np.array([[p.x_m, p.y_m] for p in hist], dtype=np.float64).reshape(-1, 2),
+                window[k + 1: idx + 1], cycle_s)
 
-    if not chunks:
-        return np.zeros((0, NUM_FEATURES), dtype=np.float32)
-    return np.concatenate(chunks, axis=0)
+            # 极坐标回写自洽
+            z_loc = np.array([p.range_m * np.sin(p.elv_rad) for p in hist])
+            r_new = np.hypot(np.hypot(xy[:, 0], xy[:, 1]), z_loc)
+            ang_new = np.arctan2(xy[:, 1], xy[:, 0])
+            elv_new = np.arcsin(np.clip(z_loc / np.where(r_new > 0, r_new, 1.0), -1.0, 1.0))
+            for j, p in enumerate(hist):
+                p.x_m, p.y_m = float(xy[j, 0]), float(xy[j, 1])
+                p.range_m, p.ang_rad, p.elv_rad = float(r_new[j]), float(ang_new[j]), float(elv_new[j])
+            pts.extend(hist)
+    return pts
 
 
 def c_trk_compensate(trk: Trk, vdd, cycle_s: float):

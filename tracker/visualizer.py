@@ -28,7 +28,7 @@ for _fp in ('/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
     except Exception:
         pass
 
-from .schemas import FRAME, Trk
+from .schemas import FRAME, Trk, PTs
 
 # ---- 风格常量: 全部照抄 visualize_msr.py ----
 DEFAULT_CLASS_NAMES = ['Car', 'Pedestrian', 'Cyclist']
@@ -101,7 +101,7 @@ class Visualizer:
             return
         if not self.save or not self.save_enabled:
             return                                      # 无落盘格式: 不渲染不出图
-        pts = frame.proc.points if frame.proc.points is not None else np.zeros((0, 7))
+        pts = frame.proc.points if frame.proc.points is not None else PTs(num=0, Lst=[])
         cam_img = self._read_cam(frame_i)
         if self._fig is None or bool(self._ax.get('img')) != (cam_img is not None):
             self._build_fig(has_cam=cam_img is not None)    # 首帧/相机流起止 → (重)建布局
@@ -119,12 +119,17 @@ class Visualizer:
         artists = []
         if cam_img is not None:
             artists.append(self._ax['img'].imshow(cam_img))
-        if self.show.get('points', 1) and pts.shape[0]:
-            c = pts[:, 5]
+        if self.show.get('points', 1) and pts.Lst:
+            # doppler_gnd 自算: 径向多普勒 - ego 径向分量 (对地多普勒, 蓝灰红 diverging 着色)
+            ego = frame.vdd.speed_ms if frame.vdd is not None else 0.0
+            px = np.array([p.x_m for p in pts.Lst])
+            py = np.array([p.y_m for p in pts.Lst])
+            c = np.array([p.doppler_mps for p in pts.Lst]) \
+                - ego * np.cos(np.array([p.ang_rad for p in pts.Lst]))
             vmax = np.percentile(np.abs(c), 99) or 1.0
             norm = Normalize(vmin=-vmax, vmax=vmax)  # type: ignore[arg-type]
             for ax in panels:
-                artists.append(ax.scatter(pts[:, 1], pts[:, 0], c=c, cmap=DOPPLER_CMAP,
+                artists.append(ax.scatter(py, px, c=c, cmap=DOPPLER_CMAP,
                                           norm=norm, s=2, linewidths=0, alpha=0.9, zorder=2))
             cb = self._dyn.get('cb')
             if cb is None:
@@ -160,7 +165,7 @@ class Visualizer:
         vdd = frame.vdd
         fig.suptitle('%s\nframe %d  |  pts - %d, gts - %d, objs - %d, trks - %d  |  '  # type: ignore[union-attr]
                      'ego - %.1f m/s, yaw - %.3f'
-                     % (self._cur_seq, frame_i, pts.shape[0], n_gt, n_obj, n_trk,
+                     % (self._cur_seq, frame_i, pts.num, n_gt, n_obj, n_trk,
                         vdd.speed_ms if vdd else 0.0, vdd.yaw_rate if vdd else 0.0),
                      fontsize=13, color=INK, y=0.97, va='top')
 

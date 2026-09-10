@@ -34,7 +34,9 @@ def _write_gt_bins(seq_dir, frames):
 
 
 def _make_loader():
-    return Loader(SimpleNamespace(RUN=SimpleNamespace(vds=None)))
+    from tracker.schemas import CfgData
+    return Loader(SimpleNamespace(RUN=SimpleNamespace(vds=None),
+                                  DATA=CfgData(paths=[])))
 
 
 def test_gt_roundtrip():
