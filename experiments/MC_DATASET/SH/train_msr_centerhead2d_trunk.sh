@@ -2,7 +2,7 @@
 
 # eg. bash experiments/MC_DATASET/SH/train_msr_centerhead2d_trunk.sh
 # MSR (MC_Single_Radar) RadarPillar CenterHead(2D) trunk 变体 — 全共享 trunk
-# 数据: /mnt/d/DataSet/MSRv2  | 类别: ['1','2','4','5'] (1=轿车 2=行人 4=二轮车 5=卡车)
+# 数据: /mnt/d/DataSet/MSRv1  | 类别: ['1','2','4','5'] (1=轿车 2=行人 4=二轮车 5=卡车)
 
 # —— 可选 ——
 # [续训]
@@ -10,7 +10,7 @@
 # [预训练]
 # PRETRAINED_MODEL="path/to/pretrained.pth"
 # [固定种子]
-FIX_RANDOM_SEED=True
+# FIX_RANDOM_SEED=True
 # [分布式]
 # LAUNCHER="pytorch"
 # TCP_PORT=18888
@@ -45,9 +45,9 @@ SET_CFGS=("OPTIMIZATION.early_stop.enabled" "False" "OPTIMIZATION.LR_WARMUP" "Fa
 
 # —— 必改 ——
 CFG_FILE="experiments/MC_DATASET/YAML/msr_centerhead2d_trunk.yaml"
-BATCH_SIZE=8          # 历史 MSRv1 同卡全模型 bs=8 可跑;OOM 则降 4/2
+BATCH_SIZE=4          # MSR 点云密集 + 8G 显存,保守起步;OOM 则降到 2
 WORKERS=2
-EPOCHS=100
+EPOCHS=80
 GPU=0
 EXTRA_TAG="msr_centerhead2d_trunk"
 

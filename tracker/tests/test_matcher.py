@@ -131,16 +131,16 @@ class TestGapNumeric:
         assert g_pos == pytest.approx(g_neg)
 
     def test_mahalanobis_square_isotropic(self):
-        # len=wid=2,h=0 ×1.2 → 圆半轴1.2, 逆=diag(1/1.44); 椭圆边界上 maha=1 (weight 不参与位置项)
+        # len=wid=2,h=0 ×1.5 → 圆半轴1.5, 逆=diag(1/2.25); 椭圆边界上 maha=1 (weight 不参与位置项)
         m = mk_matcher(gap_type=2, gap_weight=[9.9, 9.9, 1.0])
-        g = m._gap(mk_trk(x=0, y=0, doppler=0, length=2, width=2), mk_obj(x=1.2, y=0, doppler=0))
+        g = m._gap(mk_trk(x=0, y=0, doppler=0, length=2, width=2), mk_obj(x=1.5, y=0, doppler=0))
         assert g == pytest.approx(1.0)
 
     def test_mahalanobis_axis_scaled(self):
-        # len=4,wid=2,h=0 ×1.2 → 半轴 (2.4, 1.2); 沿轴边界点 maha=1
+        # len=4,wid=2,h=0 ×1.5 → 半轴 (3.0, 1.5); 沿轴边界点 maha=1
         m = mk_matcher(gap_type=2, gap_weight=[1.0, 1.0, 0.0])
-        gx = m._gap(mk_trk(x=0, y=0, doppler=0, length=4, width=2), mk_obj(x=2.4, y=0, doppler=0))
-        gy = m._gap(mk_trk(x=0, y=0, doppler=0, length=4, width=2), mk_obj(x=0, y=1.2, doppler=0))
+        gx = m._gap(mk_trk(x=0, y=0, doppler=0, length=4, width=2), mk_obj(x=3.0, y=0, doppler=0))
+        gy = m._gap(mk_trk(x=0, y=0, doppler=0, length=4, width=2), mk_obj(x=0, y=1.5, doppler=0))
         assert gx == pytest.approx(1.0) and gy == pytest.approx(1.0)
 
     def test_mahalanobis_weight_ignored_in_pos(self):
@@ -152,15 +152,15 @@ class TestGapNumeric:
         assert m1._gap(base, obj) == pytest.approx(m2._gap(base, obj))
 
     def test_mahalanobis_heading_90_swaps_axes(self):
-        # h=90: 长轴(原x,半轴2.4)转到 y, 短轴(原y,半轴1.2)转到 x → 椭圆边界 maha=1
+        # h=90: 长轴(原x,半轴3.0)转到 y, 短轴(原y,半轴1.5)转到 x → 椭圆边界 maha=1
         m = mk_matcher(gap_type=2, gap_weight=[1.0, 1.0, 0.0])
         trk = mk_trk(x=0, y=0, doppler=0, length=4, width=2, heading_deg=90)
-        assert m._gap(trk, mk_obj(x=1.2, y=0, doppler=0)) == pytest.approx(1.0)
-        assert m._gap(trk, mk_obj(x=0, y=2.4, doppler=0)) == pytest.approx(1.0)
+        assert m._gap(trk, mk_obj(x=1.5, y=0, doppler=0)) == pytest.approx(1.0)
+        assert m._gap(trk, mk_obj(x=0, y=3.0, doppler=0)) == pytest.approx(1.0)
 
     def test_mahalanobis_heading_offdiag_matches_reference(self):
         # h=45: 协方差非对角项非零 → 锁住旋转数学; 对照独立 numpy 实现 (R→R·Rᵀ→inv) 逐元素
-        def ref(length, width, heading_deg, scale=1.2):
+        def ref(length, width, heading_deg, scale=1.5):
             h = np.deg2rad(heading_deg)
             c, s = np.cos(h), np.sin(h)
             hx, hy = 0.5 * length * scale, 0.5 * width * scale
@@ -550,9 +550,9 @@ class TestGapDim:
         assert m1._gap(base, obj) == pytest.approx(m2._gap(base, obj))
 
     def test_dim2_drops_doppler_mahalanobis(self):
-        # 马氏 len=wid=2(圆半轴1.2), diff=(1.2,1.2) → pos=2; doppler 不加
+        # 马氏 len=wid=2(圆半轴1.5), diff=(1.5,1.5) → pos=2; doppler 不加
         m = mk_matcher(gap_type=2, gap_weight=[1.0, 1.0, 5.0], gap_dim=2)
-        g = m._gap(mk_trk(x=0, y=0, doppler=0, length=2, width=2), mk_obj(x=1.2, y=1.2, doppler=1))
+        g = m._gap(mk_trk(x=0, y=0, doppler=0, length=2, width=2), mk_obj(x=1.5, y=1.5, doppler=1))
         assert g == pytest.approx(2.0)
 
     def test_run_dim2_doppler_absent_in_cost(self):

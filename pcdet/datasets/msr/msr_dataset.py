@@ -32,7 +32,7 @@ _POINTS_SCALABLE = {'range_m', 'doppler_mps', 'ang_rad', 'elv_rad'}
 
 # type id → 语义类名(eval anno 用;与 visualize_msr.py 的 CLASS_LABEL 一致)。
 # kitti eval 的 clean_data 按语义名匹配,anno 必须写语义名而非 '1'/'2'/'4'/'5'。
-MSR_CLASS_LABEL = {'1': 'Car', '2': 'Pedestrian', '4': 'Cyclist', '5': 'Truck'}
+MSR_CLASS_LABEL = {'1': 'Car', '2': 'Pedestrian', '4': 'Cyclist', '5': 'Truck', '7': 'StaticObject'}
 
 
 class MsrDataset(DatasetTemplate):
@@ -84,6 +84,9 @@ class MsrDataset(DatasetTemplate):
 
         # 地面系速度补偿开关(默认 True);为 False 时 ego_speed/yaw_rate 一律传 0
         self.use_gnd_velocity = bool(self.dataset_cfg.get('USE_GND_VELOCITY', True))
+        # GT 速度列开关(默认 False): True 时 __getitem__ 拼 9 列 gt(7+vx,vy)进 prepare_data,
+        # 类过滤/label 追加按行对齐 → 模型侧 10 列;vel head 专用,旧 head 不受影响
+        self.use_gt_velocity = bool(self.dataset_cfg.get('USE_GT_VELOCITY', False))
 
         # 预加载 struct.json 路径 + 动态构造 dtype(运行时解析,schema 变更自动适配)
         self.points_json = self.root_path / 'POINTS' / 'struct.json'
@@ -204,15 +207,18 @@ class MsrDataset(DatasetTemplate):
         return feats
 
     def get_label(self, idx):
-        """读 LABELS/{idx}.bin + struct.json → (gt_boxes(N,7), gt_names(N))。
+        """读 LABELS/{idx}.bin + struct.json → (gt_boxes(N,7), gt_names(N), gt_vel(N,2))。
 
-        parse_label_boxes 内部已对几何量 ×0.01(cm→m)+ heading 转 rad。
+        parse_label_boxes 内部已对几何量 ×0.01(cm→m)+ heading 转 rad;
+        gt_vel 为车体系对地速度 vx,vy(m/s)。
         """
         label_file = self.root_split_path / 'LABELS' / ('%s.bin' % idx)
         assert label_file.exists(), 'LABELS file missing: %s' % label_file
         raw = np.fromfile(str(label_file), dtype=self._labels_dtype)
         if raw.shape[0] == 0:
-            return np.zeros((0, 7), dtype=np.float32), np.array([], dtype=np.str_)
+            return (np.zeros((0, 7), dtype=np.float32),
+                    np.array([], dtype=np.str_),
+                    np.zeros((0, 2), dtype=np.float32))
         return parse_label_boxes(raw, self._labels_names)
 
     # ---------- image / info pkl 生成 ----------
@@ -260,17 +266,19 @@ class MsrDataset(DatasetTemplate):
             info['param'] = {'ego_speed': param['ego_speed'], 'yaw_rate': param['yaw_rate']}
 
             if has_label:
-                gt_boxes, gt_names = self.get_label(sample_idx)
+                gt_boxes, gt_names, gt_vel = self.get_label(sample_idx)
                 annotations = {}
                 if gt_boxes.shape[0] == 0:
                     annotations['name'] = np.array([], dtype=np.str_)
                     annotations['gt_boxes_lidar'] = np.zeros((0, 7), dtype=np.float32)
+                    annotations['gt_velocities'] = np.zeros((0, 2), dtype=np.float32)
                     annotations['score'] = np.array([], dtype=np.float32)
                     info['annos'] = annotations
                     return info
 
                 annotations['name'] = gt_names
                 annotations['gt_boxes_lidar'] = gt_boxes  # 已是 lidar/雷达系 xyzwlh+heading(rad)
+                annotations['gt_velocities'] = gt_vel     # 车体系对地 vx,vy(m/s)
                 annotations['score'] = np.ones((gt_boxes.shape[0],), dtype=np.float32)
                 info['annos'] = annotations
 
@@ -471,6 +479,11 @@ class MsrDataset(DatasetTemplate):
             annos = info['annos']
             gt_names = annos['name']
             gt_boxes = annos['gt_boxes_lidar'] if gt_names.shape[0] > 0 else np.zeros((0, 7), dtype=np.float32)
+            # USE_GT_VELOCITY: 拼 vx,vy 成 9 列 (7+vel),prepare_data 类过滤+label 追加按行对齐 → 10 列
+            if self.use_gt_velocity and 'gt_velocities' in annos and gt_names.shape[0] > 0:
+                gt_boxes = np.concatenate([gt_boxes, annos['gt_velocities']], axis=1).astype(np.float32)
+            elif self.use_gt_velocity and gt_names.shape[0] == 0:
+                gt_boxes = np.zeros((0, 9), dtype=np.float32)
             input_dict.update({
                 'gt_names': gt_names,
                 'gt_boxes': gt_boxes,
@@ -481,7 +494,7 @@ class MsrDataset(DatasetTemplate):
         return data_dict
 
 
-def create_msr_infos(dataset_cfg, class_names, data_path, save_path, workers=4):
+def create_msr_infos(dataset_cfg, class_names, data_path, save_path, workers=4, test_has_label=True):
     """生成 MSR info pkls + gt_database(仿 create_vod_infos,精简无 calib/FOV)。
 
     流程:
@@ -489,8 +502,11 @@ def create_msr_infos(dataset_cfg, class_names, data_path, save_path, workers=4):
       set_split(train) → get_infos(has_label=True, count_inside_pts=True) → dump msr_infos_training.pkl
       set_split(val)   → 同上 → msr_infos_val.pkl
       合并 → msr_infos_trainval.pkl
-      set_split('testing') → get_infos(has_label=False) → msr_infos_testing.pkl
+      set_split('testing') → get_infos(has_label=test_has_label) → msr_infos_testing.pkl
       最后 set_split(train) + create_groundtruth_database(msr_dbinfos_training.pkl + gt_database/)
+
+    test_has_label: testing infos 是否挂 GT annos。MSRv2 testing 有标注, 缺 annos 会使
+    MsrDataset.evaluation 静默返回空 AP(2026-09-11 踩坑); 真盲测集显式传 False。
 
     MSR 无 training/testing 二级目录,split 名直接对应 IMAGESETS/{split}.txt。
     """
@@ -522,7 +538,7 @@ def create_msr_infos(dataset_cfg, class_names, data_path, save_path, workers=4):
     print('MSR info trainval file is saved to %s' % trainval_filename)
 
     dataset.set_split('testing')
-    msr_infos_test = dataset.get_infos(num_workers=workers, has_label=False, count_inside_pts=False)
+    msr_infos_test = dataset.get_infos(num_workers=workers, has_label=test_has_label, count_inside_pts=False)
     with open(test_filename, 'wb') as f:
         pickle.dump(msr_infos_test, f)
     print('MSR info test file is saved to %s' % test_filename)

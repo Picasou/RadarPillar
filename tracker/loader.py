@@ -42,7 +42,7 @@ class Loader:
     def getframes(self, path: str) -> FRAMEs:
         data_path = os.path.join(path, self.relpath)
         vds = self.getvds(path)
-        pts_list = self._load_PTs(data_path, vds)
+        pts_list, cnt_list = self._load_PTs(data_path, vds)
         gts_list = self._load_GTs(data_path)
         vdd_list = self._load_VDD(data_path)
         objs_list = self._load_objs(data_path, vds)
@@ -64,7 +64,8 @@ class Loader:
                 gts=gts_list[i] if i < len(gts_list) else GTs(num=0, Lst=[]),
                 pts=pts_list[i],
                 vdd=vdd_list[j] if 0 <= j < len(vdd_list) else VDD(speed_ms=0.0, yaw_rate=0.0, gear=0),
-                objs=objs_list[i] if i < len(objs_list) else Objs()
+                objs=objs_list[i] if i < len(objs_list) else Objs(),
+                frame_cnt=cnt_list[i] if i < len(cnt_list) else 0
             )
             frames.append(frame)
         return FRAMEs(num=len(frames), Lst=frames)
@@ -86,17 +87,20 @@ class Loader:
 
     # ---- 内部方法 ----
 
-    def _load_PTs(self, path: str, vds: VDS) -> list[PTs]:
+    def _load_PTs(self, path: str, vds: VDS) -> tuple[list[PTs], list[int]]:
+        """
+        点云加载: (逐帧 PTs, 源 0100 头绝对帧号) 双列输出
+        """
         file_0100 = os.path.join(path, '0100.00000.bin')
         file_0101 = os.path.join(path, '0101.00000.bin')
         if not os.path.exists(file_0100) or not os.path.exists(file_0101):
-            return []
+            return [], []
 
         det_head_list = struct_read(file_0100, Raw_DetHead)
         det_list = struct_read(file_0101, Raw_Det)
 
         z_pos = vds.z_pos_m
-        pts_list = []
+        pts_list, cnt_list = [], []
         offset, limit = 0, len(det_list)
         for head in det_head_list:
             num = head.det_num
@@ -131,8 +135,9 @@ class Loader:
                 )
                 pts.append(pt)
             pts_list.append(PTs(num=len(pts), Lst=pts))
+            cnt_list.append(head.frame_cnt)
             offset += head.det_num
-        return pts_list
+        return pts_list, cnt_list
 
     def _load_objs(self, path: str, vds: VDS) -> list[Objs]:
         file_0200 = os.path.join(path, '0200.00000.bin')

@@ -28,10 +28,10 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # repo 根,供 import pcdet
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'tools' / 'scripts' / 'data'))  # 供 import check_msr
 
-CLASS_LABEL = {'1': 'Car', '2': 'Pedestrian', '4': 'Cyclist', '5': 'Truck'}
-# 类色避开点云 doppler diverging(蓝↔灰↔红)的色域: 取黄/品红/草绿/青绿,
+CLASS_LABEL = {'1': 'Car', '2': 'Pedestrian', '4': 'Cyclist', '5': 'Truck', '7': 'StaticObject'}
+# 类色避开点云 doppler diverging(蓝↔灰↔红)的色域: 取黄/品红/草绿/青绿/深紫,
 # 框与点云色相分离, 不再和蓝点/红点混淆
-CLASS_COLOR = {'1': '#f1c40f', '2': '#d63ee0', '4': '#7cb342', '5': '#00b3a4'}
+CLASS_COLOR = {'1': '#f1c40f', '2': '#d63ee0', '4': '#7cb342', '5': '#00b3a4', '7': '#8e44ad'}
 INK, INK2, MUTED, GRID = '#0b0b0b', '#52514e', '#898781', '#e1e0d9'
 DIV_BLUE, DIV_GRAY, DIV_RED = '#2a78d6', '#f0efec', '#e34948'  # diverging 蓝↔灰↔红
 
@@ -233,6 +233,10 @@ def main():
             from easydict import EasyDict
             from pcdet.config import cfg_from_yaml_file
             mcfg = cfg_from_yaml_file(Path(args.cfg_file), EasyDict())
+            if split != 'training' and split not in set(mcfg.DATA_CONFIG.DATA_SPLIT.values()):
+                # cfg 感知跳过: 'both' 硬编码 training+val, 按数据集实际定义的 split 值跳过而非崩
+                print('=== skip split=%s (cfg DATA_SPLIT 未定义) ===' % split)
+                continue
             mcfg.DATA_CONFIG.DATA_SPLIT.test = split
             if split == 'training':
                 mcfg.DATA_CONFIG.INFO_PATH.test = list(mcfg.DATA_CONFIG.INFO_PATH.train)

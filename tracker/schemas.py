@@ -251,6 +251,7 @@ class FRAME:
     vdd: VDD
     objs: Objs
     proc: FrameProc = field(default_factory=FrameProc)
+    frame_cnt: int = 0   # 源 0100 头绝对帧号, 落盘透传 (对齐源 rt 流约定)
 
 
 @dataclass

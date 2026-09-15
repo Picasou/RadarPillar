@@ -6,7 +6,7 @@ from .schemas import Cfg, Trk, Obj, Matches
 
 _EPS = 1e-6
 _UNMATCHED = -1
-_MAHA_SCALE = 1.2                    # 马氏椭圆长宽放大系数 (对齐 C maha_covariance 输入)
+_MAHA_SCALE = 1.5                    # 马氏椭圆长宽放大系数 (对齐 C maha_covariance 输入)
 
 
 class Matcher:

@@ -91,6 +91,7 @@ def test_parse_label_cm_to_m():
     names = ['id', 'x_m', 'y_m', 'z_m', 'vx_mps', 'vy_mps', 'heading_deg',
              'width_m', 'length_m', 'height_m', 'type', 'type_confi',
              'is_ghost', 'is_unpassable', 'is_attention', 'point_count', 'point_quality']
-    boxes, names_out = parse_label_boxes(raw, names)
+    boxes, names_out, vel_out = parse_label_boxes(raw, names)
     assert abs(boxes[0, 0] - 8.68) < 1e-3  # 868cm → 8.68m
     assert names_out[0] == '1'
+    assert vel_out.shape == (len(raw), 2)  # vx,vy ×0.01 cm/s→m/s

@@ -23,7 +23,8 @@ def main():
     args = parser.parse_args()
 
     # class_names 硬编码:dataset yaml 无此 key;类别名即 LABELS type 字段的 str() 值
-    class_names = ['1', '2', '4', '5']
+    # '7'=静态障碍物(锥桶/纸箱);infos 全量写入不受此限,此表仅影响 gt_database 采样库类集
+    class_names = ['1', '2', '4', '5', '7']
 
     # 加载 dataset cfg(仓库规范:直接用模块级 cfg,cfg_from_yaml_file 就地修改)
     cfg_from_yaml_file(args.cfg_file, cfg)

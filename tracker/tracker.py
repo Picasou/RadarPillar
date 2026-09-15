@@ -105,9 +105,9 @@ class Tracker:
                 elif self.eval_mode == 2 and has_gt_seq:
                     seq_history.append((frame.gts, [evaluator.snap_trk(t) for t in live]))
                 if self.do_save:
-                    trk_rows.append((i, [copy.deepcopy(t) for t in live]))
+                    trk_rows.append((frame.frame_cnt, [copy.deepcopy(t) for t in live]))
             elif self.do_save and self.mode == 1:
-                trk_rows.append((i, [copy.deepcopy(t) for t in objs]))
+                trk_rows.append((frame.frame_cnt, [copy.deepcopy(t) for t in objs]))
 
         if self.do_save and trk_rows:
             self.write(path, trk_rows)
@@ -160,16 +160,17 @@ class Tracker:
         rec_file = out_dir / ('0201.%s.bin' % suffix)
         head_file = out_dir / ('0200.%s.bin' % suffix)
         # save=1 恒写: 另存文件同名直接覆盖, 旧结果保留靠 suffix/dirs, 不靠跳过
+        # frame_cnt 透传源 0100 头绝对帧号 (对齐源 rt 流约定, 供下游按帧号对齐)
         heads, records = [], []
         fc_warned = False
-        for frame_i, items in trk_rows:
-            if frame_i > 0xFFFF:    # Raw_TrkHead.frame_cnt 契约 uint16, 超限钳位防静默回绕
+        for frame_cnt, items in trk_rows:
+            if frame_cnt > 0xFFFF:    # Raw_TrkHead.frame_cnt 契约 uint16, 超限钳位防静默回绕
                 if not fc_warned:
                     print('[tracker] warning: frame_cnt 超 uint16 上限 65535, 钳位落盘')
                     fc_warned = True
-                frame_i = 0xFFFF
+                frame_cnt = 0xFFFF
             h = Raw_TrkHead()
-            h.version, h.frame_cnt, h.trk_num, h.reserved = 1, frame_i, len(items), 0
+            h.version, h.frame_cnt, h.trk_num, h.reserved = 1, frame_cnt, len(items), 0
             heads.append(h)
             for t in items:
                 r = Raw_Trk()

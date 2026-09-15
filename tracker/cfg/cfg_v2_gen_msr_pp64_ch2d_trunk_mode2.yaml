@@ -1,0 +1,202 @@
+# 开关约定: 1 = on / 0 = off
+
+# ==================================================
+# -------------------- 运行配置 --------------------
+# ==================================================
+RUN:
+# mode: 0=display；1=just_model；2=full
+  mode: 2
+# save: 0=不保存  1=保存
+  save: 1
+  # overlap: 0=另存(mode=1→00001, mode=2→00002, 各自已存在跳过)  1=覆盖原始
+  overlap: 1
+# align : 雷达滞后实际实际的帧数
+  delay: 1
+# 点云叠加帧数 (1=不叠加)
+  accum_frames: 1
+# static : 没有就默认，有了就降级
+  vds:
+    wheelbase_m: 4.5
+    x_pos_m: 0.0
+    y_pos_m: 0.0
+    z_pos_m: 0.0
+    rotation_rad: 0.0
+    cycle_s: 0.1
+    oritation: 0
+
+# ==================================================
+# -------------------- 数据配置 --------------------
+# ==================================================
+DATA:
+  paths:
+    - /mnt/d/DataSet/.generalization/v2/msr_pp64_ch2d_trunk/mode2/自车前进_轿车_静止_013_20260512_140413_642
+    - /mnt/d/DataSet/.generalization/v2/msr_pp64_ch2d_trunk/mode2/自车跟车_轿车_急刹_008_20260512_135912_645
+    - /mnt/d/DataSet/.generalization/v2/msr_pp64_ch2d_trunk/mode2/自车静止_二轮车_横穿_006_20260512_154823_810
+    - /mnt/d/DataSet/.generalization/v2/msr_pp64_ch2d_trunk/mode2/自车静止_二轮车_运动_006_20260401_144428_465
+    - /mnt/d/DataSet/.generalization/v2/msr_pp64_ch2d_trunk/mode2/自车静止_二轮车_运动_013_20260401_145538_765
+    - /mnt/d/DataSet/.generalization/v2/msr_pp64_ch2d_trunk/mode2/自车静止_多目标_横穿_003_20260413_170446_353
+    - /mnt/d/DataSet/.generalization/v2/msr_pp64_ch2d_trunk/mode2/自车静止_行人_横穿_017_20260511_162739_157
+    - /mnt/d/DataSet/.generalization/v2/msr_pp64_ch2d_trunk/mode2/自车静止_行人_运动_005_20260414_133849_132
+    - /mnt/d/DataSet/.generalization/v2/msr_pp64_ch2d_trunk/mode2/自车静止_轿车_掉头_004_20260508_174214_210
+    - /mnt/d/DataSet/.generalization/v2/msr_pp64_ch2d_trunk/mode2/自车静止_轿车_横穿_005_20260512_143035_036
+    - /mnt/d/DataSet/.generalization/v2/msr_pp64_ch2d_trunk/mode2/自车静止_轿车_运动_013_20260511_155218_294
+
+# ==================================================
+# -------------------- 模型配置 --------------------
+# ==================================================
+MODEL:
+  cfg: /home/admin/projects/RadarPillar/output/train_log/msr/202609102341_rpillar_msr_pp64_ch2d_trunk_msr_pp64_ch2d_trunk/resbag/cfg.yaml
+  ckpt: /home/admin/projects/RadarPillar/output/train_log/msr/202609102341_rpillar_msr_pp64_ch2d_trunk_msr_pp64_ch2d_trunk/resbag/best.pth
+  score_thresh: 0.1
+# device: auto | cuda | cpu (默认 auto: 有 GPU 走 cuda, 无 GPU 自动落 cpu)
+  device: auto
+
+# ==================================================
+# -------------------- 滤波配置 --------------------
+# ==================================================
+FILTER:
+  # type: 1=α-β  2=KF  3=EKF  4=IMM
+  type: 2
+  para:
+    para_abf:
+      alpha: 0.85
+      beta: 0.20
+    para_kf:
+      # dim: 量测维 2=仅(x/y)  4=(x/y/vx/vy); 状态恒 4 维 [x,y,vx,vy]
+      dim: 4
+      # q_acc: 过程噪声加速度标准差 (m/s²), CV 离散白噪声模型按 dt 展开为 Q
+      q_acc: 5.0
+      # R: 量测噪声协方差矩阵 (dim×dim; dim=2 时取左上 2×2)
+      r: [[0.5, 0.0, 0.0, 0.0],
+          [0.0, 0.5, 0.0, 0.0],
+          [0.0, 0.0, 0.5, 0.0],
+          [0.0, 0.0, 0.0, 0.5]]
+    para_ekf:
+      # dim: 量测维 2=仅(x/y)  4=(x/y/vx/vy); 状态恒 4 维走 CTRV
+      dim: 4
+      # q_acc: 过程噪声加速度标准差 (m/s²), CV 离散白噪声模型按 dt 展开为 Q
+      q_acc: 5.0
+      # R: 量测噪声协方差矩阵 (dim×dim; dim=2 时取左上 2×2)
+      r: [[0.5, 0.0, 0.0, 0.0],
+          [0.0, 0.5, 0.0, 0.0],
+          [0.0, 0.0, 0.5, 0.0],
+          [0.0, 0.0, 0.0, 0.5]]
+    para_imm:
+      # dim: 量测维 2=仅(x/y)  4=(x/y/vx/vy); 状态恒 4 维 (所有子模型共享)
+      dim: 4
+      # models: 子模型列表, type: 1=α-β (r 标量, 似然按量测维 len(z) 各向同性)  2=KF (q 4×4, r 按量测维)
+      # 设计: α-β (stiff, 位置跟踪, 速度由位置导出→转弯滞后) + KF-CV (速度量测驱动→转弯自适应);
+      #       二者概率随段迁移 (直行→α-β, 转弯→KF) 即 IMM 自适应现象; 似然尺度对齐 (α-β r 与 KF R 同量级)
+      models:
+        - type: 1
+          alpha: 0.85
+          beta: 0.20
+          r: 1.0
+        - type: 2
+          # q_acc: 过程噪声加速度标准差 (m/s²), CV 离散白噪声模型按 dt 展开为 Q
+          q_acc: 5.0
+          # R: 量测噪声协方差矩阵 (4×4) - 与 α-β r=1.0 同尺度
+          r: [[1.0, 0.0, 0.0, 0.0],
+              [0.0, 1.0, 0.0, 0.0],
+              [0.0, 0.0, 1.0, 0.0],
+              [0.0, 0.0, 0.0, 1.0]]
+      # markov: 模型转移概率矩阵 (M×M), markov[i][j] = 模型 i → j 的转移概率
+      markov: [[0.95, 0.05],
+               [0.05, 0.95]]
+
+# ==================================================
+# -------------------- 关联配置 --------------------
+# ==================================================
+MATCH:
+# 1=欧氏  2=马氏
+  gap_type: 2
+# 2=x/y  3=x/y/dpl
+  gap_dim: 2
+# weight
+  gap_weight: [1.0, 1.0, 1.0]
+  thresh: 3.0
+
+# ==================================================
+# -------------------- 可视化配置 --------------------
+# ==================================================
+VISUAL:
+# enable: 可视化使能
+  enable: 0
+# save: 落盘格式 1=GIF  2=PNG序列  3=MP4
+  save: [2, 3]
+# range: 固定坐标范围 [x_lo, x_hi, y_lo, y_hi]; 不配置则按序列点云外沿+3m
+  range: [0, 200, -20, 20]
+# test_val: 属于 test/val 划分的序列名列表(命中则整图加黑色边框警示防泄露)
+  test_val: []
+# cam_rotate: 相机画面旋转 0=不转(原始画面) 1=逆时针90° 2=180° 3=顺时针90°
+  cam_rotate: 0
+# show: 画面元素开关(tracks/objs 组合出 航迹|目标|都显示)
+  show:
+    points: 1
+    tracks: 1
+    objs: 1
+    gts: 1
+
+# ==================================================
+# -------------------- 指标显示配置 --------------------
+# ==================================================
+METRICS:
+# enable: 指标面板总开关(在线模式逐帧滚动指标行)
+  enable: 1
+# show: 各项指标显示开关
+  show:
+    tp: 1
+    fp: 1
+    fn: 1
+    ids: 1
+    frag: 1
+    mota: 1
+    motp: 1
+    mt: 1
+    ml: 1
+    amota: 1
+    amotp: 1
+    idf1: 1
+    deta: 1
+    assa: 1
+    hota: 1
+    loca: 1
+    vae: 1
+    vne: 1
+    vaie: 1
+    vir: 1
+    vse: 1
+    vde: 1
+
+# ==================================================
+# -------------------- 性能评估配置 --------------------
+# ==================================================
+EVALUATE:
+# type: 0=off  1=online(逐帧记账+滚动指标, 序列/数据集两级输出)  2=offline(批量评估+报告落盘)
+  type: 0
+  report: 1
+  template: default
+# match_dist: 评估配对距离门限 (m), 中心欧氏距离
+  match_dist: 2.0
+
+# ==================================================
+#-------------------- 航迹管理配置 -------------------
+# ==================================================
+MANAGER:
+  birth_heat: 3
+  death_heat: 3
+  # merge_dist: 重复航迹合并距离门限 (m), 中心距小于此值合并 (≤0 关闭)
+  merge_dist: 1.0
+  # birth_min_range: 近距建轨抑制 (m), 距 ego 小于此值的观测不建轨 (≤0 关闭)
+  birth_min_range: 2.0
+  prob_output: 80
+  dt: 0.1
+  history_horizon: 4.0
+  adapter:
+    smooth: 1
+    markov: 1
+    # type Markov: class_names 类别表(须与模型 CLASS_NAMES 对齐); p_stay 自环保持率(越大类型越稳); accuracy 量测精度(越大越信单帧, 越小越抗噪)
+    type_markov:
+      class_names: ["Car", "Pedestrian", "Cyclist", "Truck"]
+      p_stay: 0.95
+      accuracy: 0.7

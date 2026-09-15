@@ -32,8 +32,8 @@ from .schemas import FRAME, Trk, PTs
 
 # ---- 风格常量: 全部照抄 visualize_msr.py ----
 DEFAULT_CLASS_NAMES = ['Car', 'Pedestrian', 'Cyclist']
-CLASS_DISPLAY = {'1': 'Car', '2': 'Pedestrian', '4': 'Cyclist', '5': 'Truck'}   # MSR 类别号 → 显示名
-CLASS_COLORS = ['#f1c40f', '#d63ee0', '#7cb342', '#00b3a4']   # 类色避开 doppler 蓝红色域
+CLASS_DISPLAY = {'1': 'Car', '2': 'Pedestrian', '4': 'Cyclist', '5': 'Truck', '7': 'StaticObject'}   # MSR 类别号 → 显示名
+CLASS_COLORS = ['#f1c40f', '#d63ee0', '#7cb342', '#00b3a4', '#8e44ad']   # 类色避开 doppler 蓝红色域(序=检测 label-1)
 FALLBACK_COLOR = '#eda100'
 INK, INK2, MUTED, GRID = '#0b0b0b', '#52514e', '#898781', '#e1e0d9'
 DIV_BLUE, DIV_GRAY, DIV_RED = '#2a78d6', '#444444', '#e34948'   # 中间深灰, 不隐入白画布

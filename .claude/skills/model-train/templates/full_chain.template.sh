@@ -49,7 +49,7 @@ print(m.group(1) if m else '')
 PY
 )
 case "$DS_YAML" in
-    *msr_dataset.yaml*) DS=msr ;;
+    *msr_dataset.yaml*|*msrv2_dataset.yaml*) DS=msr ;;
     *nuscenes*)         DS=nuscenes ;;
     *)                  DS=vod ;;
 esac
@@ -114,14 +114,16 @@ fi
 echo "$BS_EFF" > "${OUTPUT_ROOT}/.bs_effective"
 echo "[__TAG__] train done, BS_EFF=$BS_EFF"
 
-# NaN/inf 守卫
+# NaN/inf 守卫: 隔离 ckpt 再中止 — auto-resume 按 mtime 回放最新(毒)权重, 不隔离则 retry 秒级再 nan
 if grep -aiE "loss=nan|loss=inf" "$LOG" | tail -5 | grep -qaiE "nan|inf"; then
-    echo "[__TAG__] FATAL: train log 含 nan/inf, 中止 (不落 marker, 触发 retry)"; exit 1
+    echo "[__TAG__] FATAL: train log 含 nan/inf, 隔离 ckpt 后中止 (retry 全新重训, 防 auto-resume 回放毒权重)"
+    [ -d "${OUTPUT_ROOT}/ckpt" ] && mv "${OUTPUT_ROOT}/ckpt" "${OUTPUT_ROOT}/ckpt_quarantine_$(date +%H%M%S)"
+    exit 1
 fi
 
 # === step 2: eval 末 N ckpt (MSR 亦有 evaluation, 全 DS 统一跑, 供 BEV pickbest) ===
-START_EPOCH=$(( EPOCHS - LAST_N ))
-for ep in $(seq $START_EPOCH $((EPOCHS - 1))); do
+START_EPOCH=$(( EPOCHS - LAST_N + 1 ))   # ckpt 1-indexed: 末代=checkpoint_epoch_${EPOCHS}
+for ep in $(seq $START_EPOCH $EPOCHS); do
     CKPT="${OUTPUT_ROOT}/ckpt/checkpoint_epoch_${ep}.pth"
     [ -f "$CKPT" ] || { echo "[__TAG__] skip ep${ep} (ckpt 不在)"; continue; }
     python -u tools/test.py \

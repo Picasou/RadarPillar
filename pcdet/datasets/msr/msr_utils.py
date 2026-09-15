@@ -138,10 +138,11 @@ def build_msr_features(points_raw, output_names, ego_speed=0.0, yaw_rate=0.0):
 
 
 def parse_label_boxes(label_raw, output_names):
-    """解 LABELS 结构体 → (gt_boxes, gt_names)。
+    """解 LABELS 结构体 → (gt_boxes, gt_names, gt_vel)。
 
     LABELS 几何量(json scale=1.0 不准,实测)一律强制 ×0.01:cm→m。
     heading 再 ×π/180 转弧度(raw×0.01 = 度)。
+    vx/vy 同 ×0.01(cm/s→m/s),口径为车体系对地速度(静止物实测≈0)。
 
     Args:
         label_raw    : np.ndarray(结构化 dtype)
@@ -150,6 +151,7 @@ def parse_label_boxes(label_raw, output_names):
     Returns:
         gt_boxes : np.ndarray shape=(N,7) [x,y,z,dx=l,dy=w,dz=h,heading(rad)] float32
         gt_names : np.ndarray shape=(N,) str(type)
+        gt_vel   : np.ndarray shape=(N,2) [vx,vy](m/s, 车体系对地) float32
     """
     def col(name):
         if name in output_names:
@@ -165,12 +167,15 @@ def parse_label_boxes(label_raw, output_names):
     l = col('length_m') * 0.01
     h = col('height_m') * 0.01
     heading = col('heading_deg') * 0.01 * np.pi / 180.0
+    vx = col('vx_mps') * 0.01
+    vy = col('vy_mps') * 0.01
 
     type_col = col('type').astype(np.int32)
     # gt_boxes 顺序: [x,y,z, dx=l, dy=w, dz=h, heading]
     gt_boxes = np.stack([x, y, z, l, w, h, heading], axis=1).astype(np.float32)
     gt_names = np.array([str(t) for t in type_col])
-    return gt_boxes, gt_names
+    gt_vel = np.stack([vx, vy], axis=1).astype(np.float32)
+    return gt_boxes, gt_names, gt_vel
 
 
 def boxes_lidar_to_pseudo_camera(boxes_lidar):

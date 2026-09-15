@@ -28,7 +28,7 @@ def get_thresholds(scores: np.ndarray, num_gt, num_sample_pts=41):
 
 
 def clean_data(gt_anno, dt_anno, current_class, difficulty, vod_eval=False):
-    CLASS_NAMES = ['car', 'pedestrian', 'cyclist', 'van', 'person_sitting', 'truck']
+    CLASS_NAMES = ['car', 'pedestrian', 'cyclist', 'van', 'person_sitting', 'truck', 'staticobject']
     MIN_HEIGHT = [40, 25, 25]
     MAX_OCCLUSION = [0, 1, 2]
     MAX_TRUNCATION = [0.15, 0.3, 0.5]
@@ -837,13 +837,13 @@ def get_vod_eval_result(gt_annos, dt_annos, current_classes, PR_detail_dict=None
 
 def get_msr_eval_result(gt_annos, dt_annos, current_classes, PR_detail_dict=None):
     # MSR(无图像/occlusion): 仿 vod_eval 全难度并列;anno name 用语义类名
-    # (Car/Pedestrian/Cyclist/Truck,由 MsrDataset 从 type id 映射)。
-    # 阈值: [bbox, bev, 3d] × [Car, Pedestrian, Cyclist, Truck],bbox 行无图像不适用,与 bev 同值占位。
-    #   bev: Car/Truck 0.5, Ped/Cyc 0.25 (VoD 雷达惯例); 3d: 全类 0.25。
+    # (Car/Pedestrian/Cyclist/Truck/StaticObject,由 MsrDataset 从 type id 映射)。
+    # 阈值: [bbox, bev, 3d] × [Car, Pedestrian, Cyclist, Truck, StaticObject],bbox 行无图像不适用,与 bev 同值占位。
+    #   bev: Car/Truck 0.5, Ped/Cyc/Static 0.25 (VoD 雷达小目标惯例); 3d: 全类 0.25。
     overlap_msr = np.array([
-        [0.5, 0.25, 0.25, 0.5],
-        [0.5, 0.25, 0.25, 0.5],
-        [0.25, 0.25, 0.25, 0.25],
+        [0.5, 0.25, 0.25, 0.5, 0.25],
+        [0.5, 0.25, 0.25, 0.5, 0.25],
+        [0.25, 0.25, 0.25, 0.25, 0.25],
     ])
     min_overlaps = overlap_msr[None, ...]
     class_to_name = {
@@ -851,10 +851,11 @@ def get_msr_eval_result(gt_annos, dt_annos, current_classes, PR_detail_dict=None
         1: 'Pedestrian',
         2: 'Cyclist',
         5: 'Truck',
+        6: 'StaticObject',
     }
-    # MSR type id 别名(MsrDataset CLASS_NAMES 传入 '1'/'2'/'4'/'5')
+    # MSR type id 别名(MsrDataset CLASS_NAMES 传入 '1'/'2'/'4'/'5'/'7')
     name_to_class = {v: n for n, v in class_to_name.items()}
-    name_to_class.update({'1': 0, '2': 1, '4': 2, '5': 5})
+    name_to_class.update({'1': 0, '2': 1, '4': 2, '5': 5, '7': 6})
     if not isinstance(current_classes, (list, tuple)):
         current_classes = [current_classes]
     current_classes_int = []
@@ -864,8 +865,8 @@ def get_msr_eval_result(gt_annos, dt_annos, current_classes, PR_detail_dict=None
         else:
             current_classes_int.append(curcls)
     current_classes = current_classes_int
-    # overlap 列按上面定义顺序 [Car,Ped,Cyc,Truck],current_classes 是 KITTI 类表索引(Truck=5),需映射列号
-    col_of = {0: 0, 1: 1, 2: 2, 5: 3}
+    # overlap 列按上面定义顺序 [Car,Ped,Cyc,Truck,Static],current_classes 是 KITTI 类表索引(Truck=5/Static=6),需映射列号
+    col_of = {0: 0, 1: 1, 2: 2, 5: 3, 6: 4}
     min_overlaps = min_overlaps[:, :, [col_of[c] for c in current_classes]]
 
     result = ''

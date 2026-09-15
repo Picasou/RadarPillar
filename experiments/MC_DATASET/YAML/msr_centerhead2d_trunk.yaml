@@ -11,7 +11,7 @@ CLASS_NAMES: ['1', '2', '4', '5']
 
 # ============================================================================================================================
 DATA_CONFIG:
-  _BASE_CONFIG_: tools/cfgs/dataset/msrv2_dataset.yaml
+  _BASE_CONFIG_: tools/cfgs/dataset/msr_dataset.yaml
   POINT_CLOUD_RANGE: [0, -20, -10, 200, 20, 10]
   DATA_PROCESSOR:
   - NAME: mask_points_and_boxes_outside_range

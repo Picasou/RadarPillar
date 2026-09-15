@@ -8,7 +8,7 @@ from .schemas import Cfg, Matches, Trk
 from .filter import Filter
 
 SMOOTH_TAU = 5.0            # 尺寸平滑时间常数 (s), 越大变化越慢
-HEADING_ALPHA = 0.2         # 航向向量 α-β: α 向量修正增益
+HEADING_ALPHA = 0.3         # 航向向量 α-β: α 向量修正增益 (预测:量测 = 0.7:0.3)
 HEADING_BETA = 0.05         # 航向向量 α-β: β 角速度通道增益 (heading 量测脏, 取小)
 HEADING_W_CLAMP_DPS = 90.0  # 航向角速度钳位 (deg/s), 防脏量测 windup
 ACC_CLAMP_MPS2 = 10.0       # α-β 加速度通道钳位 (m/s²), 防持续偏差下 windup

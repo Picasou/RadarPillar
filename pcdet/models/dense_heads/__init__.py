@@ -17,6 +17,7 @@ from .radarnext_center_head_trunk import RadarNeXtCenterHeadTrunk
 from .radarnext_center_head_2d_narrow import RadarNeXtCenterHead2DNarrow
 from .radarnext_center_head_2d_merged import RadarNeXtCenterHead2DMerged
 from .radarnext_center_head_2d_trunk import RadarNeXtCenterHead2DTrunk
+from .radarnext_center_head_2d_trunk_vel import RadarNeXtCenterHead2DTrunkVel
 from .radarpillar_anchor_head_single import RadarPillarAnchorHeadSingle
 from .radarpillar_center_head import RadarPillarCenterHead
 
@@ -45,6 +46,7 @@ __all__ = {
     'RadarNeXtCenterHead2DNarrow': RadarNeXtCenterHead2DNarrow,
     'RadarNeXtCenterHead2DMerged': RadarNeXtCenterHead2DMerged,
     'RadarNeXtCenterHead2DTrunk': RadarNeXtCenterHead2DTrunk,
+    'RadarNeXtCenterHead2DTrunkVel': RadarNeXtCenterHead2DTrunkVel,
     'RadarPillarAnchorHeadSingle': RadarPillarAnchorHeadSingle,
     'RadarPillarCenterHead': RadarPillarCenterHead,
     # 移植（第一批）
