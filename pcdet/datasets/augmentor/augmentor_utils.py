@@ -3,15 +3,17 @@ import numpy as np
 from ...utils import common_utils
 
 
-def random_flip_along_x(gt_boxes, points):
+def random_flip_along_x(gt_boxes, points, neg_point_cols=()):
     """
+    沿x镜像(y→-y): 框y/heading/vy取反, 点y取反; neg_point_cols 额外取反点速度列(如 dop_y_gnd)。
+
     Args:
-        gt_boxes: (N, 7 + C), [x, y, z, dx, dy, dz, heading, [vx], [vy]]
-        points: (M, 3 + C)
+        gt_boxes : (N, 7 + C), [x, y, z, dx, dy, dz, heading, [vx], [vy]]
+        points   : (M, 3 + C)
+        neg_point_cols: 该镜像下需取反的点列索引 (笛卡尔y向速度列, 数据集布局各异故显式传入)
     Returns:
-    Note: Point velocity handling is gated by gt_boxes having velocity columns (>7).
-          For radar data (gt_boxes=7 cols, points=[x,y,z,rcs,v_r,v_r_comp,time]),
-          indices 5-6 are NOT Cartesian velocity, so velocity flip must be skipped.
+    Note: 旧守卫分支(gt>7列时点col6取反)为历史7列雷达布局保留, 6列 MSR 点云不触发;
+          MSR 镜像一致性靠 neg_point_cols (vel 训练增强启用前提)。
     """
     enable = np.random.choice([False, True], replace=False, p=[0.5, 0.5])
     if enable:
@@ -24,18 +26,22 @@ def random_flip_along_x(gt_boxes, points):
             if points.shape[1] >= 7:
                 points[:, 6] = -points[:, 6]
 
+        for c in neg_point_cols:
+            points[:, c] = -points[:, c]
+
     return gt_boxes, points
 
 
-def random_flip_along_y(gt_boxes, points):
+def random_flip_along_y(gt_boxes, points, neg_point_cols=()):
     """
+    沿y镜像(x→-x): 框x/heading/vx处理, 点x取反; neg_point_cols 额外取反点速度列(如 dop_x_gnd)。
+
     Args:
-        gt_boxes: (N, 7 + C), [x, y, z, dx, dy, dz, heading, [vx], [vy]]
-        points: (M, 3 + C)
+        gt_boxes : (N, 7 + C), [x, y, z, dx, dy, dz, heading, [vx], [vy]]
+        points   : (M, 3 + C)
+        neg_point_cols: 该镜像下需取反的点列索引 (笛卡尔x向速度列)
     Returns:
-    Note: Point velocity handling is gated by gt_boxes having velocity columns (>7).
-          For radar data (gt_boxes=7 cols, points=[x,y,z,rcs,v_r,v_r_comp,time]),
-          indices 5-6 are NOT Cartesian velocity, so velocity flip must be skipped.
+    Note: 同 random_flip_along_x, 历史守卫分支保留, 布局差异靠 neg_point_cols 显式声明。
     """
     enable = np.random.choice([False, True], replace=False, p=[0.5, 0.5])
     if enable:
@@ -47,6 +53,9 @@ def random_flip_along_y(gt_boxes, points):
             gt_boxes[:, 7] = -gt_boxes[:, 7]
             if points.shape[1] >= 7:
                 points[:, 5] = -points[:, 5]
+
+        for c in neg_point_cols:
+            points[:, c] = -points[:, c]
 
     return gt_boxes, points
 

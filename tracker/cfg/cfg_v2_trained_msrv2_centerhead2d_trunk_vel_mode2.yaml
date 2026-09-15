@@ -53,8 +53,8 @@ DATA:
 # -------------------- 模型配置 --------------------
 # ==================================================
 MODEL:
-  cfg: /home/admin/projects/RadarPillar/output/train_log/msr/202609151138_rpillar_msrv2_centerhead2d_trunk_vel_msrv2_centerhead2d_trunk_vel/resbag/cfg.yaml
-  ckpt: /home/admin/projects/RadarPillar/output/train_log/msr/202609151138_rpillar_msrv2_centerhead2d_trunk_vel_msrv2_centerhead2d_trunk_vel/resbag/best.pth
+  cfg: /home/admin/projects/RadarPillar/output/train_log/msr/202609151736_rpillar_msrv2_centerhead2d_trunk_vel_msrv2_centerhead2d_trunk_vel/resbag/cfg.yaml
+  ckpt: /home/admin/projects/RadarPillar/output/train_log/msr/202609151736_rpillar_msrv2_centerhead2d_trunk_vel_msrv2_centerhead2d_trunk_vel/resbag/best.pth
   score_thresh: 0.1
 # device: auto | cuda | cpu (默认 auto: 有 GPU 走 cuda, 无 GPU 自动落 cpu)
   device: auto

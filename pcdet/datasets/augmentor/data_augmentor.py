@@ -46,8 +46,10 @@ class DataAugmentor(object):
         gt_boxes, points = data_dict['gt_boxes'], data_dict['points']
         for cur_axis in config['ALONG_AXIS_LIST']:
             assert cur_axis in ['x', 'y']
+            # NEG_POINT_COLS(可选): {axis: [需取反的点列]} — 镜像下点级笛卡尔速度列同步取反
+            neg_cols = config.get('NEG_POINT_COLS', {}).get(cur_axis, [])
             gt_boxes, points = getattr(augmentor_utils, 'random_flip_along_%s' % cur_axis)(
-                gt_boxes, points
+                gt_boxes, points, neg_point_cols=neg_cols
             )
 
         data_dict['gt_boxes'] = gt_boxes
