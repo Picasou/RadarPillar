@@ -12,7 +12,7 @@ Xilinx Zynq UltraScale+ MPSoC **ZU3EG**：
 
 ## 2. 待部署模型（msr_centerhead3d_trunk）
 
-- 参数量 **0.27M**，计算量 **5.49 GFLOPs**（计数器口径，≈2.75 GMACs；按 200×80 BEV + [3,5,5]×32ch 主干手算 1.2~1.5 GMACs 同量级）
+- 参数量 **0.27M**，计算量 **5.49 GFLOPs**（**勘误 2026-09-15**：此为 thop bs=4 口径，单帧 conv 段实为 ≈1.37 GFLOPs / ≈0.69 GMACs，见 [部署链路环境审计_20260915.md](部署链路环境审计_20260915.md)）
 - 结构：PillarVFE(32) → PillarAttention(32) → PointPillarScatter → BaseBEVBackbone（3 stage×32ch）→ RadarNeXtCenterHeadTrunk
 - 输入：range [0,-20,-10, 200,20,10]，voxel 1.0×0.5（BEV 200×80）
 - FP32 基线：mAP 88.13（R40 moderate）——**INT8 后需重测**
@@ -30,20 +30,20 @@ Xilinx Zynq UltraScale+ MPSoC **ZU3EG**：
 - **APU 两核软跑**：**排除**。~0.9~1.4 FPS（§5），比 10~20 Hz 需求差一个数量级
 - **DPU B1600**：需 ~60 BRAM > 剩 32 → **本板不可行**
 - **DPU B800**：需 ~30 BRAM → 勉强，时序收敛风险高，功能 A 扩展可能冲突
-- **DPU B400**：需 ~20 BRAM → 可行，性能弱
+- **DPU B512**：需 ~20 BRAM → 可行，性能弱（**勘误 2026-09-15**：原记 B400，VART 目标库 DPUCZDX8G 档位无 B400，最低 B512）
 - **自定义 HLS**：可按需省 BRAM，开发难度大
 - *DPU 精确资源未在线核实，上板前以 PG338 综合结果为准；BRAM 判据差距大（60 vs 32），不影响结论*
 
 ## 5. 软跑性能量级（两核，供决策不供复用）
 
-两核 A53（无 SDOT，INT8 用 SMLAL，单核 ~4 MAC/cycle）→ 工程 2.4~3.8 GMACs/s → 2.75 GMACs/帧 → 单帧 0.7~1.1s → **0.9~1.4 FPS**。即便剪枝到 1 GMACs 也仅 ~3 FPS，够不到 10~20 Hz。**与既定 FPGA 方向一致，软跑不再作候选。**
+两核 A53（无 SDOT，INT8 用 SMLAL，单核 ~4 MAC/cycle）→ 工程 2.4~3.8 GMACs/s → 单帧 conv 段 ≈0.69 GMACs（**勘误 2026-09-15**：原记 2.75 GMACs/帧为 bs=4 口径）→ 单帧 ~0.2~0.3s → **3~5 FPS**，且未计 CPU 前段（pillar 化/VFE/attention）与 decode/NMS。仍够不到 10~20 Hz。**与既定 FPGA 方向一致，软跑不再作候选（结论不变，余量比原记载数倍）。**
 
 ## 6. 推荐路线
 
 **公共前置（第 0 步，PC 端，任何 FPGA 方案都绕不开）——导出与算子适配 spike**
 
 已知断点，都会卡死 DPU 编译链：
-1. PillarAttention：forward 内 `.item()`/逐 batch Python 循环/动态 `max_pillars`（须 static：batch=1 + padding 到 MAX_PILLARS=3096，mask 静态化）
+1. PillarAttention：forward 内 `.item()`/逐 batch Python 循环/动态 `max_pillars`（**勘误 2026-09-15**：勿静态 pad 到 3096——真实非空 pillar p99=533/max=627，pad 3096 使 MHA 计算量暴涨 ~60×；attention 留 CPU true-N 动态实现，见审计文档）
 2. PointPillarScatter：动态 advanced indexing 无标准 ONNX 对应 → 拆图（VFE+attn CPU C++ scatter）+ 后段，或 custom op
 3. 全整型算子覆盖：LayerNorm/GELU/MHA 的 DPU 支持（vai_c 编译 dry-run 出 CPU 回退层清单）
 
@@ -51,7 +51,7 @@ Xilinx Zynq UltraScale+ MPSoC **ZU3EG**：
 
 **主线分支（两核约束下）**：
 
-1. **留在 3EG**：功能 A BRAM 占用分析（112 的构成：FIFO 深度/小 RAM→LUTRAM/位宽/时分复用/双缓冲改单缓冲）→ 降到 <80 → 释放 ≥30 BRAM → **B400（稳）或 B800（性能）**。功能 A 优化是硬件组活，lead time 长，**前置分析立即并行启动**，勿等任何失败后再排
+1. **留在 3EG**：功能 A BRAM 占用分析（112 的构成：FIFO 深度/小 RAM→LUTRAM/位宽/时分复用/双缓冲改单缓冲）→ 降到 <80 → 释放 ≥30 BRAM → **B512（稳）或 B800（性能）**。功能 A 优化是硬件组活，lead time 长，**前置分析立即并行启动**，勿等任何失败后再排
 2. **换 5EV 板**：BRAM 瓶颈消除（剩 176，另有 64 URAM），**DPU B1600 从容可行**、免功能 A 优化 → 见 [ZU5EV_部署评估与方案.md](ZU5EV_部署评估与方案.md)。两板取舍 = 5EV 硬件成本 vs 3EG 功能 A 改造工作量+风险
 
 **判定标准（DPU 口径）**：
@@ -66,11 +66,11 @@ Xilinx Zynq UltraScale+ MPSoC **ZU3EG**：
 - **功能 A 改造回归**：BRAM 优化涉及功能 A 硬件时序/带宽，需功能 A 单独验证回归（45° 收益与风险共担）
 - **DDR/数据链路**：功能 A 持续占 PL DDR 带宽，功能 A→检测进程须零拷贝（UIO/dmabuf）
 - **散热 sustained**：DPU 满载后板温/降频，压测 10 min 记录 p99
-- **Vitis AI 栈版本**：DPU IP / VART / Petalinux 版本匹配是隐形工作量
+- **Vitis AI 栈版本**：DPU IP / VART / Petalinux 版本匹配是隐形工作量（**已定案 2026-09-15**：编译侧 VAI 5.0 + IP v4.1 冻结 + 板端 VART 同代，见 [部署链路环境审计_20260915.md](部署链路环境审计_20260915.md)）
 
 ## 8. 行动清单
 
 1. 第 0 步导出 spike（PC：attention 静态化 → ONNX → allclose → vai_c 编译 dry-run）
 2. **并行启动**功能 A BRAM 占用分析（决定留在 3EG 的可行性与 DPU 规格）
-3. 定分支：留在 3EG → 功能 A 优化后 B400/B800 板测；换 5EV → B1600 板测
+3. 定分支：留在 3EG → 功能 A 优化后 B512/B800 板测；换 5EV → B1600 板测
 4. 每轮记录：延迟分布 + 对应 mAP + 模型/引擎版本哈希（挂 resbag 机制）

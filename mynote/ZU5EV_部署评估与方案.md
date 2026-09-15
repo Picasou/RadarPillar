@@ -16,7 +16,7 @@ Xilinx Zynq UltraScale+ MPSoC **ZU5EV**（DS891 官方口径）：
 
 ## 2. 待部署模型
 
-同 3EG §2：msr_centerhead3d_trunk，0.27M 参数 / 5.49 GFLOPs / mAP 88.13（FP32）。
+同 3EG §2：msr_centerhead3d_trunk，0.27M 参数 / 5.49 GFLOPs（**勘误 2026-09-15**：thop bs=4 口径，单帧 conv 段 ≈1.37 GFLOPs，见 [部署链路环境审计_20260915.md](部署链路环境审计_20260915.md)）/ mAP 88.13（FP32）。
 
 ## 3. 资源现状（功能 A 占用后剩余）
 
@@ -49,14 +49,14 @@ Xilinx Zynq UltraScale+ MPSoC **ZU5EV**（DS891 官方口径）：
 ## 6. 风险与注意
 
 - **INT8 精度**：与 3EG 同风险——PTQ 掉点先 per-channel/混合精度，再 QAT；掉点阈值为硬门槛
-- **算子适配**：公共前置（attention 静态化 + 拆图 + allclose，见 3EG §6）先行；DPU 侧先 vai_c 编译 dry-run 出 CPU 回退层清单，MHA 类算子回退会打折
-- **Vitis AI 栈版本**：DPU IP / VART / Petalinux 版本匹配是隐形工作量，立项即冻结版本
+- **算子适配**：公共前置（拆图 + allclose，见 3EG §6；**勘误 2026-09-15**：attention 勿静态 pad 3096，留 CPU true-N）先行；DPU 侧先 vai_c 编译 dry-run 出 CPU 回退层清单，MHA 类算子回退会打折
+- **Vitis AI 栈版本**：DPU IP / VART / Petalinux 版本匹配是隐形工作量，立项即冻结版本（**已定案 2026-09-15**：编译侧 VAI 5.0 + IP v4.1 冻结 + 板端 VART 同代，见 [部署链路环境审计_20260915.md](部署链路环境审计_20260915.md)）
 - **DDR/数据链路**：功能 A→检测进程零拷贝（UIO/dmabuf），影响确定性
 - **散热 sustained**：DPU 满载压测 10 min 记录 p99
 
 ## 7. 行动清单
 
-1. 公共前置：PC 导出 spike（attention 静态化 → ONNX → allclose → vai_c dry-run）
+1. 公共前置：PC 导出 spike（拆图导出 → allclose → vai_c dry-run；attention 留 CPU true-N）
 2. Vitis AI 编译 B1600 → 板端端到端 benchmark（pre+infer+post 全计入）+ sustained 压测
 3. INT8 mAP 对拍（MSR eval 同口径 vs FP32 基线）
 4. B1600 不达标 → 评估 B2304（DSP 详核）或回 3EG 备选链
