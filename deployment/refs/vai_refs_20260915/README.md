@@ -1,6 +1,6 @@
 # Vitis AI 官方证据快照（2026-09-15）
 
-[部署链路环境审计_20260915.md](../部署链路环境审计_20260915.md) 联网核实时抓取的官方文档原文，防链接失效/改版。上游：https://github.com/Xilinx/Vitis-AI 与 https://xilinx.github.io/Vitis-AI/
+部署链路环境审计（2026-09-15，内容已并入 [DEPLOY_GUIDE.md](../../DEPLOY_GUIDE.md)）联网核实时抓取的官方文档原文，防链接失效/改版。上游：https://github.com/Xilinx/Vitis-AI 与 https://xilinx.github.io/Vitis-AI/
 
 - `version_compatibility.rst` / `docker_versions.rst`：版本兼容矩阵（VAI↔IP↔Vivado/PetaLinux↔kernel）与镜像 tag
 - `workflow-system-integration.rst`（3.5 版）/ `wsi_v5.rst`（5.0 版同文）：MPSoC 系统集成工作流（Vivado/Vitis 两流程、PetaLinux 组件、CMA、vart vivado recipe 坑）

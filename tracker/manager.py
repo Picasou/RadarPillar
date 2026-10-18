@@ -46,13 +46,15 @@ class TrackerManager:
 
     def _man_create_trks(self, objs: list, trks: list, cycle_s: float) -> None:
         """
-        航迹创建: 未关联观测 → 新航迹 (近距抑制 + 出生计 1 帧), 原地追加 trks; ID 池满告警
+        航迹创建: 未关联观测 → 新航迹 (近距抑制 + 近轨抑制 + 出生计 1 帧), 原地追加 trks; ID 池满告警
         """
         used = {trk.id for trk in trks}
         pool_full = 0
         for obj in objs:
             if self.birth_min_range > 0 and float(np.hypot(obj.x, obj.y)) < self.birth_min_range:
                 continue                          # 近距抑制: 近场杂波/自车回波不建轨
+            if self._near_existing_trk(obj, trks):
+                continue                          # 近轨抑制: 质心跳变观测压在已有轨身位内, 不建分叉轨
             trk = self._man_create_utils(obj, used, cycle_s)
             if trk is not None:
                 used.add(trk.id)
@@ -91,6 +93,14 @@ class TrackerManager:
         trk.det_score = float(getattr(obj, 'score', 0.0))   # 最近检测置信度 (AMOTA 扫描用)
         trk.history.push(obj.x, obj.y, 0.0, 0.0, obj.heading)   # 出生状态入史 (帧 0): 速度量测链差分起点
         return trk
+
+    def _near_existing_trk(self, obj, trks: list) -> bool:
+        """
+        近轨抑制判定: 观测与轨中心距 < 两者外接半径较小者 → 观测压在已有轨身位内不建新轨
+        """
+        r_obj = 0.5 * np.hypot(obj.length, obj.width)
+        return any(np.hypot(obj.x - t.x_m, obj.y - t.y_m)
+                   < min(r_obj, 0.5 * np.hypot(t.length_m, t.width_m)) for t in trks)
 
     def _man_delete_trks(self, trks: list) -> None:
         """

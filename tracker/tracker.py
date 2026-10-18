@@ -15,6 +15,7 @@ from . import updater
 from . import manager
 from . import evaluator
 from . import visualizer
+from .frame_logger import FrameLogger
 
 
 class Tracker:
@@ -50,6 +51,7 @@ class Tracker:
         self.updater   = updater.Updater(self.cfg)
         self.matcher   = matcher.Matcher(self.cfg)
         self.manager   = manager.TrackerManager(self.cfg)
+        self.flog      = FrameLogger(self.cfg, self.manager, self.loader.relpath)   # 逐帧回灌日志 (LOG.enable=1 且 mode=2)
         self.evaluator = evaluator.Evaluator(self.cfg, class_names=self.class_names)
         self.visualizer = visualizer.Visualizer(self.cfg, class_names=self.class_names)
         # 落盘 type 域映射: pcdet 1-based label → 源 0201 枚举 (数字类名即源枚举值; 名字类名无映射原样落)
@@ -94,6 +96,8 @@ class Tracker:
             self.visualizer.begin_seq(Path(path).name, path,
                                       is_test=Path(path).name in (self.cfg.VISUAL.test_val or []))
 
+        self.flog.begin_seq(path, len(frames.Lst))
+
         for i, frame in enumerate(frames.Lst):
 
             objs = self.tracker_step(frame, self.trks, vds, i)
@@ -114,6 +118,7 @@ class Tracker:
 
         if self.is_visualize:
             self.visualizer.on_seq_end()
+        self.flog.end_seq()
         if self.eval_mode == 1 and self.mode == 2 and has_gt_seq:
             self.evaluator.on_seq_end(path)
 
@@ -135,14 +140,24 @@ class Tracker:
             objs = self.detector.run(frame, frame.proc.points)
 
         if self.mode == 2:
+            # 逐帧日志快照①: predict 前 trk 存活集 (未经过 predict, 属性取值快照)
+            pre_snaps = self.flog.snap_pre(trks) if self.flog.enabled else None
             # 3. 预测
             self.updater.predict(trks, frame.vdd, vds.cycle_s)
             # 4. 关联
             matches = self.matcher.run(trks, objs)
+            # 逐帧日志快照②: matched 对 (trk=预测态时算 gap, updater 改状态前)
+            match_pairs = self.flog.snap_matches(matches, objs) if self.flog.enabled else None
+            pre_ids = {t.id for t in trks} if self.flog.enabled else None
             # 5. 更新
             self.updater.run(matches, vds.cycle_s)
             # 6. 管理
             self.manager.run(matches, trks, vds.cycle_s)
+            # 逐帧日志落盘: new/dead 由 manager 前后 id diff 归因
+            if self.flog.enabled:
+                self.flog.log_frame(i, pre_snaps, objs, match_pairs,
+                                    matches.unmatched_objs, matches.unmatched_trks,
+                                    pre_ids, trks)
 
         # 7. 可视化
         if self.is_visualize:

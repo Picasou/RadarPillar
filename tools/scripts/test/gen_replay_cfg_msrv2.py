@@ -11,6 +11,7 @@
 
 用法: python gen_replay_cfg_msrv2.py --base <先例yaml> --mode {1,2} --out <目标yaml>
            --model-cfg <resbag/cfg.yaml> --model-ckpt <resbag/best.pth> --seq-root <拷贝目录>
+           [--depth N  序列目录相对 seq-root 的层级(默认 1; 嵌套分组如 RoadTest/<seq> 传 2)]
 """
 import argparse
 import re
@@ -25,9 +26,14 @@ def main():
     ap.add_argument('--model-cfg', required=True)
     ap.add_argument('--model-ckpt', required=True)
     ap.add_argument('--seq-root', required=True)
+    ap.add_argument('--depth', type=int, default=1)
     args = ap.parse_args()
 
-    seqs = sorted(p for p in Path(args.seq_root).iterdir() if p.is_dir())
+    # depth=1 平铺(旧惯例); >1 嵌套分组(如 DATASETv2_SIL/RoadTest/<seq>)
+    if args.depth <= 1:
+        seqs = sorted(p for p in Path(args.seq_root).iterdir() if p.is_dir())
+    else:
+        seqs = sorted(p for p in Path(args.seq_root).glob('/'.join(['*'] * args.depth)) if p.is_dir())
     if not seqs:
         raise SystemExit(f'[gen_cfg] ERROR: {args.seq_root} 下无序列目录')
     paths_block = '\n'.join('    - %s' % s for s in seqs)

@@ -41,7 +41,7 @@ def plot_frame_compare(ds1, ds2, sid, split, out_dir, name1, name2,
     # 两数据集对象可能 cfg 不同但同帧 raw 数据一致;点云/GT 取 ds1
     pts = ds1.get_radar(sid)
     cols = {n: i for i, n in enumerate(ds1.radar_feature_order)}
-    boxes, names = ds1.get_label(sid)
+    boxes, names = ds1.get_label(sid)[:2]
 
     # ---- 布局: [相机 | GT | model1 | model2] ----
     img_file = ds1.root_split_path / 'IMAGES' / ('%s.png' % sid)

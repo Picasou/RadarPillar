@@ -44,6 +44,8 @@ class MsrDataset(DatasetTemplate):
             root_path=root_path, logger=logger,
         )
         self.split = self.dataset_cfg.DATA_SPLIT[self.mode]
+        # v3 起类别语义随数据版本变化(v2 '2'=Ped / v3 '2'=Cyclist),dataset yaml 用 CLASS_LABEL_MAP 覆写;缺省回落 v2 常量
+        self.msr_class_label = dict(self.dataset_cfg.get('CLASS_LABEL_MAP', None) or MSR_CLASS_LABEL)
         # MSR 无 training/testing 二级目录,数据直挂在 DATA_PATH 下
         self.root_split_path = self.root_path
 
@@ -398,7 +400,7 @@ class MsrDataset(DatasetTemplate):
                 return pred_dict
 
             location, dimensions, rotation_y = boxes_lidar_to_pseudo_camera(pred_boxes)
-            pred_dict['name'] = np.array([MSR_CLASS_LABEL[n] for n in class_names])[pred_labels - 1]
+            pred_dict['name'] = np.array([self.msr_class_label[n] for n in class_names])[pred_labels - 1]
             pred_dict['score'] = pred_scores
             pred_dict['boxes_lidar'] = pred_boxes
             pred_dict['location'] = location
@@ -420,7 +422,7 @@ class MsrDataset(DatasetTemplate):
 
     def evaluation(self, det_annos, class_names, **kwargs):
         """
-        全集聚合 det_annos vs GT annos → AP/mAP: 逐类 BEV/3D IoU 匹配,返回 (result_str, result_dict)
+        全集聚合 det_annos vs GT annos → AP/mAP + 工作点漏检/误检率: 逐类 BEV/3D IoU 匹配,返回 (result_str, result_dict)
 
         GT 侧从 msr_infos annos 的 gt_boxes_lidar 轴变换成 camera 格式,det 同变换,
         调 kitti_object_eval_python.get_msr_eval_result(阈值 Car/Truck BEV0.5·3D0.25, Ped/Cyc 0.25/0.25)。
@@ -435,7 +437,7 @@ class MsrDataset(DatasetTemplate):
         eval_gt_annos = []
         for info in self.msr_infos:
             gt_boxes = info['annos']['gt_boxes_lidar']
-            gt_names = np.array([MSR_CLASS_LABEL.get(n, n) for n in info['annos']['name']])
+            gt_names = np.array([self.msr_class_label.get(n, n) for n in info['annos']['name']])
             gt_annos = {
                 'name': gt_names,
                 'alpha': np.full(len(info['annos']['name']), -10.),
@@ -453,8 +455,12 @@ class MsrDataset(DatasetTemplate):
                 gt_annos['rotation_y'] = np.zeros(0)
             eval_gt_annos.append(gt_annos)
 
-        ap_result_str, ap_dict = kitti_eval.get_msr_eval_result(eval_gt_annos, eval_det_annos, class_names)
-        return ap_result_str, ap_dict
+        # class_names(cfg 数字id)与 GT/det anno name(上方已语义化)对齐后再传入, v3 '3'=Vehicle 由表尾 index7 承接
+        eval_class_names = [self.msr_class_label.get(n, n) for n in class_names]
+        ap_result_str, ap_dict = kitti_eval.get_msr_eval_result(eval_gt_annos, eval_det_annos, eval_class_names)
+        # 工作点漏检/误检率 (pooled, 与 AP 同 IoU 口径), 随 eval 一起带出
+        mf_result_str, mf_dict = kitti_eval.get_msr_miss_false_result(eval_gt_annos, eval_det_annos, eval_class_names)
+        return ap_result_str + mf_result_str, {**ap_dict, **mf_dict}
 
     def __len__(self):
         if self._merge_all_iters_to_one_epoch:

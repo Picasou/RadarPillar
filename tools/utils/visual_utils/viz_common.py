@@ -105,7 +105,8 @@ def draw_box_bev(ax, box, color, label=None, linestyle='-', score=None,
                  linewidth=2.0, zorder=4, facecolor='none', alpha=1.0, swap_xy=False):
     """BEV 单框绘制:Polygon 角点法 + 朝向短线(+可选类名/score 文字)。
 
-    box: (7,) [x,y,z,dx,dy,dz,heading];细实线空心用于 GT,粗虚线填充用于 pred。
+    box: (7,) [x,y,z,dx,dy,dz,heading];细实线空心用于 GT,粗实线填充用于 pred
+    (2026-09-29 弃用虚线: v3 小模板框在 10~40px 尺度上 dash 间隙碎裂成双影,隔离实验定案实线)。
     角点法直接算 4 角坐标,不依赖 Rectangle 旋转锚点语义,任意朝向精确居中。
     swap_xy=True: 画在 (u,v)=(y,x) 数据坐标(配合 ax.invert_xaxis 实现 x 朝上/y 朝左
     的车规 BEV 朝向),角点与朝向自动随坐标互换。
@@ -124,18 +125,25 @@ def draw_box_bev(ax, box, color, label=None, linestyle='-', score=None,
                         c - fwd * dx / 2 - left * dy / 2,
                         c - fwd * dx / 2 + left * dy / 2])
     tip = c + fwd * dx / 2
+    # 朝向小刺外端点: 前缘中点再向外伸 0.15*dx(在 swap 前的数据系计算, 随 tip 一起变换)
+    tip_out = c + fwd * dx * 0.65
     if swap_xy:
         corners, tip, c = corners[:, ::-1], tip[::-1], c[::-1]
+        tip_out = tip_out[::-1]
 
     if facecolor not in (None, 'none'):  # 填充层(半透明),边线层单独画保持实色
         ax.add_patch(Polygon(corners, closed=True, facecolor=facecolor,
                              edgecolor='none', alpha=alpha, zorder=zorder - 0.1))
     edge = Polygon(corners, closed=True, linewidth=linewidth, edgecolor=color,
                    facecolor='none', linestyle=linestyle, zorder=zorder)
-    edge.set_path_effects([pe.withStroke(linewidth=linewidth + 2, foreground='white')])
+    # 白色光晕只给空心细线(GT): 有填充时白晕会从内侧吃掉填充; 虚线加光晕会把间隙刷白碎裂
+    if linestyle == '-' and facecolor in (None, 'none'):
+        edge.set_path_effects([pe.withStroke(linewidth=linewidth + 2, foreground='white')])
     ax.add_patch(edge)
-    ax.plot([c[0], tip[0]], [c[1], tip[1]], color=color,
-            linewidth=linewidth, linestyle=linestyle, zorder=zorder)  # 朝向(车头)
+    # 朝向短线: 从前缘中点向外伸 0.15*dx 的小刺(不进框内腔)。原中心→前缘画法在小像素框上
+    # 会把内腔切成 U 形碎片(2026-09-29 MSRv3 小模板框实测), 外伸式任意尺寸都干净
+    ax.plot([tip[0], tip_out[0]], [tip[1], tip_out[1]], color=color,
+            linewidth=linewidth, linestyle='-', zorder=zorder)  # 朝向(车头)
     if label:
         text = '%s %.2f' % (label, score) if score is not None else label
         # 用 c(已随 swap_xy 互换的中心)而非原始 x/y,swap 模式下文字才落在框正上方

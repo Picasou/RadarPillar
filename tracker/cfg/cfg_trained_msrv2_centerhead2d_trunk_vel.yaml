@@ -192,3 +192,14 @@ MANAGER:
       class_names: ["Car", "Pedestrian", "Cyclist"]
       p_stay: 0.95
       accuracy: 0.7
+
+# ==================================================
+# -------------------- 逐帧日志 --------------------
+# ==================================================
+LOG:
+# enable: 0=off  1=逐帧日志落盘 (仅 mode=2)
+  enable: 0
+# level: full=全属性逐行  slim=每帧一行汇总
+  level: full
+# dir: 空=随数据目录 <序列>/frame_log_mode2.log; 非空=集中 <dir>/<时间戳_run>/
+  dir: ''

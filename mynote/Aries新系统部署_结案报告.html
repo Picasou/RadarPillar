@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aries 新系统部署 · 全案报告（2026-10-12 ~ 10-15）</title>
+<style>
+  :root { color-scheme: light;
+    --surface:#fcfcfb; --card:#ffffff; --line:#e5e4df;
+    --ink:#0b0b0b; --ink2:#52514e; --ink3:#8a887f;
+    --accent:#2a78d6; --good:#0ca30c; --good-bg:#eaf6ea;
+    --crit:#d03b3b; --crit-bg:#f9eaea; --warn:#b8860b; --warn-bg:#fdf5e3;
+    --mono:ui-monospace,'Cascadia Code',Consolas,monospace; }
+  @media (prefers-color-scheme: dark) { :root { color-scheme: dark;
+    --surface:#1a1a19; --card:#232322; --line:#3a3934;
+    --ink:#ffffff; --ink2:#c3c2b7; --ink3:#8a887f;
+    --accent:#3987e5; --good-bg:#1d2b1d; --crit-bg:#33201f; --warn-bg:#332c1a; } }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--surface); color:var(--ink);
+    font:15px/1.75 -apple-system,'Segoe UI','Microsoft YaHei',sans-serif;
+    padding:40px 20px; max-width:1080px; margin:0 auto; }
+  h1 { font-size:26px; margin-bottom:4px; } .sub { color:var(--ink2); margin-bottom:28px; }
+  h2 { font-size:19px; margin:44px 0 14px; padding-left:12px; border-left:4px solid var(--accent); }
+  h3 { font-size:15px; margin:18px 0 8px; color:var(--ink2); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px 20px; margin:12px 0; }
+  .grid { display:grid; gap:12px; }
+  .g4 { grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); }
+  .g2 { grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); }
+  .g3 { grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); }
+  .stat { text-align:center; padding:14px 8px; }
+  .stat b { display:block; font-size:30px; color:var(--accent); font-family:var(--mono); }
+  .stat span { color:var(--ink2); font-size:13px; }
+  code, .mono { font-family:var(--mono); font-size:13px; background:var(--surface);
+    border:1px solid var(--line); border-radius:4px; padding:1px 6px; word-break:break-all; }
+  pre { font-family:var(--mono); font-size:12.5px; background:var(--surface);
+    border:1px solid var(--line); border-radius:8px; padding:12px 14px; overflow-x:auto; line-height:1.6; }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th,td { border:1px solid var(--line); padding:6px 8px; text-align:center; }
+  th { background:var(--surface); color:var(--ink2); font-weight:600; }
+  td.rowh, th.rowh { text-align:left; font-weight:600; white-space:nowrap; }
+  .ok   { background:var(--good-bg); color:var(--good); font-weight:700; }
+  .dead { background:var(--crit-bg); color:var(--crit); font-weight:700; }
+  .part { background:var(--warn-bg); color:var(--ink2); }
+  .tag { display:inline-block; border-radius:5px; padding:0 8px; font-size:12.5px; font-weight:600; }
+  .flow { display:flex; flex-wrap:wrap; align-items:stretch; gap:0; }
+  .fnode { flex:1; min-width:110px; background:var(--card); border:1.5px solid var(--line);
+    border-radius:9px; padding:10px 8px; text-align:center; position:relative; }
+  .fnode b { display:block; font-size:14px; } .fnode span { font-size:11.5px; color:var(--ink2); display:block; }
+  .fnode.good { border-color:var(--good); } .fnode.good b { color:var(--good); }
+  .fnode.warn { border-color:var(--warn); }
+  .farrow { align-self:center; padding:0 7px; color:var(--ink3); font-size:18px; font-weight:700; }
+  .tl { border-left:3px solid var(--accent); margin-left:10px; padding-left:22px; }
+  .tl-item { position:relative; padding:6px 0 16px; }
+  .tl-item::before { content:''; position:absolute; left:-29px; top:14px; width:11px; height:11px;
+    border-radius:50%; background:var(--accent); border:2.5px solid var(--surface); }
+  .tl-item h4 { font-size:14.5px; } .tl-item p { color:var(--ink2); font-size:13.5px; }
+  .tl-item .t { font-family:var(--mono); color:var(--ink3); font-size:12px; }
+  .vs { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:8px 0; }
+  .vs>div { border-radius:8px; padding:10px 12px; font-size:13.5px; }
+  .vs .win { background:var(--good-bg); border:1px solid var(--good); }
+  .vs .lose { background:var(--crit-bg); border:1px solid var(--crit); }
+  ul { padding-left:22px; } li { margin:4px 0; }
+  .foot { margin-top:40px; color:var(--ink3); font-size:12.5px; border-top:1px solid var(--line); padding-top:14px; }
+</style>
+</head>
+<body>
+
+<h1>Aries 新系统部署 · 全案报告</h1>
+<div class="sub">2026-10-12 ~ 10-15 · Aries 雷达板（xczu5ev / LPDDR4 2GB / 密封）· PetaLinux 2024.1</div>
+
+<!-- ====== 概览 ====== -->
+<div class="grid g4">
+  <div class="card stat"><b>15+</b><span>次上电实验</span></div>
+  <div class="card stat"><b>2</b><span>次翻案</span></div>
+  <div class="card stat"><b>8</b><span>处构建链修复</span></div>
+  <div class="card stat"><b>1</b><span>个剩余阻塞（网卡物理路）</span></div>
+</div>
+
+<div class="card" style="border-left:4px solid var(--warn)">
+<b>当前状态：</b>软件侧已通（6.6 内核 + 三驱动 + SSH + 密码 + 自动配网全部就绪）。
+<b>剩余阻塞 = 网卡物理数据路</b>——MAC 走 EMIO 绕道（FPGA 桥接）而板上电线接在 MIO 直连。
+三条候选修复路径见 §5。
+</div>
+
+<!-- ====== 1 链路 ====== -->
+<h2>一、编译与制卡链路</h2>
+<div class="card">
+<div class="flow">
+  <div class="fnode good"><b>XSA</b><span>FPGA Vivado 导出<br>硬件描述+位流</span></div>
+  <div class="farrow">→</div>
+  <div class="fnode good"><b>build_petalinux.sh</b><span>五件镜像<br>BOOT.BIN / boot.scr<br>image.ub / rootfs / sdk</span></div>
+  <div class="farrow">→</div>
+  <div class="fnode good"><b>pack_store.py</b><span>store 部署包<br>+ md5 交接单</span></div>
+  <div class="farrow">→</div>
+  <div class="fnode good"><b>flash-sdcard</b><span>p1 FAT32 三件<br>p2 ext4 系统<br>+ 运行物</span></div>
+  <div class="farrow">→</div>
+  <div class="fnode good"><b>插卡上电</b><span>目标: SSH .106</span></div>
+</div>
+</div>
+
+<!-- ====== 2 实验矩阵 ====== -->
+<h2>二、关键实验矩阵</h2>
+<div class="card" style="overflow-x:auto">
+<table>
+<tr><th class="rowh">组件 \ 实验</th><th>E2/E4<br>基准</th><th>E8-E12<br>位流修复期</th><th>E17<br>破局</th><th>final1-7<br>网卡修复期</th><th>final8-10<br>PHY复位期</th><th>final11<br>待验证</th></tr>
+<tr><td class="rowh">BOOT.BIN</td><td class="ok">老系统</td><td>新(5EV位流✓)</td><td class="ok">老系统</td><td class="ok">老系统</td><td class="ok">老系统</td><td class="ok">老系统</td></tr>
+<tr><td class="rowh">内核</td><td><b>5.4</b></td><td>6.6</td><td><b>官方6.6</b></td><td>官方重组6.6</td><td>官方重组6.6</td><td>官方重组6.6</td></tr>
+<tr><td class="rowh">DTB</td><td>老系统</td><td>a1</td><td>官方</td><td>a1+mii/gmii+fl</td><td>a1 / 老系统</td><td><b>a1+mii无fl</b></td></tr>
+<tr><td class="rowh">打包</td><td>厂商FIT</td><td>官方</td><td class="ok"><b>mkimage</b></td><td class="ok">mkimage</td><td class="ok">mkimage</td><td class="ok">mkimage</td></tr>
+<tr><td class="rowh">PHY复位</td><td>—</td><td>—</td><td>—</td><td>—</td><td>GPIO 658/659</td><td>无fl让内核找</td></tr>
+<tr><td class="rowh">结果</td><td class="ok">✓ 活</td><td class="dead">✗ 死</td><td class="ok">✓ 到登录</td><td class="part">起系统/网不通</td><td class="part">起系统/网不通</td><td>待验</td></tr>
+</table>
+</div>
+
+<!-- ====== 3 推理链 ====== -->
+<h2>三、推理链</h2>
+<div class="card">
+<div class="tl">
+  <div class="tl-item"><span class="t">翻案 1</span><h4>E17：官方 mkimage FIT = 6.6 完整启动</h4><p>板/内核/XSA 全部无辜；15 连死真凶 = dtc 手拼 FIT（老 u-boot 把镜像头当设备树递给内核）。</p></div>
+  <div class="tl-item"><span class="t">翻案 2</span><h4>"板不兼容 6.6"结论作废</h4><p>final1/5/6/7 均跑起 6.6 到 systemd/登录；rootfs p2 实测 r/w 挂载成功。</p></div>
+  <div class="tl-item"><span class="t">串口</span><h4>控制台与雷达数据共用一根线</h4><p>FT232 交叉接法可收发；u-boot 全文、内核日志、PHY 状态全部可见。</p></div>
+  <div class="tl-item"><span class="t">网卡 MAC 层</span><h4>mii + fixed-link → Link Up 100M/Full</h4><p>但 fixed-link 是虚拟 PHY（不查真硬件）——MAC 说通了，物理线没通。</p></div>
+  <div class="tl-item"><span class="t">物理数据路</span><h4>ARP 零应答、MDIO 无设备</h4><p>MAC 走 EMIO（FPGA 绕道）而板上电线接在 MIO 直连——两边说的不是同一条路。</p></div>
+  <div class="tl-item"><span class="t">PHY 复位 GPIO</span><h4>老系统 402/403 vs 6.6 内核 base=580</h4><p>编号映射未确定（尝试 658/659 = EMIO 0/1 无效；可能不在 EMIO 而在 PL GPIO 或 MIO）。</p></div>
+  <div class="tl-item"><span class="t">同事建议</span><h4>用老系统一样的 DTB + user_setup.sh</h4><p>方向正确（老 DTB 配 MIO/mii 与老 BOOT.BIN 配套）但老 DTB 在 6.6 下可能不兼容（final10 串口无内核输出）。</p></div>
+</div>
+</div>
+
+<!-- ====== 4 构建链修复 ====== -->
+<h2>四、构建链病灶修复清单（8 项全部固化）</h2>
+<div class="card">
+<div class="grid g2">
+<div><ul style="font-size:13px">
+<li>✓ 位流混入陈旧件 → XSA 解包直贯 + 载荷门禁</li>
+<li>✓ pack_store 默认工程指向死工程 → 自动探测</li>
+<li>✓ CFG_SHA 相对路径失效 → 绝对路径</li>
+<li>✓ 静态 IP 手改 tar → bbappend 源头</li>
+</ul></div>
+<div><ul style="font-size:13px">
+<li>✓ 管道尾吞退出码 → REAL_EXIT 落日志</li>
+<li>✓ spidev 内建 → 模块</li>
+<li>✓ FIT 重组一律 mkimage 禁 dtc</li>
+<li>✓ 内存盘嵌入前剥 64 字节 u-boot 头</li>
+</ul></div>
+</div>
+</div>
+
+<!-- ====== 5 网卡三条路径 ====== -->
+<h2>五、网卡修复的三条候选路径</h2>
+<div class="grid g3">
+<div class="card" style="border-top:4px solid var(--good)">
+<h3>路径 A：FPGA 改 XSA</h3>
+<p style="font-size:13px">ENET3 从 EMIO 改回 <b>MIO 64-77</b>，重导 XSA → 我全量重编 → 一次交付。</p>
+<p style="font-size:12px;color:var(--ink2)">最正确；需 FPGA 同事在 Vivado 改一个选项。</p>
+</div>
+<div class="card" style="border-top:4px solid var(--warn)">
+<h3>路径 B：GPIO 扫描</h3>
+<p style="font-size:13px">在已跑起的系统里逐个试 GPIO 编号释放 PHY 复位，让 MDIO 找到 PHY。</p>
+<p style="font-size:12px;color:var(--ink2)">已试 658/659(EMIO 0/1) 无效；老系统 402/403 映射未确定。</p>
+</div>
+<div class="card" style="border-top:4px solid var(--accent)">
+<h3>路径 C：mii 无 fixed-link</h3>
+<p style="font-size:13px">去掉 fixed-link，内核在 MDIO 上找<b>真 PHY</b>。老 FSBL 可能已释放 PHY → 直通。</p>
+<p style="font-size:12px;color:var(--ink2)">final11 已备好待上板。</p>
+</div>
+</div>
+
+<!-- ====== 6 FPGA 任务 ====== -->
+<h2>六、FPGA 侧一句话任务</h2>
+<div class="card" style="border-left:4px solid var(--crit)">
+<b>Vivado 打开 a1 →</b> 把 PS 的 ENET3 从 EMIO 改回 <b>MIO 64-75 + MDIO 76-77</b>（对齐老系统已验证布线；顺带 UART0 从 MIO 74/75 改回 42/43），勾 Include bitstream 重导 XSA。
+</div>
+
+<!-- ====== 7 产物 ====== -->
+<h2>七、产物与材料</h2>
+<div class="card">
+<ul style="font-size:13px">
+<li>最新镜像：<code>.tmp/aries_rescue/final11.img</code>（mii 无 fl + 内存盘全功能）</li>
+<li>回滚件：<code>deployment/backup_aries_2020.1/</code> + <code>.tmp/aries_rescue/p1old/</code></li>
+<li>store 包：<code>deployment/store/*strict6/</code></li>
+<li>串口：FT232 交叉接"串口"连接器，115200，COM4</li>
+</ul>
+</div>
+
+<div class="foot">Aries 新系统部署全案报告 · 2026-10-15 · 基于 tmp.md 同步生成</div>
+</body>
+</html>

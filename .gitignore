@@ -27,13 +27,19 @@ AGENTS_VOD.mdexperiments/logs/paper_faithful_rot_*.log.gz
 .superpowers/
 .superpowers
 doc/
-deployment/
+# deployment 整体忽略, 但放行板端 C++ 源码(含 CPU 优化成果); 构建目录排除
+deployment/*
+!deployment/board/
+deployment/board/*
+!deployment/board/cpp/
+deployment/board/cpp/build*/
 
 # 临时训练状态
 .tmp/
 .vscode/
 .log/
 .claude/
+.Xil/
 
 # Claude auto-managed per-user memory (会话级，不入库)
 .claude/projects/

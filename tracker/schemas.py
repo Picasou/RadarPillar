@@ -387,6 +387,14 @@ class CfgVelocity:
 
 
 @dataclass
+class CfgLog:
+    """逐帧回灌日志配置 - 对齐 LOG (每序列一份: 序列头关键配置 + 逐帧 PRE/DET/MATCH/NEW/COAST/DEAD/OUT)。"""
+    enable: int = 0             # 0=off  1=逐帧日志落盘
+    level: str = 'full'         # full=全属性逐行  slim=每帧一行汇总
+    dir: str = ''               # 空=随数据目录 <序列>/frame_log_mode2.log; 非空=集中 <dir>/<时间戳_run>/
+
+
+@dataclass
 class Cfg:
     """配置 - 镜像 cfg.yaml 的 10 大组。"""
     RUN: CfgRun
@@ -399,6 +407,7 @@ class Cfg:
     EVALUATE: CfgEvaluate
     MANAGER: CfgManager
     VELOCITY: CfgVelocity = field(default_factory=CfgVelocity)
+    LOG: CfgLog = field(default_factory=CfgLog)
 
     @classmethod
     def get_cfg(cls, path: str) -> 'Cfg':
@@ -413,7 +422,7 @@ class Cfg:
             'FILTER': CfgFilter, 'MATCH': CfgMatch,
             'VISUAL': CfgVisual, 'METRICS': CfgMetrics,
             'EVALUATE': CfgEvaluate,
-            'MANAGER': CfgManager, 'VELOCITY': CfgVelocity,
+            'MANAGER': CfgManager, 'VELOCITY': CfgVelocity, 'LOG': CfgLog,
             'vds': CfgVds, 'para': CfgFilterPara,
             'para_kf': CfgFilterParaKf, 'para_abf': dict,
             'para_ekf': dict, 'para_imm': dict,
@@ -562,6 +571,13 @@ class Cfg:
         self._check_float_gt(self.VELOCITY.window_s, 0, 'VELOCITY.window_s')
         self._check_float_gt(self.VELOCITY.alpha, 0, 'VELOCITY.alpha')
         self._check_float_gt(self.VELOCITY.beta, 0, 'VELOCITY.beta')
+
+        # LOG
+        self._check_int(self.LOG.enable, 0, 1, 'LOG.enable')
+        if self.LOG.level not in ('full', 'slim'):
+            raise ValueError(f"LOG.level must be 'full'|'slim', got '{self.LOG.level}'")
+        if not isinstance(self.LOG.dir, str):
+            raise ValueError(f"LOG.dir must be str, got {type(self.LOG.dir).__name__}")
 
         return True
 

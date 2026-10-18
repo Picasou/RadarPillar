@@ -28,7 +28,8 @@ def get_thresholds(scores: np.ndarray, num_gt, num_sample_pts=41):
 
 
 def clean_data(gt_anno, dt_anno, current_class, difficulty, vod_eval=False):
-    CLASS_NAMES = ['car', 'pedestrian', 'cyclist', 'van', 'person_sitting', 'truck', 'staticobject']
+    # 表尾只增不改: index 7 = msr v3 'Vehicle' (大车可变长类), 不挪 KITTI/VoD/msr v2 既有索引
+    CLASS_NAMES = ['car', 'pedestrian', 'cyclist', 'van', 'person_sitting', 'truck', 'staticobject', 'vehicle']
     MIN_HEIGHT = [40, 25, 25]
     MAX_OCCLUSION = [0, 1, 2]
     MAX_TRUNCATION = [0.15, 0.3, 0.5]
@@ -835,27 +836,98 @@ def get_vod_eval_result(gt_annos, dt_annos, current_classes, PR_detail_dict=None
     return result, ret_dict
 
 
+# ---- MSR 工作点漏检/误检率: 类别映射与阈值 (与 get_msr_eval_result 共用) ----
+MSR_CLASS_TO_NAME = {
+    0: 'Car', 1: 'Pedestrian', 2: 'Cyclist',
+    5: 'Truck', 6: 'StaticObject', 7: 'Vehicle',   # msr v3 '3'=Vehicle, 表尾新增避免撞 KITTI 表
+}
+# MSR type id 别名 (MsrDataset CLASS_NAMES 传入 '1'/'2'/'4'/'5'/'7')
+MSR_NAME_ALIASES = {'1': 0, '2': 1, '4': 2, '5': 5, '7': 6}
+# 工作点匹配阈值: 类索引 -> (bev, 3d), 同 get_msr_eval_result 的 overlap_msr 表
+MSR_MISS_FALSE_OVERLAP = {
+    0: (0.5, 0.25), 1: (0.25, 0.25), 2: (0.25, 0.25),
+    5: (0.5, 0.25), 6: (0.25, 0.25), 7: (0.5, 0.25),
+}
+
+
+def get_msr_miss_false_result(gt_annos, dt_annos, current_classes):
+    """
+    工作点漏检/误检率: pooled 全帧贪心 IoU 匹配 (det score 降序, 与 AP 同 IoU 路径) → miss=ΣFN/ΣGT, false=ΣFP/Σdet, bev/3d 双口径 per-class + mean
+    """
+    # 类名(语义名或数字别名) → 类索引; 小写比较与 clean_data 口径一致
+    name_to_class = {v.lower(): k for k, v in MSR_CLASS_TO_NAME.items()}
+    name_to_class.update(MSR_NAME_ALIASES)
+    if not isinstance(current_classes, (list, tuple)):
+        current_classes = [current_classes]
+    cls_ids = [name_to_class[c.lower()] if isinstance(c, str) else c
+               for c in current_classes]
+
+    # 双口径 IoU: 复用 calculate_iou_partly (bev=俯视旋转框, 3d=bev×高度比), 与 AP 同代码路径
+    overlaps_by_metric = {
+        'bev': calculate_iou_partly(gt_annos, dt_annos, 1, num_parts=100)[0],
+        '3d': calculate_iou_partly(gt_annos, dt_annos, 2, num_parts=100)[0],
+    }
+
+    result = print_str('Miss/False rate @ working point (pooled, greedy IoU match):')
+    ret_dict = {}
+    for metric_name in ('bev', '3d'):
+        overlaps = overlaps_by_metric[metric_name]
+        ti = 0 if metric_name == 'bev' else 1
+        # 类索引 → 阈值 与 合法名集合 (语义名 + 数字别名), 供逐帧名过滤
+        thr_of = {c: MSR_MISS_FALSE_OVERLAP[c][ti] for c in cls_ids}
+        names_of = {c: {MSR_CLASS_TO_NAME[c].lower()} | {a for a, v in MSR_NAME_ALIASES.items() if v == c}
+                    for c in cls_ids}
+        counts = {c: {'gt': 0, 'dt': 0, 'tp': 0} for c in cls_ids}
+        for fi, (gt_anno, dt_anno) in enumerate(zip(gt_annos, dt_annos)):
+            for c in cls_ids:
+                valid = names_of[c]
+                gt_idx = [k for k, n in enumerate(gt_anno['name']) if str(n).lower() in valid]
+                dt_idx = [k for k, n in enumerate(dt_anno['name']) if str(n).lower() in valid]
+                a = counts[c]
+                a['gt'] += len(gt_idx)
+                a['dt'] += len(dt_idx)
+                if not gt_idx or not dt_idx:
+                    continue
+                iou = overlaps[fi][np.ix_(gt_idx, dt_idx)]      # 行=GT 列=det
+                matched = np.zeros(len(gt_idx), dtype=bool)
+                # det 按 score 降序贪心: 取 IoU 最大未匹配 GT, ≥阈值 TP 否则 FP (同 compute_statistics_jit 语义)
+                for dj in np.argsort(-dt_anno['score'][dt_idx]):
+                    gj = int(np.argmax(np.where(~matched, iou[:, dj], -1.0)))
+                    if iou[gj, dj] >= thr_of[c] and not matched[gj]:
+                        matched[gj] = True
+                        a['tp'] += 1
+        for c in cls_ids:
+            a = counts[c]
+            miss = (a['gt'] - a['tp']) / a['gt'] if a['gt'] else float('nan')
+            false = (a['dt'] - a['tp']) / a['dt'] if a['dt'] else float('nan')
+            name = MSR_CLASS_TO_NAME[c]
+            ret_dict['%s_%s_miss_rate' % (name, metric_name)] = miss
+            ret_dict['%s_%s_false_rate' % (name, metric_name)] = false
+            result += print_str('%s %s: miss %.2f%% false %.2f%% (gt %d, det %d, tp %d)'
+                                % (name, metric_name, miss * 100, false * 100, a['gt'], a['dt'], a['tp']))
+        # 全类 mean (nan 类不计入)
+        miss_arr = np.array([ret_dict['%s_%s_miss_rate' % (MSR_CLASS_TO_NAME[c], metric_name)] for c in cls_ids], dtype=float)
+        false_arr = np.array([ret_dict['%s_%s_false_rate' % (MSR_CLASS_TO_NAME[c], metric_name)] for c in cls_ids], dtype=float)
+        ret_dict['%s_miss_rate_mean' % metric_name] = float(np.nanmean(miss_arr)) if np.isfinite(miss_arr).any() else float('nan')
+        ret_dict['%s_false_rate_mean' % metric_name] = float(np.nanmean(false_arr)) if np.isfinite(false_arr).any() else float('nan')
+    return result, ret_dict
+
+
 def get_msr_eval_result(gt_annos, dt_annos, current_classes, PR_detail_dict=None):
     # MSR(无图像/occlusion): 仿 vod_eval 全难度并列;anno name 用语义类名
     # (Car/Pedestrian/Cyclist/Truck/StaticObject,由 MsrDataset 从 type id 映射)。
     # 阈值: [bbox, bev, 3d] × [Car, Pedestrian, Cyclist, Truck, StaticObject],bbox 行无图像不适用,与 bev 同值占位。
-    #   bev: Car/Truck 0.5, Ped/Cyc/Static 0.25 (VoD 雷达小目标惯例); 3d: 全类 0.25。
+    #   bev: Car/Truck/Vehicle 0.5(大车), Ped/Cyc/Static 0.25 (VoD 雷达小目标惯例); 3d: 全类 0.25。
     overlap_msr = np.array([
-        [0.5, 0.25, 0.25, 0.5, 0.25],
-        [0.5, 0.25, 0.25, 0.5, 0.25],
-        [0.25, 0.25, 0.25, 0.25, 0.25],
+        [0.5, 0.25, 0.25, 0.5, 0.25, 0.5],
+        [0.5, 0.25, 0.25, 0.5, 0.25, 0.5],
+        [0.25, 0.25, 0.25, 0.25, 0.25, 0.25],
     ])
     min_overlaps = overlap_msr[None, ...]
-    class_to_name = {
-        0: 'Car',
-        1: 'Pedestrian',
-        2: 'Cyclist',
-        5: 'Truck',
-        6: 'StaticObject',
-    }
+    class_to_name = MSR_CLASS_TO_NAME   # 映射表提为模块常量, 与 get_msr_miss_false_result 共用
     # MSR type id 别名(MsrDataset CLASS_NAMES 传入 '1'/'2'/'4'/'5'/'7')
     name_to_class = {v: n for n, v in class_to_name.items()}
-    name_to_class.update({'1': 0, '2': 1, '4': 2, '5': 5, '7': 6})
+    name_to_class.update(MSR_NAME_ALIASES)
     if not isinstance(current_classes, (list, tuple)):
         current_classes = [current_classes]
     current_classes_int = []
@@ -865,8 +937,8 @@ def get_msr_eval_result(gt_annos, dt_annos, current_classes, PR_detail_dict=None
         else:
             current_classes_int.append(curcls)
     current_classes = current_classes_int
-    # overlap 列按上面定义顺序 [Car,Ped,Cyc,Truck,Static],current_classes 是 KITTI 类表索引(Truck=5/Static=6),需映射列号
-    col_of = {0: 0, 1: 1, 2: 2, 5: 3, 6: 4}
+    # overlap 列按上面定义顺序 [Car,Ped,Cyc,Truck,Static,Vehicle],current_classes 是类表索引(Truck=5/Static=6/Vehicle=7),需映射列号
+    col_of = {0: 0, 1: 1, 2: 2, 5: 3, 6: 4, 7: 5}
     min_overlaps = min_overlaps[:, :, [col_of[c] for c in current_classes]]
 
     result = ''

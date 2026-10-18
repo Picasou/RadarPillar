@@ -28,10 +28,12 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # repo 根,供 import pcdet
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'tools' / 'scripts' / 'data'))  # 供 import check_msr
 
-CLASS_LABEL = {'1': 'Car', '2': 'Pedestrian', '4': 'Cyclist', '5': 'Truck', '7': 'StaticObject'}
-# 类色避开点云 doppler diverging(蓝↔灰↔红)的色域: 取黄/品红/草绿/青绿/深紫,
-# 框与点云色相分离, 不再和蓝点/红点混淆
-CLASS_COLOR = {'1': '#f1c40f', '2': '#d63ee0', '4': '#7cb342', '5': '#00b3a4', '7': '#8e44ad'}
+# 类色按语义类名定义(跨 v2/v3 稳定, GT/pred 同表; 数字 id 由 sem_name 入口统一语义化):
+# 避开点云 doppler diverging(蓝↔灰↔红)的色域: 取黄/品红/草绿/青绿/深紫, 框与点云色相分离
+SEM_COLOR = {
+    'Car': '#f1c40f', 'Cyclist': '#7cb342', 'Pedestrian': '#d63ee0',
+    'Truck': '#00b3a4', 'Vehicle': '#00897b', 'StaticObject': '#8e44ad',
+}
 INK, INK2, MUTED, GRID = '#0b0b0b', '#52514e', '#898781', '#e1e0d9'
 DIV_BLUE, DIV_GRAY, DIV_RED = '#2a78d6', '#f0efec', '#e34948'  # diverging 蓝↔灰↔红
 
@@ -48,13 +50,13 @@ def pick_frames(ds, ids, num, split='training'):
             testing = set(x.strip() for x in open(testing_file).readlines())
             ids = [i for i in ids if i not in testing]
     from viz_common import pick_frames as _pick
-    gt_by_id = {sid: ds.get_label(sid) for sid in ids}
+    gt_by_id = {sid: ds.get_label(sid)[:2] for sid in ids}
     return _pick(gt_by_id, num)
 
 
 def plot_frame(ds, sid, split, out_dir, color_by='doppler_gnd', pred=None,
                x_range=None, y_range=None, cbar_range=None, border_black=False,
-               tracks=None):
+               tracks=None, no_camera=False):
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
@@ -64,12 +66,13 @@ def plot_frame(ds, sid, split, out_dir, color_by='doppler_gnd', pred=None,
 
     pts = ds.get_radar(sid)                       # (N, 18) MSR_FEATURE_ORDER 全列
     cols = {n: i for i, n in enumerate(ds.radar_feature_order)}
-    boxes, names = ds.get_label(sid)
+    boxes, names = ds.get_label(sid)[:2]
+    names = [ds.msr_class_label.get(str(n), str(n)) for n in names]   # 数字 id → 语义类名(v2/v3 各随其表)
     param = ds.get_dynamic_param(sid)
 
-    # ---- 布局: [相机 | BEV+GT | BEV+pred] ----
+    # ---- 布局: [相机 | BEV+GT | BEV+pred]; no_camera 强制双面板(相机数据无效的 split) ----
     img_file = ds.root_split_path / 'IMAGES' / ('%s.png' % sid)
-    if img_file.exists():
+    if img_file.exists() and not no_camera:
         fig, (ax_img, ax_gt, ax_pred) = plt.subplots(
             1, 3, figsize=(20, 6.2), width_ratios=[1.15, 1, 1],
             gridspec_kw={'wspace': 0.25})
@@ -108,29 +111,32 @@ def plot_frame(ds, sid, split, out_dir, color_by='doppler_gnd', pred=None,
 
     # GT 框(ax_gt): 细实线 + 无颜色填充; 统一走 draw_box_bev(Polygon 角点法)
     for b, n in zip(boxes, names):
-        color = CLASS_COLOR.get(str(n), '#eda100')
+        color = SEM_COLOR.get(str(n), '#eda100')
         draw_box_bev(ax_gt, b, color, linestyle='-', linewidth=1.2, zorder=4,
                      swap_xy=True)
 
-    # 预测框(ax_pred): 与 GT 同款细实线空心,风格统一(区分只靠分面板+各自计数)
+    # 预测框(ax_pred): 粗实线 lw2.2 + 半透明类色填充(α0.25, 边线实色), 与 GT 细实线空心对比
+    # (原粗虚线 2.8: v3 小模板框在像素尺度上 dash 间隙碎裂成双影, 2026-09-29 隔离实验后改实线)
     n_pred = 0
     if pred is not None:
-        cls_names = ['1', '2', '4', '5']  # MsrDataset CLASS_NAMES(顺序即 label 1/2/3/4 槽位)
+        cls_names = list(getattr(ds, 'class_names', []))   # cfg CLASS_NAMES, 槽位序即 label-1
         for b, lb, sc_ in zip(pred.get('pred_boxes', []),
                               pred.get('pred_labels', []),
                               pred.get('pred_scores', [])):
             li = int(lb)
             n = cls_names[li - 1] if 0 < li <= len(cls_names) else str(li)
-            color = CLASS_COLOR.get(n, '#eda100')
-            draw_box_bev(ax_pred, b, color, linestyle='-', linewidth=1.2,
-                         zorder=4, swap_xy=True)
+            n = ds.msr_class_label.get(str(n), str(n))
+            color = SEM_COLOR.get(n, '#eda100')
+            draw_box_bev(ax_pred, b, color, linestyle='-', linewidth=2.2,
+                         zorder=4, swap_xy=True, facecolor=color, alpha=0.25)
             n_pred += 1
 
     # 航迹框(ax_pred, mod=2 全链路): 同款细实线 + 框旁航迹 ID(与 pred 互斥使用)
     n_trk = 0
     if tracks:
         for b, n, tid in tracks:
-            color = CLASS_COLOR.get(str(n), '#eda100')
+            n = ds.msr_class_label.get(str(n), str(n))
+            color = SEM_COLOR.get(str(n), '#eda100')
             draw_box_bev(ax_pred, b, color, linestyle='-', linewidth=1.2,
                          zorder=4, swap_xy=True, label='#%d' % tid)
             n_trk += 1
@@ -167,10 +173,12 @@ def plot_frame(ds, sid, split, out_dir, color_by='doppler_gnd', pred=None,
         ax.grid(True, color=GRID, linewidth=0.6, alpha=0.9)
         ax.set_axisbelow(True)
 
-    # 图例: 全 4 类固定槽位色, 面板外共享一份(figure 底部), 不遮挡目标; title 带各自目标数
-    class_handles = [Line2D([0], [0], color=CLASS_COLOR[k], linewidth=2,
-                            label=CLASS_LABEL.get(k, k))
-                     for k in ['1', '2', '4', '5']]
+    # 图例: 本数据集类表槽位色(ds.class_names 语义化), 面板外共享一份(figure 底部), 不遮挡目标; title 带各自目标数
+    sem_slots = [ds.msr_class_label.get(str(k), str(k))
+                 for k in getattr(ds, 'class_names', ['1', '2', '4', '5'])]
+    class_handles = [Line2D([0], [0], color=SEM_COLOR.get(s, '#eda100'), linewidth=2,
+                            label=s)
+                     for s in dict.fromkeys(sem_slots)]
     for ax, ttl in zip(panels, ['GT (%d)' % boxes.shape[0],
                                 'Trk (%d)' % n_trk if tracks is not None else 'Pred (%d)' % n_pred]):
         ax.set_title(ttl, fontsize=10, color=INK2, pad=8)
@@ -213,6 +221,12 @@ def main():
                         help='输出目录;默认 output/res_viz/<cfg名>/(--cfg_file 时)或 output/res_viz/msr_data/')
     parser.add_argument('--color_by', type=str, default='doppler_gnd',
                         choices=['doppler_gnd', 'doppler_mps', 'rcs', 'z', 'range_m'])
+    parser.add_argument('--x_range', type=float, nargs=2, default=[0, 200],
+                        help='BEV x 轴固定范围(车规朝向,前向);默认 0 200,传 0 0 则自适应')
+    parser.add_argument('--y_range', type=float, nargs=2, default=[-20, 20],
+                        help='BEV y 轴固定范围(左右);默认 -20 20,传 0 0 则自适应')
+    parser.add_argument('--no_camera', action='store_true',
+                        help='强制双面板, 跳过相机面板(相机数据无效如全黑帧时用)')
     args = parser.parse_args()
 
     from pcdet.datasets.msr.msr_dataset import MsrDataset
@@ -254,7 +268,10 @@ def main():
         print('=== plot_msr_samples: split=%s, %d frames ===' % (split, len(ids)))
         for sid in ids:
             out, n_pts, n_gt, n_p, cls = plot_frame(ds, sid, split, out_dir, args.color_by,
-                                                    pred=pred_by_id.get(sid))
+                                                    pred=pred_by_id.get(sid),
+                                                    x_range=tuple(args.x_range) if args.x_range != [0, 0] else None,
+                                                    y_range=tuple(args.y_range) if args.y_range != [0, 0] else None,
+                                                    no_camera=args.no_camera)
             print('  %s -> %s  (pts=%d gt=%d pred=%d classes=%s)' % (sid, out, n_pts, n_gt, n_p, cls))
     print('=== done, output dir: %s ===' % out_dir)
 
