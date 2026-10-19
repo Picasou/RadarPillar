@@ -39,9 +39,9 @@
 - **设计文档即实验蓝图**：`mynote/McRadarPillar.md` 把架构拆成六段流水线，每段显式给出候选空间——VFE PN[32/64/128]、Attention head 数 1/2、backbone PP/RepDwc × 通道档、neck concat/FPN/MDFEN、head anchor/center、NMS 传统/pillar-mask。后续消融实验严格沿候选空间扫描，"设计文档→消融矩阵→模型表"一一对应。
 - ispassable（可通行性）通道：MC-A1 独有字段设计（文档明确标注"无论文依据"），**设计未落地**（pcdet/ 下无实现）。
 
-### 1.2 架构（权威配置）
+### 1.2 架构与逐模块作用（权威配置）
 
-权威配置 `experiments/PUBLIC_DATASET/YAML/a1.yaml`（VoD stage1 胜者）；MSR 系 7 个 YAML 位于 `experiments/MSRV2_DATASET/YAML/`。数据流（MSR 口径）：
+权威配置 `experiments/PUBLIC_DATASET/YAML/a1.yaml`（VoD stage1 胜者）；MSR 系 7 个 YAML 位于 `experiments/MSRV2_DATASET/YAML/`。端到端数据流（MSR 口径）：
 
 ```
 6 列点特征 [x,y,z,dop_x_gnd,dop_y_gnd,rcs]
@@ -54,6 +54,18 @@
   → 多类 NMS / pillar-mask 免 NMS
   → pred_dicts（7 维框 [x,y,z,l,w,h,rot]；vel 版 9 维 +[vx,vy]）
 ```
+
+**逐模块作用**（均给出实现路径，机制描述出自代码原文）：
+
+- **PillarVFE**（`pcdet/models/backbones_3d/vfe/pillar_vfe.py`，295 行）：把每个 pillar 内 ≤16 点编码为 32 维特征。PFNLayer = Linear→BN1d→ReLU→沿点维 max；逐点特征增广 = 原始列 + f_cluster（点减 pillar 均值）+ f_center（点减 pillar 几何中心）。本仓扩展（相对标准 PointPillars VFE）：径向速度分解 `vx=v·cosφ, vy=v·sinφ`（φ=atan2(y,x)）、相对速度分解、v_offset（v 减 pillar 内均值，对齐论文 vr,m）、FEATURE_ORDER 列重排、速度归一化 buffer。VoD 口径对 v_r_comp 列在线分解（USE_VELOCITY_DECOMPOSITION），MSR 口径数据侧直供 dop_x_gnd/dop_y_gnd、关闭分解——对地速度特征链是 MSR 输入的核心设计。
+- **PillarAttention**（`pcdet/models/backbones_3d/pillar_attention.py`，87 行）：pillar 级 self-attention，为无空间结构的散点特征补全局上下文。流程：pre_mlp 通道对齐（Linear 或 Identity）→ nn.MultiheadAttention（embed 32、heads 1、batch_first、key_padding_mask 忽略 padding pillar）→ LayerNorm 残差 → FFN（Linear-GELU-Linear）→ LayerNorm 残差 → 去 padding。文件内 6 处「修改」注释记录工程化点（修改 2 batch_first 加速、修改 4 摆脱 for 循环改 masked padding、修改 5 单次 attention 等）。变体 res/resA/resB（短接 / LN-Post / ReZero）在 VoD stage1 做过对照。
+- **PointPillarScatter**（`pcdet/models/backbones_2d/map_to_bev/pointpillar_scatter.py`，37 行）：把非空 pillar 特征按 (z + y·nx + x) 索引写回 BEV 伪图 (B,32,80,200)，空 pillar 置 0——pillar 稀疏表接到 2D CNN 的桥梁。
+- **BaseBEVBackbone**（`pcdet/models/backbones_2d/base_bev_backbone.py`，123 行）：三级下采样金字塔。每级 = ZeroPad+Conv3×3（stride 2）+BN+ReLU 下采一个尺度，再 N×Conv3×3+BN+ReLU；deblock 用 ConvTranspose2d（k=stride）上采回原尺度，三级 concat 成 96 通道输出。通道数是该 backbone 唯一被消融证实有效的容量旋钮（见 1.4）。
+- **RadarNeXtCenterHead 系**（`pcdet/models/dense_heads/radarnext_center_head.py`，879 行）：anchor-free 热图检测头。前向 = shared_conv（3×3）→ 各任务头（SepHead：(n−1)×Conv+BN+ReLU + 1×1 final，hm 头 final bias 初始化 −2.19；TrunkSepHead 瘦身变体 = 全头共享 trunk 3×3 + 每头 1×1）。训练 target 分配：GT 中心落入 cell（越界剔除），高斯热图 radius=gaussian_radius_np（min_overlap=0.1，下限 MIN_RADIUS=2），anno_box 8-cat=[Δx,Δy,z,log l,log w,log h,sinθ,cosθ]（z 必须在监督内，否则 height 头零监督、3D AP 塌陷）；2D 系 6-cat 去 z/h，推理 z 按类查 ANCHOR_BOTTOM_HEIGHTS 表。解码：hm sigmoid → 逐类取 max → cell+reg 偏移反算坐标、dim=exp、rot=atan2 → score 过阈值 + 逐类 NMS（0.1/4096/500）。iou 头（aligned IoU）仅 radarNeXt 复刻配置启用，其余 MSR 配置无。
+- **Loss**（`pcdet/models/dense_heads/radarnext_losses.py`，366 行）：FastFocalLoss 管 heatmap（CenterNet 式 α=2/β=4 **硬编码不可配**）；RegLoss 在峰值处 gather 后逐元素 L1 ×CODE_WEIGHTS（全 1.0）；IouLoss（target=2·alignedIoU−1）与 IouRegLoss（dIoU）权重 1.0/0.5，仅 radarNeXt 配置启用。anchor 系走 SigmoidFocal（α=0.25/γ=2.0，硬编码）+ dir loss。
+- **pillar-mask 免 NMS**（`radarpillar_center_head.py` / `radarpillar_anchor_head_single.py`）：推理期以 voxel_coords 为 mask，非空 pillar 外 heatmap logit / anchor cls 压 −1e9，NMS_PRE_MAXSIZE 4096→1024，训练零改动。VoD 期有配置验证（rp_mask_a0 / rp_mask_center），**MSR 系实验矩阵未启用**。
+- **vel head**（`pcdet/models/dense_heads/radarnext_center_head_2d_trunk_vel.py`，352 行）：2D trunk 上加 vel:[2,2] 头，8-cat 监督（vel 原值直传不编码，GT 为车体系对地速度，dataset 侧 USE_GT_VELOCITY 开关注入）；predict 输出 9 维框（z 查表、dz 置 0），NMS 只取前 7 维索引（父类 [−1] 在 9 维会误取 vy）。
+- **RepDWC / MDFEN**（RadarNeXt 引入）：RepDWC = depthwise+pointwise MobileOne 多分支块（训练态三分支相加，推理 reparameterize 融合成单 Conv，数学严格等价仅速度变化，`tools/test.py:90-97`）；MDFEN = PAN 双向融合 + DCNv3 + MultiMAPFusion 的折叠 neck（出口 384 通道）——两者在 MSR 消融中均为负收益或混杂未拆（见 1.4）。
 
 - **特征工程**：径向速度分解（`v_r_comp·cosφ / sinφ`）与对地多普勒列 dop_x_gnd/dop_y_gnd 是 MSR 系 6 列输入的核心（`pcdet/models/backbones_3d/vfe/pillar_vfe.py`、`tools/cfgs/dataset/msrv2_dataset.yaml`）。
 - **head 变体文件群**（`pcdet/models/dense_heads/`）：radarnext_center_head.py（基类，8-cat z/h 联合监督）、_2d_noz（6-cat，z/h 双去）、_abl_z / _abl_h（7-cat，单加回 z 或 h）、_trunk/_merged/_narrow（瘦身族独立文件；noconv/k1 为 yaml 参数变体，无独立文件）、_2d_trunk_vel（8-cat+vel）。
@@ -149,8 +161,27 @@
 - **数据层** `pcdet/datasets/`：msr_dataset.py（三代共用类，CLASS_LABEL_MAP 覆写机制）+ dataset yaml 10 份（`tools/cfgs/dataset/`）+ KITTI eval 内核改造（vod_eval 参数跳过图像过滤、MSR 段伪 camera 轴变换、get_msr_eval_result）
 - **模型层** `pcdet/models/`：pillar_vfe / pillar_attention（+res/resA/resB 变体）/ pointpillar_scatter / base_bev_backbone / rep_dwc / mdfen_neck / dense_heads 变体文件群（1.2 节）
 - **实验层** `experiments/<DATASET>/{YAML,SH,model.xlsx}` + `output/train_log/<ds>/`（run + resbag + model_store.yaml + 聚合报告）。模型表命名语法由 `mynote/McRadarPillar.md` 定义（PN[n]/PAtt[head:H]/PP[l]*[c]/RepDwc/UPSAMPLE+CONCAT[c]/anchorbased|anchorfree），配置↔表格↔文档三方对应
-- **跟踪层** `tracker/`：12 模块 3927 行主代码 + 2883 行测试 + 67 份 cfg。KM（Kuhn-Munkres）全局最优关联（GNN 口径，欧氏/马氏 gap）；滤波四族统一路由（α-β / KF-CV / EKF-CTRV / IMM，状态恒 [x,y,vx,vy]）；双通道速度更新（差分 v_meas + α-β 平滑）；存在概率记分航迹管理（出生 55 / 增 10 / 减 15）；FrameLogger 零侵入逐帧归因（NEW/DROP/DEAD 全链路日志）
-- **部署层** `deployment/`：converter（13 脚本：导出/量化/编译一键链 + INT8 梯子）+ simulator（golden + 对拍）+ board（cpp 源 26 文件 / petalinux / vivado / weights）+ store（7 部署包，自描述清单）
+- **跟踪层** `tracker/`：12 模块 3927 行主代码 + 2883 行测试 + 67 份 cfg。核心算法：KM（Kuhn-Munkres）最大权匹配关联（GNN 口径，欧氏/马氏 gap）；滤波四族统一路由（α-β / KF-CV / EKF-CTRV / IMM，状态恒 [x,y,vx,vy]，predict 内 ego 补偿，Joseph form 保半正定）；双通道速度更新（TrkHistory 差分 v_meas + α-β 平滑）；存在概率记分航迹管理（出生 55 / 增 10 / 减 15，边界出界删轨防幽灵）。逐模块职责：
+  - `loader.py`（287 行）：0100/0101/0200/0201 四类 bin 流读取，点云帧数为唯一基准；0100 头 frame_cnt 透传做帧号对齐；ego 动态参数取自 2021 VDD、静态取自 2031，delay 帧补偿对齐
+  - `detector.py`（126 行）：pcdet 单帧推理封装（build_network + ckpt + no_grad）；阈值链为模型内先裁、外层 score_thresh 后滤
+  - `matcher.py`（152 行）：代价建表（gap≥thresh 不可连）→ 可连边预配对 → 冲突子图 KM 求解
+  - `filter.py`（449 行）：四族滤波统一入口；CTRV 的 yaw_rate 为外部量测输入而非状态估计量
+  - `updater.py`（210 行）：严格顺序回填（basic→velocity→filter.update→vsmooth→type Markov belief→size/heading 平滑）
+  - `manager.py`（160 行）：create→delete→merge→output；输出锁存三条件（当帧有量测+活满 birth_heat+existence_prob≥门限）
+  - `evaluator.py`（599 行）：CLEAR（MOTA/MOTP/MT/ML/IDs/frag）+ IDF1 + HOTA + AMOTA（41 档阈值全量重扫）+ 自研速度指标族（VAE/VNE/VDE 互相关时移）；贪心类约束中心距匹配（≤2 m）
+  - `visualizer.py`（373 行）：三面板 PNG/GIF/MP4 输出，test 数据加黑边防泄露
+  - `frame_logger.py`（196 行）：mode2 逐帧 PRE/DET/MATCH/COAST/NEW/DROP/DEAD/OUT 全链路归因（new/dead 由 id 集合 diff 零侵入）
+  - `schemas.py`（613 行）：FRAME/Obj/Trk/Matches 契约 + 10 段 Cfg 配置树
+  - 航迹输出走 ctypes 结构 ×100 定点量化（`utils/rw_struct.py` Raw_TrkHead/Raw_Trk）
+- **部署层** `deployment/`：converter（13 脚本）+ simulator（golden + 对拍）+ board（cpp 源 26 文件 / petalinux / vivado / weights）+ store（7 部署包，自描述清单）。关键模块职责：
+  - `converter/export_weights.py`：CPU 段权重导出 8 个 f32 raw bin（vfe/attn 各件，meta_flat.txt 供 C++ 解析）+ DPU 段 npz（backbone_2d/shared_conv/tasks 三组键）
+  - `converter/export_dpu_segment.py`：静态 shape、opset 17 的 ONNX 导出 + ort 快检
+  - `converter/quantize_dpu_segment.py`：容器内量化，fp32 自检 <3e-2 否则禁止量化，输出四头（hm/reg/dim/rot）逐项误差报告
+  - `converter/int8_ladder.py`：六档梯子（d0 50 帧校准 per-tensor 基线 / d1 per-channel 留桩无 API 入口 / d2 256 帧 / d3 1024 帧 / d4 mixbit / d5 QAT），STRICT/LOOSE/GRAY 门禁 −1/−2/±0.5 pt，当选档原子回填 canonical
+  - `converter/qat_finetune.py`：self-distill（FP32 teacher、输出 L2 无标签），lr 1e-4、≤3 epoch、CPU 短训
+  - `simulator/golden_dump.py`：四层 npz 基准（L1 点/L2 spatial/L3 dpu_out/L4 框）+ 首帧双跑 bitwise 自证；`simulator/parity_cpp.py`：S2 对 PyTorch CPU 前段回放器（剥跨设备噪声），S3/S4 框级硬门（数量+label 序列）
+  - `board/cpp` 前段：pillarize（网格桶排序，z 半开区间对齐 spconv 语义）/ pillar_vfe（BN 折叠进 Linear、4-lane 归约复刻 torch 求和序、padding 行参与 max 复刻 VFE 语义）/ pillar_attention（true-N 变长 M、两处 NEON 微核、fast_expf 多项式 max_err 6.5e-9、双线程 grain 128）/ scatter；后段 decode_nms（Sutherland-Hodgman 旋转 IoU、平局与 NaN 语义逐条对齐 CUDA 版）；dpu_backend 三态工厂（板端 VART 量化执行 / PC ORT FP32 对拍）
+  - **段切分**：DPU 段 = backbone_2d + shared_conv + task trunk + 四个 1×1 头（输出 [1,11,40,100] logits）；前段留 CPU 因动态 pillar 数（真实非空 mean 341 / p99 533，静态 pad 到 3096 计算量暴涨约 60×）且 MHA/LayerNorm/GELU/scatter 属 DPU 不支持算子；后段 decode/NMS 含控制流不进静态图（`deployment/DEPLOY_GUIDE.md`）
 - **工具层** `tools/`：scripts 训测脚本族 + visual_utils（11 文件 2970 行，draw_box_bev 单入口、车规朝向、序列定轴）+ skills（model-train / model-deploy / resbag / modellist / build-sdcard / flash-sdcard）
 
 **解耦机制**：Cfg 配置树单一来源（tracker 10 段配置）；dataset yaml 与 model yaml 正交；每实验 resbag 自包含归档 + model_store.yaml 汇总；部署包 store 自描述（report 含 golden/parity/board 三 manifest）。
@@ -185,7 +216,7 @@
 
 （全表 40 行见 `experiments/MC_DATASET/model.xlsx`；Delta 矩阵与判定见 `mynote/实验结论整理1.0.md`）
 
-**MSRv2（车载实测难度，moderate R40 per-class，resbag eval_results）**：五模型套件中 centerhead2d_trunk BEV 五类均值（含 Truck/Static）最高 52.21（Car 69.63 / Ped 28.05 / Cyc 53.94 / Truck 74.43 / Static 35.00，0.270M）；3D 三类均值（Car/Ped/Cyc）radarNeXt 47.47（1.64M）> radarpillar 43.79（0.19M）> pointpillar 43.34（4.861M），五类 3D 复算为 53.45 / 52.34 / 50.42（`output/train_log/msr/_report_msr_pointpillar.md` 与各 resbag）。vel head 三次迭代 Ped BEV 26.10 → 21.72（禁增强回退；注意 run1 为 msr 基座、跨数据集不可作单变量参照）→ 32.35（flip 速度列同步取反后；best 口径，无 vel 基线 28.05，净 +4.3）。**口径警示**：MSRv2 resbag 中 Car/Truck 出现 3D > BEV（如 radarNeXt Car 3D 82.93 vs BEV 67.39），与 MSRv3 异象同源、eval 管线待复核——上表 3D 数值均经该管线产出，引用须谨慎
+**MSRv2（车载实测难度，moderate R40 per-class，resbag eval_results；FLOPs 为 thop bs8 口径 ≈ bs1×7.9）**：五模型套件中 centerhead2d_trunk BEV 五类均值（含 Truck/Static）最高 52.21（Car 69.63 / Ped 28.05 / Cyc 53.94 / Truck 74.43 / Static 35.00，0.270M）；3D 三类均值（Car/Ped/Cyc）radarNeXt 47.47（1.64M）> radarpillar 43.79（0.19M）> pointpillar 43.34（4.861M），五类 3D 复算为 53.45 / 52.34 / 50.42（`output/train_log/msr/_report_msr_pointpillar.md` 与各 resbag）。vel head 三次迭代 Ped BEV 26.10 → 21.72（禁增强回退；注意 run1 为 msr 基座、跨数据集不可作单变量参照）→ 32.35（flip 速度列同步取反后；best 口径，无 vel 基线 28.05，净 +4.3）。**口径警示**：MSRv2 resbag 中 Car/Truck 出现 3D > BEV（如 radarNeXt Car 3D 82.93 vs BEV 67.39），与 MSRv3 异象同源、eval 管线待复核——上表 3D 数值均经该管线产出，引用须谨慎
 
 **MSRv3（进行时）**：ep100 val 3D Car 35.28 / Cyclist 33.00 / Vehicle 55.61 / Truck 0；口径异常待修（`output/train_log/msrv3/`）
 
@@ -215,6 +246,8 @@
 | MSRv2 model.xlsx 回填 | 仅 4 行（radarNeXt / centerhead2d_trunk / vel 系等 8+ run 未回填，指标仅存各 run resbag） |
 | MSRv3 全部指标 | xlsx 未回填、run status=blocked、eval 口径修复未提交 |
 | `salon.md`:90,103 "自研核心创新" | 纠正前旧表述，与 2026-10-09 口径（论文引入+工程化）不一致 |
+| 部署选型 pp64 vs ppmix | 无书面决策记录：`deployment/dep_common.py` 未入 git（锚定 pp64）；MSRv2 口径 ppmix 更小更好（BEV mean 49.14 vs 48.45、0.683M vs 0.815M），MC 口径 pp64 最高（92.93 vs 92.29，<1 带内） |
+| 训练 bs 实况 | MC 矩阵 46 yaml 全系 bs=4；MSRV2 yaml 写 4、SH 命令行实跑 bs=8/100ep（训练快照 yaml 未回写） |
 
 ## 附录 B：主要来源索引
 
